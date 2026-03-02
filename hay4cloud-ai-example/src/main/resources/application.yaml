@@ -6,4 +6,8 @@ spring:
     name: ai-example
   ai:
     dashscope:
-      api-key: sk-76c7d08bfa2441679046816a61e96d19
+      api-key: sk-e629a44396154f1ba569cc7e437e41d7
+
+  http:
+    client:
+      read-timeout: 10000
