@@ -15,7 +15,7 @@ public class FunctionCallConfiguration {
 
     @Bean
     @Description("根据用户输入的时区获取该时区的当前时间")
-    public Function<TimeService.Request, TimeService.Response> getTimeFunction(TimeService timeService) {
+    public Function<com.fons.cloud.ai.function.TimeService.Request, com.fons.cloud.ai.function.TimeService.Response> getTimeFunction(com.fons.cloud.ai.function.TimeService timeService) {
         return timeService::getTimeByZoneId;
     }
 
