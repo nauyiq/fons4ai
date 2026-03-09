@@ -5,15 +5,15 @@
 
     <modelVersion>4.0.0</modelVersion>
 
-    <groupId>com.hqy.ai</groupId>
-    <artifactId>hqy4ai</artifactId>
+    <groupId>com.fons.ai</groupId>
+    <artifactId>Fons4ai</artifactId>
     <version>${revision}</version>
     <packaging>pom</packaging>
 
     <description>AI FRAMEWORK</description>
 
     <modules>
-        <module>hqy4ai-example</module>
+        <module>Fons4ai-example</module>
     </modules>
 
     <properties>
