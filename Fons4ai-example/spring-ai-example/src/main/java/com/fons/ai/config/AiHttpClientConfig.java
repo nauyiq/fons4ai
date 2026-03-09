@@ -1,4 +1,4 @@
-package com.fons.ai.config;
+package com.fons.cloud.ai.config;
 
 import io.netty.channel.ChannelOption;
 import io.netty.handler.timeout.ReadTimeoutHandler;

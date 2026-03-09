@@ -1,0 +1,26 @@
+logging:
+  level:
+    root: OFF
+server:
+  port: 8081
+
+spring:
+  main:
+    web-application-type: none
+    banner-mode: off
+
+  application:
+    name: mcp-server
+  ai:
+    dashscope:
+      api-key: sk-e629a44396154f1ba569cc7e437e41d7
+    mcp:
+      server:
+        name: mcp-server
+        version: 1.0.0
+        stdio: true
+        enabled: true
+        type: SYNC
+
+
+

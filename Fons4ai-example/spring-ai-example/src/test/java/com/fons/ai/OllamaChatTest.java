@@ -1,4 +1,4 @@
-package com.fons.ai;
+package com.fons.cloud.ai;
 
 import jakarta.annotation.PostConstruct;
 import org.junit.jupiter.api.Test;

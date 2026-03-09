@@ -1,4 +1,4 @@
-package com.fons.ai.function;
+package com.fons.cloud.ai.function;
 
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;

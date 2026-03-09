@@ -1,4 +1,4 @@
-package com.fons.ai.function;
+package com.fons.cloud.ai.function;
 
 import org.springframework.ai.tool.annotation.Tool;
 import org.springframework.ai.tool.annotation.ToolParam;

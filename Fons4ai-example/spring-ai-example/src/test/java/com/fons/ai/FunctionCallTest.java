@@ -1,6 +1,6 @@
-package com.fons.ai;
+package com.fons.cloud.ai;
 
-import com.fons.ai.function.TimeTools;
+import com.fons.cloud.ai.function.TimeTools;
 import jakarta.annotation.PostConstruct;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;

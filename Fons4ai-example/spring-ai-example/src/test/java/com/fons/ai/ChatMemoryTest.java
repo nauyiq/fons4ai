@@ -1,4 +1,4 @@
-package com.fons.ai;
+package com.fons.cloud.ai;
 
 import com.alibaba.cloud.ai.dashscope.chat.DashScopeChatOptions;
 import jakarta.annotation.PostConstruct;

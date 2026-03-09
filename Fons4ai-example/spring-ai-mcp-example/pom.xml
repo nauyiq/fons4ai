@@ -3,21 +3,17 @@
          xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
          xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 http://maven.apache.org/xsd/maven-4.0.0.xsd">
     <modelVersion>4.0.0</modelVersion>
-
     <parent>
         <groupId>com.fons.cloud.ai</groupId>
-        <artifactId>Fons4ai</artifactId>
+        <artifactId>Fons4ai-example</artifactId>
         <version>${revision}</version>
         <relativePath>../pom.xml</relativePath>
     </parent>
 
-    <artifactId>Fons4ai-example</artifactId>
+    <artifactId>spring-ai-mcp-example</artifactId>
     <packaging>pom</packaging>
-
     <modules>
-        <module>langchain4j-example</module>
-        <module>spring-ai-example</module>
-        <module>spring-ai-mcp-example</module>
+        <module>mcp-example-server-stdio</module>
     </modules>
 
     <properties>
@@ -25,5 +21,6 @@
         <maven.compiler.target>21</maven.compiler.target>
         <project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
     </properties>
+
 
 </project>

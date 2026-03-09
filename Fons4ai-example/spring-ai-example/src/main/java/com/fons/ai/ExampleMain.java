@@ -1,4 +1,4 @@
-package com.fons.ai;
+package com.fons.cloud.ai;
 
 import org.springframework.boot.SpringApplication;
 import org.springframework.boot.autoconfigure.SpringBootApplication;

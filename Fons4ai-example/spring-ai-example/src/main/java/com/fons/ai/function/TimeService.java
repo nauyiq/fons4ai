@@ -1,4 +1,4 @@
-package com.fons.ai.function;
+package com.fons.cloud.ai.function;
 
 import com.fasterxml.jackson.annotation.JsonProperty;
 import com.fasterxml.jackson.annotation.JsonPropertyDescription;

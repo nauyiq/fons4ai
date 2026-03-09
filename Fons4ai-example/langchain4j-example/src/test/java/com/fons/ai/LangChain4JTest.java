@@ -1,4 +1,4 @@
-package com.fons.ai;
+package com.fons.cloud.ai;
 
 import cn.hutool.core.lang.UUID;
 import dev.langchain4j.agent.tool.*;
