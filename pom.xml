@@ -6,14 +6,14 @@
     <modelVersion>4.0.0</modelVersion>
 
     <groupId>com.fons.cloud.ai</groupId>
-    <artifactId>Fons4ai</artifactId>
+    <artifactId>fons4ai</artifactId>
     <version>${revision}</version>
     <packaging>pom</packaging>
 
     <description>AI FRAMEWORK</description>
 
     <modules>
-        <module>Fons4ai-example</module>
+        <module>fons4ai-example</module>
     </modules>
 
     <properties>
