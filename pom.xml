@@ -26,7 +26,7 @@
         <project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
 
         <springboot.version>3.5.8</springboot.version>
-        <spring.ai.alibaba.version>1.1.0.0</spring.ai.alibaba.version>
+        <spring.ai.alibaba.version>1.1.2.0</spring.ai.alibaba.version>
         <spring.ai.version>1.1.0</spring.ai.version>
         <langChain4j.version>1.8.0</langChain4j.version>
         <langChain4j.springboot.version>1.8.0-beta15</langChain4j.springboot.version>

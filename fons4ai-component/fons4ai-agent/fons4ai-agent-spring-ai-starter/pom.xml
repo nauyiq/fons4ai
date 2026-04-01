@@ -5,22 +5,30 @@
     <modelVersion>4.0.0</modelVersion>
     <parent>
         <groupId>com.fons.cloud.ai</groupId>
-        <artifactId>fons4ai</artifactId>
+        <artifactId>fons4ai-agent</artifactId>
         <version>${revision}</version>
         <relativePath>../pom.xml</relativePath>
     </parent>
 
-    <artifactId>fons4ai-component</artifactId>
-    <packaging>pom</packaging>
-    <modules>
-        <module>fons4ai-rag</module>
-        <module>fons4ai-agent</module>
-    </modules>
+    <artifactId>fons4ai-agent-spring-ai-starter</artifactId>
 
     <properties>
         <maven.compiler.source>21</maven.compiler.source>
         <maven.compiler.target>21</maven.compiler.target>
         <project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
     </properties>
+
+    <dependencies>
+        <dependency>
+            <groupId>com.fons.cloud.ai</groupId>
+            <artifactId>fons4ai-agent-core</artifactId>
+            <version>${revision}</version>
+        </dependency>
+
+        <dependency>
+            <groupId>com.alibaba.cloud.ai</groupId>
+            <artifactId>spring-ai-alibaba-agent-framework</artifactId>
+        </dependency>
+    </dependencies>
 
 </project>

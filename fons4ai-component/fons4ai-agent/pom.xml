@@ -5,16 +5,16 @@
     <modelVersion>4.0.0</modelVersion>
     <parent>
         <groupId>com.fons.cloud.ai</groupId>
-        <artifactId>fons4ai</artifactId>
+        <artifactId>fons4ai-component</artifactId>
         <version>${revision}</version>
         <relativePath>../pom.xml</relativePath>
     </parent>
 
-    <artifactId>fons4ai-component</artifactId>
+    <artifactId>fons4ai-agent</artifactId>
     <packaging>pom</packaging>
     <modules>
-        <module>fons4ai-rag</module>
-        <module>fons4ai-agent</module>
+        <module>fons4ai-agent-core</module>
+        <module>fons4ai-agent-spring-ai-starter</module>
     </modules>
 
     <properties>
@@ -22,5 +22,8 @@
         <maven.compiler.target>21</maven.compiler.target>
         <project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
     </properties>
+
+
+
 
 </project>
