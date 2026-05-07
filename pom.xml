@@ -13,7 +13,6 @@
     <description>AI FRAMEWORK</description>
 
     <modules>
-        <module>fons4ai-example</module>
         <module>fons4ai-api</module>
         <module>fons4ai-component</module>
     </modules>
