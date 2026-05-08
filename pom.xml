@@ -13,23 +13,23 @@
     <description>AI FRAMEWORK</description>
 
     <modules>
-        <module>fons4ai-api</module>
         <module>fons4ai-component</module>
+        <module>fons4ai-app</module>
     </modules>
 
     <properties>
+        <!-- 框架依赖统一版本 -->
         <revision>1.0.0</revision>
-        <jdk.version>21</jdk.version>
-        <maven.compiler.source>21</maven.compiler.source>
-        <maven.compiler.target>21</maven.compiler.target>
-        <project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
+        <fons4cloud-revision>1.0.0</fons4cloud-revision>
 
+        <!-- spring相关 -->
         <springboot.version>3.5.8</springboot.version>
         <spring.ai.alibaba.version>1.1.2.0</spring.ai.alibaba.version>
         <spring.ai.version>1.1.0</spring.ai.version>
+
+        <!-- langChain4j相关 -->
         <langChain4j.version>1.8.0</langChain4j.version>
         <langChain4j.springboot.version>1.8.0-beta15</langChain4j.springboot.version>
-        <fastjson.version>2.0.43</fastjson.version>
     </properties>
 
     <dependencyManagement>
@@ -107,24 +107,12 @@
     </dependencyManagement>
 
     <dependencies>
+        <!-- 全局引入基础包 -->
         <dependency>
-            <groupId>org.springframework.boot</groupId>
-            <artifactId>spring-boot-starter-test</artifactId>
-            <scope>test</scope>
-        </dependency>
-
-        <dependency>
-            <groupId>com.alibaba.fastjson2</groupId>
-            <artifactId>fastjson2</artifactId>
-            <version>${fastjson.version}</version>
-        </dependency>
-
-        <dependency>
-            <groupId>org.projectlombok</groupId>
-            <artifactId>lombok</artifactId>
-            <optional>true</optional>
+            <groupId>com.fons.cloud</groupId>
+            <artifactId>fons4cloud-common-base</artifactId>
+            <version>${fons4cloud-revision}</version>
         </dependency>
     </dependencies>
-
 
 </project>

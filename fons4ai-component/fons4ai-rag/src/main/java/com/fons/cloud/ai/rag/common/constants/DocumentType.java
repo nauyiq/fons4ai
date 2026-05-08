@@ -1,4 +1,4 @@
-package com.fons.cloud.ai.constants;
+package com.fons.cloud.ai.rag.common.constants;
 
 /**
  * @author hongqy

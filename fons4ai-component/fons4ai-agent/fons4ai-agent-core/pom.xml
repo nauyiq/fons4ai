@@ -18,12 +18,5 @@
         <project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
     </properties>
 
-    <dependencies>
-        <dependency>
-            <groupId>com.fons.cloud.ai</groupId>
-            <artifactId>fons4ai-api</artifactId>
-            <version>${revision}</version>
-        </dependency>
-    </dependencies>
 
 </project>

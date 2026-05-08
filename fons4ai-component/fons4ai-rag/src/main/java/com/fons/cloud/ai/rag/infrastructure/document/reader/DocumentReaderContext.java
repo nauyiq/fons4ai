@@ -3,8 +3,8 @@ package com.fons.cloud.ai.rag.infrastructure.document.reader;
 import cn.hutool.core.map.MapUtil;
 import com.alibaba.fastjson2.JSON;
 import com.alibaba.fastjson2.annotation.JSONField;
-import com.fons.cloud.ai.constants.DocumentType;
-import com.fons.cloud.ai.request.ParameterRequest;
+import com.fons.cloud.ai.rag.common.constants.DocumentType;
+import com.fons.cloud.common.request.ParameterRequest;
 import lombok.Getter;
 import lombok.Setter;
 

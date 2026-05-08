@@ -1,6 +1,6 @@
 package com.fons.cloud.ai.rag.infrastructure.document.reader;
 
-import com.fons.cloud.ai.constants.DocumentType;
+import com.fons.cloud.ai.rag.common.constants.DocumentType;
 import org.springframework.ai.document.Document;
 
 import java.util.List;

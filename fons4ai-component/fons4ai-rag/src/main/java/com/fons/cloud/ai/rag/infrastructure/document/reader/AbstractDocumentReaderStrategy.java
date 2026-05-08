@@ -2,9 +2,9 @@ package com.fons.cloud.ai.rag.infrastructure.document.reader;
 
 import cn.hutool.core.io.FileTypeUtil;
 import cn.hutool.core.lang.Assert;
-import com.fons.cloud.ai.constants.AiResultCode;
-import com.fons.cloud.ai.constants.DocumentType;
-import com.fons.cloud.ai.exception.BsException;
+import com.fons.cloud.ai.rag.common.constants.DocumentType;
+import com.fons.cloud.ai.rag.common.constants.RagResultCode;
+import com.fons.cloud.common.base.exception.BusinessRuntimeException;
 import org.apache.commons.collections4.CollectionUtils;
 import org.apache.commons.lang3.StringUtils;
 import org.springframework.ai.document.Document;
@@ -30,9 +30,9 @@ public abstract class AbstractDocumentReaderStrategy implements DocumentReaderSt
 
     @Override
     public boolean isSupport(DocumentReaderContext context) {
-        Assert.notNull(context, () -> BsException.of(AiResultCode.INVALID_DOCUMENT_FILES.getCode(), "DocumentReaderContext should not be null"));
+        Assert.notNull(context, () -> BusinessRuntimeException.of(RagResultCode.INVALID_DOCUMENT_FILES.getCode(), "DocumentReaderContext should not be null"));
         List<File> files = context.getFiles();
-        Assert.notEmpty(files, () -> BsException.of(AiResultCode.INVALID_DOCUMENT_FILES.getCode(), "Document files should not be empty"));
+        Assert.notEmpty(files, () -> BusinessRuntimeException.of(RagResultCode.INVALID_DOCUMENT_FILES.getCode(), "Document files should not be empty"));
         DocumentType documentType = documentType();
         return files.stream().allMatch(e -> documentType.match(FileTypeUtil.getType(e)));
     }

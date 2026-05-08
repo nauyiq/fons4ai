@@ -6,29 +6,15 @@
     <parent>
         <groupId>com.fons.cloud.ai</groupId>
         <artifactId>fons4ai</artifactId>
-        <version>${revision}</version>
-        <relativePath>../pom.xml</relativePath>
+        <version>1.0.0</version>
     </parent>
 
-    <artifactId>fons4ai-api</artifactId>
-    <version>${revision}</version>
-    <packaging>pom</packaging>
+    <artifactId>fons4ai-app</artifactId>
 
     <properties>
         <maven.compiler.source>21</maven.compiler.source>
         <maven.compiler.target>21</maven.compiler.target>
         <project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
-        <hutool.version>5.8.43</hutool.version>
     </properties>
-
-
-    <dependencies>
-        <dependency>
-            <groupId>cn.hutool</groupId>
-            <artifactId>hutool-all</artifactId>
-            <version>${hutool.version}</version>
-        </dependency>
-    </dependencies>
-
 
 </project>
