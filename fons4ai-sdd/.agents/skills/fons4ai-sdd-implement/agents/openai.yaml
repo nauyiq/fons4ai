@@ -1,0 +1,4 @@
+interface:
+  display_name: "Fons4AI SDD Implement"
+  short_description: "Routing-gated Fons4AI SDD implementation."
+  default_prompt: "Use $fons4ai-sdd-implement when Fons4AI routing is enabled or explicitly requested to implement SDD tasks with Red-Green-Refactor."

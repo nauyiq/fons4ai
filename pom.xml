@@ -15,6 +15,7 @@
     <modules>
         <module>fons4ai-component</module>
         <module>fons4ai-app</module>
+        <module>fons4ai-sdd</module>
     </modules>
 
     <properties>

@@ -1,0 +1,4 @@
+interface:
+  display_name: "Fons4AI Generate Project Rules"
+  short_description: "Routing-gated Fons4AI project-rule generator."
+  default_prompt: "Use $fons4ai-generate-project-rules when Fons4AI routing is enabled or explicitly requested to generate Markdown code style, project structure, and feature implementation rules."

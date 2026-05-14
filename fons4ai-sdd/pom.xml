@@ -10,10 +10,10 @@
         <relativePath>../pom.xml</relativePath>
     </parent>
 
-    <artifactId>fons4ai-app</artifactId>
+    <artifactId>fons4ai-sdd</artifactId>
     <packaging>pom</packaging>
-    <modules>
-        <module>fons4ai-app-doudou-agent</module>
-    </modules>
+
+
+    <description>AGENT开发SDD快速入门</description>
 
 </project>
