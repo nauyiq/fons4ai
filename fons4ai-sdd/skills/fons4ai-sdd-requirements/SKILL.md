@@ -22,11 +22,11 @@ Feature artifacts are written under `specs/features/`; `.specify/memory/` and `.
 
 ## Required Context
 
-1. Read project guidance before drafting: `AGENTS.md`, `rules/` if present, `.specify/memory/` and `.specify/sql/` if present, existing `specs/`, and relevant source files when the feature touches existing behavior.
+1. Read project guidance before drafting: `AGENTS.md`, project rules under `.specify/rules/` when present (`code-style-rule.md`, `project-structure-rule.md`, `features-rule.md`, `testing-rule.md`, `data-ddl-rule.md`), `.specify/memory/` and `.specify/sql/` if present, existing `specs/`, and relevant source files when the feature touches existing behavior.
 2. Load the SDD contract from `references/sdd-artifact-contract.md`.
 3. Use `assets/templates/spec-template.md` as the output structure.
 4. If a target feature directory or `spec.md` already exists, read it first and ask the user before replacing or materially rewriting it.
-5. Prefer facts from `.specify/memory/business-architecture.md` for business domains, roles, processes, business objects, and durable business rules. Prefer `.specify/memory/data-architecture.md` and `.specify/sql/*.sql` for confirmed data model facts. If absent, continue from repository and user facts.
+5. Prefer facts from `.specify/memory/business-architecture.md` for business domains, roles, processes, business objects, and durable business rules. Prefer `.specify/memory/data-architecture.md` and `.specify/sql/**/*.sql` for confirmed data model and DDL facts. If absent, continue from repository and user facts.
 
 ## Workflow
 
@@ -45,7 +45,7 @@ Feature artifacts are written under `specs/features/`; `.specify/memory/` and `.
    - Include in-scope items.
    - Exclude out-of-scope items.
    - Record assumptions and unresolved questions.
-6. Record knowledge impact when the feature appears to add or change long-lived business, technical, data, or governance facts. If it may add or change persistent data models, record expected `.specify/sql/` impact explicitly. Do not update truth sources such as `.specify/memory/`, `.specify/sql/`, `docs/`, or `rules/` from this skill.
+6. Record knowledge impact when the feature appears to add or change long-lived business, technical, data, or governance facts. If it may add or change persistent data models, record expected `.specify/sql/` impact explicitly. Do not update truth sources such as `.specify/memory/`, `.specify/sql/`, `.specify/rules/`, or `docs/` from this skill.
 7. For S2, create `checklists/requirements.md` only when it adds real governance value. Checklist items must test requirement quality, not implementation behavior.
 
 ## Structured Clarification

@@ -24,9 +24,10 @@ It must not write business code; implementation remains the responsibility of `f
 
 1. Load `../fons4ai-sdd-requirements/references/sdd-artifact-contract.md`.
 2. Identify the target `specs/features/<feature-slug>/` directory.
-3. Read `.specify/memory/` and `.specify/sql/` when present, especially business, technical, data architecture, DDL, and constitution files.
-4. Read existing `spec.md`, `plan.md`, `tasks.md`, prior `changes/`, reports, and relevant source/test files.
-5. Use `assets/templates/change-template.md`.
+3. Read relevant project rules under `.specify/rules/` when present: `code-style-rule.md`, `project-structure-rule.md`, `features-rule.md`, `testing-rule.md`, and `data-ddl-rule.md`.
+4. Read `.specify/memory/` and `.specify/sql/` when present, especially business, technical, data architecture, DDL, and constitution files.
+5. Read existing `spec.md`, `plan.md`, `tasks.md`, prior `changes/`, reports, and relevant source/test files.
+6. Use `assets/templates/change-template.md`.
 
 ## Workflow
 
@@ -42,11 +43,12 @@ It must not write business code; implementation remains the responsibility of `f
    - Test impact: existing tests likely affected and new tests required.
    - Regression risk and rollback needs.
    - Knowledge impact: business, technical, data architecture, governance, other truth-source, or DDL facts that must be synchronized.
-   - For any persistent data model addition or change, name each impacted `.specify/sql/<table_or_model_name>.sql` file and required action.
+   - For any persistent data model addition or change, name each impacted `.specify/sql/<database_or_service>/<business_model>.sql` file and required action.
+   - Keep same-database cohesive business model tables together when useful, but split files for different databases, service-owned schemas, or physical data sources.
 5. Ask before modifying existing SDD artifacts. Preserve unaffected content and avoid full rewrites.
 6. Update affected docs in place and append a concise change log entry.
 7. Create `changes/CR-xxx.md` and add incremental tasks to `tasks.md` or a CR-specific task section.
-8. When the change affects persistent data models, add mandatory DDL synchronization tasks for `.specify/sql/*.sql`; do not leave SQL knowledge updates as implicit follow-up.
+8. When the change affects persistent data models, add mandatory DDL synchronization tasks for `.specify/sql/**/*.sql`; do not leave SQL knowledge updates as implicit follow-up.
 9. Run `../fons4ai-sdd-tasks/scripts/validate_sdd_artifacts.py --change-file <CR-file>` after writing the CR. Fix validation failures before reporting success.
 
 ## Output Rules

@@ -24,9 +24,10 @@ All features use the S1 or S2 path.
 
 1. Load `../fons4ai-sdd-requirements/references/sdd-artifact-contract.md`.
 2. Read `specs/features/<feature-slug>/tasks.md` first.
-3. Read `.specify/memory/` and `.specify/sql/` when present for module boundaries, data rules, DDL, and governance constraints relevant to the selected tasks.
-4. Load `spec.md`, `plan.md`, or S2 artifacts only when the selected task references them or when the task text is insufficient.
-5. Use `assets/templates/implementation-report-template.md` for completion reports.
+3. Read relevant project rules under `.specify/rules/` when present: `code-style-rule.md`, `project-structure-rule.md`, `features-rule.md`, `testing-rule.md`, and `data-ddl-rule.md`.
+4. Read `.specify/memory/` and `.specify/sql/` when present for module boundaries, data rules, DDL, and governance constraints relevant to the selected tasks.
+5. Load `spec.md`, `plan.md`, or S2 artifacts only when the selected task references them or when the task text is insufficient.
+6. Use `assets/templates/implementation-report-template.md` for completion reports.
 
 ## Workflow
 
@@ -43,16 +44,18 @@ All features use the S1 or S2 path.
    - REFACTOR: improve structure while keeping tests green.
 5. Run the task verification from `tasks.md`, then run the smallest useful regression check.
 6. Mark completed tasks as `[x]` in `tasks.md` only after verification passes.
-7. When a selected task names `.specify/sql/<table_or_model_name>.sql`, create or update that SQL file as part of the same task after reading any existing file.
-   - Keep one concrete table or canonical data model per SQL file.
+7. When a selected task names `.specify/sql/<database_or_service>/<business_model>.sql`, create or update that SQL file as part of the same task after reading any existing file.
+   - Keep one database-scoped cohesive business model per SQL file.
+   - Multiple strongly related tables may share one SQL file only when they belong to the same database/service.
+   - Never merge DDL from different databases, service-owned schemas, or physical data sources into one SQL file.
    - Preserve source evidence, status, and last generated date in the SQL header.
-   - If implementation changes a persistent model but no selected task names the matching SQL file, stop and recommend returning to `fons4ai-sdd-tasks` or `fons4ai-sdd-change` to add the DDL sync task.
+   - If implementation changes a persistent model but no selected task names the matching database-scoped business-model SQL file, stop and recommend returning to `fons4ai-sdd-tasks` or `fons4ai-sdd-change` to add the DDL sync task.
 8. Write a report under `specs/features/<feature-slug>/reports/` summarizing tasks, files, tests, AC coverage, unresolved risks, updated DDL files, S2 gate closure when applicable, and whether knowledge-base or source-of-truth documents need synchronization.
 
 ## Output Rules
 
 - Follow the task plan; do not implement unplanned scope.
 - If the plan is wrong or incomplete, stop and recommend returning to `fons4ai-sdd-tasks` or `fons4ai-sdd-change`.
-- Treat `.specify/sql/*.sql` as required knowledge artifacts for planned persistent data model additions or changes, not as optional follow-up.
+- Treat `.specify/sql/**/*.sql` as required knowledge artifacts for planned persistent data model additions or changes, not as optional follow-up.
 - Never skip RED for behavior changes. If automated testing is impossible, record an explicit manual verification reason and steps.
 - End with completed task IDs, changed files, verification commands/results, knowledge/DDL sync need, remaining tasks, and suggest `fons4ai-knowledge-summary` when verified changes should be merged into a knowledge base or source-of-truth document.

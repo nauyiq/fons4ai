@@ -13,7 +13,7 @@
 ## Changed Files
 
 - path/to/file:
-- .specify/sql/<table_or_model_name>.sql:
+- .specify/sql/<database_or_service>/<business_model>.sql:
 
 ## TDD Record
 
@@ -54,5 +54,6 @@ Use this section when SDD Level is S2.
 - Other truth sources: no
 - SQL DDL files: no | updated | still needed
 - SQL DDL evidence:
+- DDL grouping evidence:
 - Reason:
 - Suggested follow-up: none | fons4ai-knowledge-summary

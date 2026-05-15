@@ -25,7 +25,7 @@ Default output files:
 - `.specify/memory/business-architecture.md`
 - `.specify/memory/technical-architecture.md`
 - `.specify/memory/data-architecture.md`
-- `.specify/sql/<table_or_model_name>.sql` for each concrete data model with known DDL
+- `.specify/sql/<database_or_service>/<business_model>.sql` for each database-scoped business model group with known DDL
 
 Read the matching template before drafting each document:
 
@@ -37,7 +37,7 @@ Read the matching template before drafting each document:
 
 1. Inspect available facts before writing.
    - Read user-provided requirements, product notes, and target output path if provided.
-   - Search `.specify/memory/`, `.specify/sql/`, `specs/`, `rules/`, README files, existing architecture notes, build files, module names, database migration files, ORM models, mapper XML, entity classes, and representative source files when code exists.
+   - Search `.specify/memory/`, `.specify/sql/`, project rules under `.specify/rules/` (`code-style-rule.md`, `project-structure-rule.md`, `features-rule.md`, `testing-rule.md`, `data-ddl-rule.md`), `specs/`, README files, existing architecture notes, build files, module names, database migration files, ORM models, mapper XML, entity classes, and representative source files when code exists.
    - Prefer observed project facts over generic architecture assumptions.
 
 2. Handle existing target files conservatively.
@@ -55,9 +55,11 @@ Read the matching template before drafting each document:
 
 4. Generate DDL SQL files when concrete schemas are known.
    - Create `.specify/sql/` if it does not exist.
-   - Save each concrete table or data model as a separate SQL file: `.specify/sql/<table_or_model_name>.sql`.
-   - Use lowercase snake_case file names that match the table or canonical model name.
-   - Include a short SQL header comment with source evidence, model name, status, and last generated date.
+   - Group DDL by database/service plus cohesive business model: `.specify/sql/<database_or_service>/<business_model>.sql`.
+   - A file may contain multiple strongly related tables when they belong to the same database/service and one cohesive business model, such as account, login, and authorization.
+   - Never place tables from different databases, service-owned schemas, or physical data sources in the same SQL file, even when they belong to the same broad business area.
+   - Use lowercase snake_case names for database/service directories and business model files.
+   - Include a short SQL header comment with source evidence, database/service, business model, included tables, status, and last generated date.
    - Do not invent DDL for models that are not supported by repository facts or explicit user input. Record unsupported models as `待确认` in `data-architecture.md` instead.
    - Keep DDL database-specific only when the project has a confirmed database dialect. If the dialect is unknown, write portable SQL and mark dialect assumptions in the header.
 
@@ -80,7 +82,9 @@ Read the matching template before drafting each document:
 Each generated SQL file should use this structure:
 
 ```sql
--- Model: <model or table name>
+-- Database/Service: <database_or_service>
+-- Business Model: <business_model>
+-- Tables: <table_1>, <table_2>
 -- Source: <repository file, user input, or待确认>
 -- Status: <已确认 | 推断 | 待确认>
 -- Last Generated: YYYY-MM-DD
@@ -90,7 +94,7 @@ CREATE TABLE <table_name> (
 );
 ```
 
-Use one SQL file per concrete table or canonical data model. Avoid placing multiple unrelated tables in one file.
+Use one SQL file per database-scoped business model. Multiple strongly related tables may share one file only when they belong to the same database/service and cohesive business model. Avoid placing unrelated tables or tables from different databases in one file.
 
 ## Output Contract
 

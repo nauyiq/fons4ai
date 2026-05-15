@@ -18,7 +18,7 @@ Describe the current state, problem, user value, and relevant repository facts.
 - SQL DDL facts:
 - Other truth sources:
 - Knowledge sync needed: no | yes
-- SQL DDL impact: none | add/update `.specify/sql/<table_or_model_name>.sql`
+- SQL DDL impact: none | add/update `.specify/sql/<database_or_service>/<business_model>.sql`
 
 ## Clarifications
 
@@ -62,8 +62,10 @@ Describe the current state, problem, user value, and relevant repository facts.
 ## Key Data or Domain Objects
 
 - Object:
-  - Persistent model/table: none | <table_or_model_name>
-  - DDL sync expected: no | yes, `.specify/sql/<table_or_model_name>.sql`
+  - Database/service: none | <database_or_service>
+  - Business model: none | <business_model>
+  - Persistent tables/models: none | <table_names_or_model_names>
+  - DDL sync expected: no | yes, `.specify/sql/<database_or_service>/<business_model>.sql`
 
 ## Assumptions
 

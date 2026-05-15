@@ -30,9 +30,10 @@ This skill fixes implementation defects. If the work changes requirements, accep
 ## Required Context
 
 1. Read `AGENTS.md`, project rules, and relevant truth sources before editing:
+   - `.specify/rules/code-style-rule.md`, `.specify/rules/project-structure-rule.md`, `.specify/rules/features-rule.md`, `.specify/rules/testing-rule.md`, and `.specify/rules/data-ddl-rule.md` when present and relevant.
    - `.specify/memory/` when present.
    - `.specify/sql/` when data model or DDL knowledge may be involved.
-   - Other project-declared knowledge sources such as `docs/`, `rules/`, or API documents.
+   - Other project-declared knowledge sources such as `docs/`, custom rule directories, or API documents.
 2. Read existing SDD artifacts for the affected feature when discoverable:
    - `specs/features/<feature-slug>/spec.md`
    - `plan.md`
@@ -66,7 +67,8 @@ This skill fixes implementation defects. If the work changes requirements, accep
    - State affected files before editing.
    - Preserve user changes and unrelated files.
    - Ask before deleting logic, rewriting large sections, or making risky migrations.
-   - If persistent data models change, ensure `.specify/sql/<table_or_model_name>.sql` is updated or route through `fons4ai-sdd-change` to add a DDL sync task.
+   - If persistent data models change, ensure the relevant `.specify/sql/<database_or_service>/<business_model>.sql` file is updated or route through `fons4ai-sdd-change` to add a DDL sync task.
+   - Keep same-database cohesive business model tables together when useful; split files for different databases, service-owned schemas, or physical data sources.
 
 5. Fix with Red-Green-Refactor.
    - RED: add or update a focused test that fails for the bug when feasible.
@@ -87,7 +89,7 @@ This skill fixes implementation defects. If the work changes requirements, accep
 
 8. Handle knowledge sync.
    - If the fix confirms durable business, technical, data, or governance facts, mark `Knowledge Sync Needed: yes` in the report and suggest `fons4ai-knowledge-summary`.
-   - If the fix updates DDL knowledge, list the `.specify/sql/*.sql` files in the report.
+   - If the fix updates DDL knowledge, list the `.specify/sql/**/*.sql` files in the report.
    - Do not promote debugging notes or guesses into source-of-truth documents from this skill unless explicitly scoped.
 
 ## Hard Gates

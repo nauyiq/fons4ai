@@ -43,10 +43,13 @@ Describe request, state, persistence, and response flow.
 ## Data Model Changes
 
 - Change:
+- Database/service:
+- Business model:
+- Tables/models:
 - Migration needed: yes/no
 - DDL sync required: no | yes
 - DDL file action: none | add | update | rename
-- DDL file impact: none | `.specify/sql/<table_or_model_name>.sql`
+- DDL file impact: none | `.specify/sql/<database_or_service>/<business_model>.sql`
 - DDL sync timing: same implementation task | separate task | deferred with owner/reason
 
 ## Key Decisions
@@ -81,6 +84,7 @@ Describe request, state, persistence, and response flow.
 - Other truth sources update needed: no
 - SQL DDL update needed: no
 - SQL DDL files:
+- DDL grouping rule: same database/service + cohesive business model only; split files for different databases/services
 - Knowledge Sync Needed: no
 - Notes:
 

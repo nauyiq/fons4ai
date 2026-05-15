@@ -77,7 +77,8 @@
 
 - Knowledge Sync Needed: no | yes
 - 影响的真理源：
-- SQL DDL files: no | `.specify/sql/<table_or_model_name>.sql`
+- SQL DDL files: no | `.specify/sql/<database_or_service>/<business_model>.sql`
+- DDL grouping: same database/service + cohesive business model; split by database/service
 - Suggested follow-up: none | `fons4ai-knowledge-summary`
 
 ## 后续事项

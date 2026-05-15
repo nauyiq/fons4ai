@@ -24,9 +24,10 @@ The output is an executable `tasks.md` for `fons4ai-sdd-implement`.
 
 1. Load `../fons4ai-sdd-requirements/references/sdd-artifact-contract.md`.
 2. Read `spec.md`, `plan.md`, and any S2 artifacts in the feature directory.
-3. Read `.specify/memory/` and `.specify/sql/` when present to respect long-lived module, data, DDL, and governance boundaries.
-4. Use `assets/templates/tasks-template.md`.
-5. If `tasks.md` already exists, read it and ask before replacing or materially rewriting it.
+3. Read relevant project rules under `.specify/rules/` when present: `code-style-rule.md`, `project-structure-rule.md`, `features-rule.md`, `testing-rule.md`, and `data-ddl-rule.md`.
+4. Read `.specify/memory/` and `.specify/sql/` when present to respect long-lived module, data, DDL, and governance boundaries.
+5. Use `assets/templates/tasks-template.md`.
+6. If `tasks.md` already exists, read it and ask before replacing or materially rewriting it.
 
 ## Workflow
 
@@ -43,10 +44,12 @@ The output is an executable `tasks.md` for `fons4ai-sdd-implement`.
    - Include `Verification:` with automated test or manual verification steps.
    - Include `Done:` with objective completion criteria.
 5. For S2, add explicit tasks for applicable risk controls: migration, rollback, compatibility, permissions, regression, observability, and checklist closure.
-6. If `plan.md` declares data model additions or changes, add a mandatory DDL synchronization task for every impacted `.specify/sql/<table_or_model_name>.sql` file.
+6. If `plan.md` declares data model additions or changes, add a mandatory DDL synchronization task for every impacted `.specify/sql/<database_or_service>/<business_model>.sql` file.
    - The task must name the exact SQL file.
+   - One SQL file may cover multiple strongly related tables only when they are in the same database/service and cohesive business model.
+   - Split tasks and SQL files when the affected tables belong to different databases, service-owned schemas, or physical data sources.
    - Place it with the related model/migration task, before service-layer tasks that depend on the schema.
-   - Verification must confirm the SQL file matches the implemented model and is indexed by `.specify/memory/data-architecture.md` when that document exists.
+   - Verification must confirm the SQL file matches the implemented model/table group and is indexed by `.specify/memory/data-architecture.md` when that document exists.
    - Only mark it as deferred when `plan.md` records user-approved owner/reason.
 7. If `plan.md` declares non-DDL knowledge impact, add a documentation synchronization or follow-up task that names the impacted truth-source path.
 8. Run `scripts/validate_sdd_artifacts.py --feature-dir <feature-dir>` after writing tasks. This validates AC coverage, DDL mapping, Knowledge Impact, and S2 risk gates. Fix validation failures before reporting success.

@@ -64,28 +64,31 @@
 - BUG 修复、异常排查和回归修复：优先使用 `fons4ai-bugfix-workflow`。
 - 项目知识库初始化：优先使用 `fons4ai-project-knowledge-base-init`。
 - 已验证事实的知识汇总：优先使用 `fons4ai-knowledge-summary`。
-- 项目规则、编码规范、结构规则生成：优先使用 `fons4ai-generate-project-rules`。
+- 项目规则五件套生成：优先使用 `fons4ai-generate-project-rules`，默认维护 `.specify/rules/code-style-rule.md`、`.specify/rules/project-structure-rule.md`、`.specify/rules/features-rule.md`、`.specify/rules/testing-rule.md`、`.specify/rules/data-ddl-rule.md`。
 
 ## 真理源与知识库
 
 - 默认真理源为 `.specify/memory/`，用于长期保存业务架构、技术架构、数据架构和治理约束；这是默认值，不是唯一允许的真理源。
-- 默认 DDL 知识库为 `.specify/sql/`，用于保存按数据模型或表拆分的 SQL DDL 知识文件。
-- 项目可以扩展其他真理源，例如 `docs/`、`rules/`、API 文档、产品文档、团队知识库或外部知识系统。
+- 默认 DDL 知识库为 `.specify/sql/`，用于保存按“数据库/服务 + 业务模型”分组的 SQL DDL 知识文件。
+- 默认项目规则库为 `.specify/rules/`，其中 `code-style-rule.md`、`project-structure-rule.md`、`features-rule.md`、`testing-rule.md`、`data-ddl-rule.md` 分别约束代码风格、项目结构、功能开发、测试验证和数据/DDL。
+- 项目可以扩展其他真理源，例如 `docs/`、团队自定义规则目录、API 文档、产品文档、团队知识库或外部知识系统。
 - AI agent 在修改代码或 SDD 产物前，应优先读取已声明的真理源。
 - 已验证的长期业务规则、模块边界、接口契约、数据模型、DDL 和治理规则，必须通过 `fons4ai-knowledge-summary` 或项目指定流程汇总到对应真理源。
 - 不得把临时调试记录、未完成计划、废弃方案或未经验证的猜测写入长期知识库。
 
 ## 数据模型与 DDL
 
-- 涉及持久化数据模型新增、删除、重命名、字段变更、索引变更、约束变更、关系变更时，必须同步对应 `.specify/sql/<table_or_model_name>.sql`。
-- 每个 SQL DDL 知识文件应只描述一个明确的数据模型或表。
+- 涉及持久化数据模型新增、删除、重命名、字段变更、索引变更、约束变更、关系变更时，必须同步对应 `.specify/sql/<database_or_service>/<business_model>.sql`。
+- SQL DDL 文件按“数据库/服务 + 业务模型”归档；同一数据库内强业务耦合的多张表可以放入同一个业务模型 SQL 文件，例如账号、登录、授权相关表。
+- 即使属于同一业务域，只要分属不同数据库、服务库或物理数据源，必须拆分为不同 SQL 文件，不得跨库合并。
+- 每个 SQL DDL 知识文件必须在文件头标明数据库/服务、业务模型、包含的数据表和来源证据。
 - SQL 文件必须保留来源、状态和更新时间等证据说明。
-- `.specify/sql/*.sql` 是知识库文件，不替代项目自身的数据库迁移脚本。
+- `.specify/sql/**/*.sql` 是知识库文件，不替代项目自身的数据库迁移脚本。
 - 若缺少足够事实生成 DDL，必须在相关 SDD 或数据架构文档中标记为 `待确认`，不得臆造结构。
 
 ## 代码修改约束
 
-- 修改前必须读取相关源码、测试、配置、文档和规则文件。
+- 修改前必须读取相关源码、测试、配置、文档和规则文件；若存在 `.specify/rules/` 五件套，按变更类型读取对应规则。
 - 优先保持现有分层、命名、异常、日志、测试和依赖方向。
 - 不得引入新框架、新模块、新抽象，除非需求、代码事实或设计方案明确需要。
 - 新增关键逻辑、复杂分支、领域字段含义时，应添加简洁注释。

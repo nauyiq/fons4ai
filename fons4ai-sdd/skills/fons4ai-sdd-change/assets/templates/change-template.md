@@ -38,6 +38,7 @@ Describe what changes and why.
 - Data architecture:
 - Other truth sources:
 - SQL DDL files:
+- DDL grouping: same database/service + cohesive business model; split by database/service
 - SQL DDL action: none | add | update | rename
 - Knowledge Sync Needed: no
 
@@ -62,6 +63,6 @@ Describe what changes and why.
 
 - [ ] Txxx Sync DDL knowledge file
   - AC: AC-xxx
-  - Files: .specify/sql/<table_or_model_name>.sql; .specify/memory/data-architecture.md
-  - Verification: SQL file matches the changed persistent model and is indexed by data-architecture.md when present
+  - Files: .specify/sql/<database_or_service>/<business_model>.sql; .specify/memory/data-architecture.md
+  - Verification: SQL file matches the changed same-database business model/table group and is indexed by data-architecture.md when present
   - Done: DDL knowledge update is completed or explicitly deferred with owner/reason

@@ -18,12 +18,12 @@ If none is true, do not apply this skill automatically. Continue with normal Cod
 ## Overview
 
 Use this skill to turn scattered project knowledge into durable source-of-truth documents.
-The first supported truth source is `.specify/memory/`, but the workflow must not assume that this is the only target. Future targets may include `docs/`, `rules/`, product documents, API catalogs, or other configured knowledge bases.
+The first supported truth source is `.specify/memory/`, but the workflow must not assume that this is the only target. Future targets may include `.specify/rules/`, `docs/`, product documents, API catalogs, or other configured knowledge bases.
 
 Common input sources:
 
 - SDD artifacts under `specs/features/<feature-slug>/`: `spec.md`, `plan.md`, `tasks.md`, `changes/`, `reports/`, `contracts/`, and S2 checklists.
-- Existing knowledge documents under `.specify/memory/`, `docs/`, `rules/`, or user-provided paths.
+- Existing knowledge documents under `.specify/memory/`, `.specify/rules/`, `docs/`, or user-provided paths.
 - Verified code changes, tests, migration notes, DDL files, release notes, and explicit user facts.
 
 Common output targets:
@@ -31,18 +31,19 @@ Common output targets:
 - `.specify/memory/business-architecture.md`
 - `.specify/memory/technical-architecture.md`
 - `.specify/memory/data-architecture.md`
-- `.specify/sql/*.sql` as data model DDL knowledge, when explicitly in scope
+- `.specify/sql/**/*.sql` as database-scoped business-model DDL knowledge, when explicitly in scope
+- `.specify/rules/code-style-rule.md`, `.specify/rules/project-structure-rule.md`, `.specify/rules/features-rule.md`, `.specify/rules/testing-rule.md`, and `.specify/rules/data-ddl-rule.md` as project rule truth sources, when explicitly in scope
 - Other source-of-truth documents named by the user or existing project conventions
 
 ## Required Context
 
 1. Identify the requested source artifacts and target knowledge base.
-   - If no target is specified, inspect `.specify/memory/` first, then `docs/`, `rules/`, and repository guidance.
+   - If no target is specified, inspect `.specify/memory/` first, then `.specify/rules/` five-file project rules, `docs/`, and repository guidance.
    - If multiple plausible truth sources exist, ask the user to choose before editing.
 2. Read existing target documents before writing.
 3. Read relevant source artifacts completely enough to distinguish verified facts from plans, assumptions, and open questions.
 4. When summarizing SDD output, load `../fons4ai-sdd-requirements/references/sdd-artifact-contract.md` if present.
-5. When data model or DDL knowledge is involved, read relevant `.specify/sql/*.sql` files and normal migration/model files.
+5. When data model or DDL knowledge is involved, read relevant `.specify/sql/**/*.sql` files and normal migration/model files.
 
 ## Workflow
 
@@ -75,9 +76,10 @@ Common output targets:
    - Prefer exact source references such as `specs/features/<feature-slug>/reports/<report>.md` over vague descriptions.
 
 6. Handle DDL knowledge when relevant.
-   - If data architecture references a concrete persistent model, ensure the corresponding `.specify/sql/<table_or_model_name>.sql` is listed when available.
+   - If data architecture references a concrete persistent model or table group, ensure the corresponding `.specify/sql/<database_or_service>/<business_model>.sql` is listed when available.
+   - Same-database cohesive business model tables may share one SQL file; cross-database or cross-service tables must remain in separate SQL files.
    - Do not invent DDL. If SQL knowledge is missing, record the gap as `待确认` or recommend a follow-up task.
-   - Treat `.specify/sql/*.sql` as knowledge files, not as a replacement for project migration scripts.
+   - Treat `.specify/sql/**/*.sql` as knowledge files, not as a replacement for project migration scripts.
 
 7. Validate before finishing.
    - Every durable fact added to a truth source must be backed by a source artifact or explicit user fact.

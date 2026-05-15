@@ -74,7 +74,7 @@ def validate(feature_dir: Path) -> list[str]:
     )
     plan_sql_files = sorted(set(SQL_PATH_RE.findall(plan_text)))
     if plan_requires_sql_sync and not plan_sql_files:
-        errors.append("plan.md declares DDL sync but names no .specify/sql/*.sql file")
+        errors.append("plan.md declares DDL sync but names no .specify/sql/**/*.sql file")
     for sql_file in plan_sql_files:
         if sql_file not in tasks_text:
             errors.append(f"{sql_file} is referenced in plan.md but not in tasks.md")
@@ -134,7 +134,7 @@ def validate_change_file(change_file: Path) -> list[str]:
     if ddl_action:
         sql_files = sorted(set(SQL_PATH_RE.findall(text)))
         if not sql_files:
-            errors.append(f"{change_file} declares SQL DDL action but names no .specify/sql/*.sql file")
+            errors.append(f"{change_file} declares SQL DDL action but names no .specify/sql/**/*.sql file")
         if "Sync DDL knowledge file" not in text and "Sync DDL" not in text:
             errors.append(f"{change_file} declares SQL DDL action but has no DDL sync task")
 

@@ -7,12 +7,13 @@ Feature artifacts use `specs/features/`. Bugfix artifacts use `specs/bugfixes/`.
 
 ## Project Knowledge
 
-Use `.specify/memory/` and `.specify/sql/` as default long-lived project fact sources when they exist. Also respect other project-declared truth sources such as `docs/`, `rules/`, API documents, product documents, or external knowledge bases.
+Use `.specify/memory/`, `.specify/sql/`, and `.specify/rules/` as default long-lived project fact sources when they exist. Also respect other project-declared truth sources such as `docs/`, API documents, product documents, custom rule directories, or external knowledge bases.
 
 - `business-architecture.md` stores business domains, roles, processes, objects, and rules.
 - `technical-architecture.md` stores module boundaries, layers, integrations, technical constraints, and non-functional decisions.
 - `data-architecture.md` stores data domains, core objects, relationships, quality rules, metrics, and data flows.
-- `.specify/sql/*.sql` stores one DDL SQL file per concrete data model or table.
+- `.specify/sql/**/*.sql` stores one DDL SQL file per database-scoped business model. A file may contain multiple strongly related tables only when they belong to the same database/service and cohesive business model.
+- `.specify/rules/` may contain project rules: `code-style-rule.md`, `project-structure-rule.md`, `features-rule.md`, `testing-rule.md`, and `data-ddl-rule.md`.
 - `constitution.md`, when present, is governance context and must not be rewritten by SDD feature skills.
 
 Feature artifacts under `specs/features/` can cite or be constrained by truth-source facts, but should not silently update knowledge sources. If a feature changes long-lived business, technical, data, governance, or other source-of-truth facts, record a knowledge impact and route the synchronization through an explicit documentation update.
@@ -23,10 +24,11 @@ If a feature changes concrete persistent data models, record `.specify/sql/` imp
 When SDD work adds, removes, renames, or changes a concrete persistent data model, table, column, index, constraint, relationship, or database-specific default:
 
 - `spec.md` must record the expected data model or DDL impact when it is known from requirements.
-- `plan.md` must name each impacted `.specify/sql/<table_or_model_name>.sql` file and state whether the action is add, update, rename, or no-op.
+- `plan.md` must name each impacted `.specify/sql/<database_or_service>/<business_model>.sql` file and state whether the action is add, update, rename, or no-op.
 - `tasks.md` must include an explicit DDL synchronization task for every impacted SQL file, unless the plan records a user-approved deferral with owner and reason.
-- `fons4ai-sdd-implement` may create or update `.specify/sql/*.sql` only when the selected task names the SQL file or when the implementation reveals a necessary schema change and the user approves updating the task/artifact scope.
+- `fons4ai-sdd-implement` may create or update `.specify/sql/**/*.sql` only when the selected task names the SQL file or when the implementation reveals a necessary schema change and the user approves updating the task/artifact scope.
 - Generated SQL knowledge files are documentation artifacts, not migration scripts. Keep migration scripts in the repository's normal migration location when the project has one.
+- Never merge DDL from different databases, service-owned schemas, or physical data sources into one SQL knowledge file, even when the tables belong to the same broad business area.
 
 ## Levels
 
@@ -72,4 +74,4 @@ Only create optional folders when they are needed.
 - Ask before replacing or materially rewriting existing artifacts.
 - Preserve user or prior-agent changes outside the requested scope.
 - Do not write business code from requirements, design, task, or change skills.
-- Treat truth sources such as `.specify/memory/`, `.specify/sql/`, `docs/`, and `rules/` as read-only unless the active skill is explicitly responsible for knowledge-base initialization or a selected SDD task explicitly requires knowledge or DDL synchronization.
+- Treat truth sources such as `.specify/memory/`, `.specify/sql/`, `.specify/rules/`, and `docs/` as read-only unless the active skill is explicitly responsible for knowledge-base initialization or a selected SDD task explicitly requires knowledge, rules, or DDL synchronization.

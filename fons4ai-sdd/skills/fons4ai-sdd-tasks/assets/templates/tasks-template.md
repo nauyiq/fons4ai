@@ -36,8 +36,8 @@ Use this section when `plan.md` declares knowledge-source or `.specify/sql/` imp
 
 - [ ] Txxx Sync DDL knowledge file
   - AC: AC-xxx
-  - Files: .specify/sql/<table_or_model_name>.sql; .specify/memory/data-architecture.md
-  - Verification: confirm the SQL file matches the implemented model/table and is indexed by data-architecture.md when present
+  - Files: .specify/sql/<database_or_service>/<business_model>.sql; .specify/memory/data-architecture.md
+  - Verification: confirm the SQL file matches the implemented same-database business model/table group and is indexed by data-architecture.md when present
   - Done: DDL knowledge update is completed or explicitly deferred with owner/reason
 
 - [ ] Txxx Document knowledge impact

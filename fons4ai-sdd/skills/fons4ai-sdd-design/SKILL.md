@@ -24,7 +24,7 @@ The output is `specs/features/<feature-slug>/plan.md`; S2 features may also need
 
 1. Load `../fons4ai-sdd-requirements/references/sdd-artifact-contract.md`.
 2. Read `specs/features/<feature-slug>/spec.md` completely.
-3. Read project guidance: `AGENTS.md`, `rules/`, `.specify/memory/technical-architecture.md`, `.specify/memory/data-architecture.md`, `.specify/sql/`, `.specify/memory/constitution.md` if present, existing architecture notes under `specs/`, build files, and representative source/test files for affected modules.
+3. Read project guidance: `AGENTS.md`, relevant project rules under `.specify/rules/` (`code-style-rule.md`, `project-structure-rule.md`, `features-rule.md`, `testing-rule.md`, `data-ddl-rule.md`), `.specify/memory/technical-architecture.md`, `.specify/memory/data-architecture.md`, `.specify/sql/`, `.specify/memory/constitution.md` if present, existing architecture notes under `specs/`, build files, and representative source/test files for affected modules.
 4. Use `assets/templates/plan-template.md`.
 5. If `plan.md` already exists, read it and ask before replacing or materially rewriting it.
 
@@ -47,7 +47,8 @@ The output is `specs/features/<feature-slug>/plan.md`; S2 features may also need
    - Transaction, cache, MQ, rate-limit, or concurrency risks.
    - Public contract changes under `contracts/` when needed.
    - Data model notes under `data-model.md` when database or persistent schema changes are involved.
-   - A concrete DDL sync plan naming every impacted `.specify/sql/<table_or_model_name>.sql` file for persistent data model additions or changes.
+   - A concrete DDL sync plan naming every impacted `.specify/sql/<database_or_service>/<business_model>.sql` file for persistent data model additions or changes.
+   - DDL files are grouped by database/service plus cohesive business model. Same-database strongly related tables may share one file; cross-database or cross-service tables must use separate files.
 6. Map every AC to one or more design decisions.
 7. Record whether this feature needs knowledge synchronization. For data model additions or changes, `.specify/sql/` synchronization is required unless the user explicitly defers it.
 
