@@ -18,7 +18,7 @@ If none is true, do not apply this skill automatically. Continue with normal Cod
 ## Overview
 
 Use this skill after `fons4ai-sdd-design` has produced `plan.md`.
-The output is an executable `tasks.md` for `fons4ai-sdd-implement`.
+The output is a reviewed `tasks.md` for `fons4ai-sdd-implement`. Planning artifacts are not implementation approval; after writing tasks, stop and wait for the user to confirm execution.
 
 ## Required Context
 
@@ -42,7 +42,11 @@ The output is an executable `tasks.md` for `fons4ai-sdd-implement`.
    - Include `AC:` with one or more AC IDs.
    - Include `Files:` with exact expected file paths or file groups.
    - Include `Verification:` with automated test or manual verification steps.
+   - Include `Quality:` with code readability, DDD-lite/domain-modeling check, tool reuse, duplicate-code, and dependency-gate expectations.
    - Include `Done:` with objective completion criteria.
+   - For business-rule or state-transition tasks, require a DDD-lite check: rule ownership, rich-model fit, acceptable anemic-model exception, and domain object independence from infrastructure.
+   - For utility-heavy tasks, require a reuse check for JDK, project utilities, and already-introduced third-party utilities before hand-writing helper logic.
+   - If a task needs a new dependency, require `plan.md` or user confirmation to name rationale, alternatives, and impact.
 5. For S2, add explicit tasks for applicable risk controls: migration, rollback, compatibility, permissions, regression, observability, and checklist closure.
 6. If `plan.md` declares data model additions or changes, add a mandatory DDL synchronization task for every impacted `.specify/sql/<database_or_service>/<business_model>.sql` file.
    - The task must name the exact SQL file.
@@ -53,6 +57,7 @@ The output is an executable `tasks.md` for `fons4ai-sdd-implement`.
    - Only mark it as deferred when `plan.md` records user-approved owner/reason.
 7. If `plan.md` declares non-DDL knowledge impact, add a documentation synchronization or follow-up task that names the impacted truth-source path.
 8. Run `scripts/validate_sdd_artifacts.py --feature-dir <feature-dir>` after writing tasks. This validates AC coverage, DDL mapping, Knowledge Impact, and S2 risk gates. Fix validation failures before reporting success.
+9. Stop after task planning. Do not invoke implementation. Tell the user they can reply `执行`, `开始实现`, or `继续执行` to execute all unfinished tasks, or `执行 T001,T002` to specify task IDs.
 
 ## Task Format
 
@@ -63,6 +68,7 @@ Use this shape for each task:
   - AC: AC-001, AC-002
   - Files: path/to/file.java; path/to/fileTest.java
   - Verification: run the focused test or manual check
+  - Quality: confirm readability, DDD-lite/domain-modeling check, method size, naming, duplicate-code check, utility reuse, and dependency gate
   - Done: objective completion rule
 ```
 
@@ -73,4 +79,5 @@ Use this shape for each task:
 - Create or update only `specs/features/<feature-slug>/tasks.md`.
 - Do not write business code.
 - Do not mark tasks complete.
-- End with total task count, SDD level, parallel groups, validation result, and suggested next skill.
+- End with total task count, SDD level, parallel groups, validation result, and implementation approval status `pending`.
+- Include this exact execution prompt: `确认执行后默认执行全部未完成任务；如需指定范围，请回复：执行 T001,T002。`

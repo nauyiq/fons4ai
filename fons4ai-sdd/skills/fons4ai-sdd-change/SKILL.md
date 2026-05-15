@@ -47,13 +47,14 @@ It must not write business code; implementation remains the responsibility of `f
    - Keep same-database cohesive business model tables together when useful, but split files for different databases, service-owned schemas, or physical data sources.
 5. Ask before modifying existing SDD artifacts. Preserve unaffected content and avoid full rewrites.
 6. Update affected docs in place and append a concise change log entry.
-7. Create `changes/CR-xxx.md` and add incremental tasks to `tasks.md` or a CR-specific task section.
+7. Create `changes/CR-xxx.md` and add incremental tasks to `tasks.md` or a CR-specific task section. Every incremental task must include `AC:`, `Files:`, `Verification:`, `Quality:`, and `Done:`; implementation tasks must include a DDD-lite/domain-modeling check in `Quality:`.
 8. When the change affects persistent data models, add mandatory DDL synchronization tasks for `.specify/sql/**/*.sql`; do not leave SQL knowledge updates as implicit follow-up.
 9. Run `../fons4ai-sdd-tasks/scripts/validate_sdd_artifacts.py --change-file <CR-file>` after writing the CR. Fix validation failures before reporting success.
+10. Stop after change planning. Do not invoke implementation. Tell the user they can reply `执行`, `开始实现`, or `继续执行` to execute all unfinished incremental tasks, or `执行 T001,T002` to specify task IDs.
 
 ## Output Rules
 
 - Do not rewrite the feature from scratch unless more than 70% of the feature is impacted; in that case recommend a new feature directory.
 - Do not write business code.
 - Do not delete existing AC, tasks, or docs without explicit user confirmation.
-- End with CR path, changed SDD artifacts, new or changed task IDs, SDD level, knowledge impact, and suggested implementation step.
+- End with CR path, changed SDD artifacts, new or changed task IDs, SDD level, knowledge impact, implementation approval status `pending`, and this exact execution prompt: `确认执行后默认执行全部未完成任务；如需指定范围，请回复：执行 T001,T002。`

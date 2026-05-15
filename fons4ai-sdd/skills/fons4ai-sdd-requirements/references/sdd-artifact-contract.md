@@ -5,6 +5,13 @@
 This contract defines the shared SDD artifact rules for all `fons4ai-sdd-*` skills.
 Feature artifacts use `specs/features/`. Bugfix artifacts use `specs/bugfixes/`. The default project truth sources are `.specify/memory/` and `.specify/sql/`, but projects may declare additional truth sources. Do not require branch hooks or GitHub issue conversion.
 
+## Artifact Responsibilities
+
+- `spec.md` is the requirement summary and acceptance document. It records background, requirement points, business rules, functional overview, workflow overview, impact overview, risk overview, AC, non-functional requirements, and candidate data/domain objects. It must not replace technical design.
+- `plan.md` is the detailed technical design. It records repository facts, architecture design, implementation approach, key rule code sketches, state transitions, data structure changes, API/contract details, error handling, transaction and consistency, migration/rollback, AC mapping, and verification strategy. It must not replace executable tasks.
+- `tasks.md` is the executable task breakdown. It converts `spec.md` and `plan.md` into task IDs with AC mapping, files, verification, quality checks, and done criteria.
+- Planning artifacts are not implementation approval; implementation still requires the approval gate below.
+
 ## Project Knowledge
 
 Use `.specify/memory/`, `.specify/sql/`, and `.specify/rules/` as default long-lived project fact sources when they exist. Also respect other project-declared truth sources such as `docs/`, API documents, product documents, custom rule directories, or external knowledge bases.
@@ -56,17 +63,38 @@ Only create optional folders when they are needed.
 ## Naming
 
 - `<feature-slug>` must be lowercase hyphen-case, short, and action-noun oriented.
+- Requirement IDs use `REQ-001`, `REQ-002`, ...
 - AC IDs use `AC-001`, `AC-002`, ...
 - Task IDs use `T001`, `T002`, ...
 - Change records use `CR-001`, `CR-002`, ...
 
 ## Traceability
 
+- Every `REQ-###` in `spec.md` must map to at least one `AC-###` through the requirement summary table or AC text.
 - Every AC in `spec.md` must be covered by at least one design decision in `plan.md`.
-- Every implementation task in `tasks.md` must include `AC:`, `Files:`, `Verification:`, and `Done:`.
+- `plan.md` should preserve REQ context in AC mapping when it materially affects implementation.
+- Every implementation task in `tasks.md` must include `AC:`, `Files:`, `Verification:`, `Quality:`, and `Done:`.
 - Every task should map to at least one AC ID. If a task is pure setup, use the nearest AC it enables and explain that relationship in `Done:`.
 - S2 tasks must include explicit regression and risk-control tasks.
 - S2 implementation reports must state whether checklist, rollback, compatibility, and risk-control tasks were closed or explicitly deferred.
+
+## Detailed Document Requirements
+
+- `spec.md` must include `## Requirement Summary`, `## Business Rules and Constraints`, `## Functional Overview`, and `## Impact Overview`.
+- `spec.md` should include workflow and risk sections. S1 may use `not applicable, reason`; S2 must provide meaningful workflow, risk, data/domain, compatibility, security, and migration hints when applicable.
+- `plan.md` must include `## Key Rule Code Sketches`, `## State Transition Design`, `## Data Structure Changes`, `## API and Contract Details`, `## Transaction and Consistency`, and `## Verification Strategy`.
+- Code sketches in `plan.md` are design snippets or pseudocode for key rules, validation, status checks, and data transformations. They must be based on repository facts and must not be treated as production code.
+- State transition and data structure sections may use `not applicable, reason` for S1 when genuinely absent. S2 high-risk sections must be filled with concrete facts or explicit deferrals.
+
+## Implementation Approval Gate
+
+- Planning artifacts are not implementation approval: `spec.md`, `plan.md`, `tasks.md`, and CR files define scope and tasks but do not authorize business-code implementation.
+- `tasks.md` and each CR with incremental tasks must contain `## Implementation Approval Gate`.
+- Requirements, design, task, and change skills must stop after writing planning artifacts and must not invoke implementation.
+- Implementation approval must come from the user's latest message.
+- If the latest user message confirms execution without task IDs, `fons4ai-sdd-implement` executes all unfinished tasks in dependency order.
+- If the latest user message names task IDs such as `执行 T001,T002`, only those unfinished tasks are selected.
+- Ambiguous messages such as `看看`, `下一步是什么`, or generated planning artifacts alone are not implementation approval.
 
 ## Editing Rules
 

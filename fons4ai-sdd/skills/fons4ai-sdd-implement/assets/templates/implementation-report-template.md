@@ -32,6 +32,22 @@
 | --- | --- |
 | AC-001 |  |
 
+## Code Quality Review
+
+- Readability checked: yes | no, reason
+- Method size and responsibility checked: yes | no, reason
+- Expressive naming checked: yes | no, reason
+- Domain Modeling Review: DDD-lite rich model used | anemic model accepted, reason | not applicable
+- Domain behavior placement: domain object | domain method | domain service | application service, reason
+- Application-layer orchestration checked: yes | no, reason
+- Infrastructure dependency boundary checked: yes | no, reason
+- Duplicate logic check: no duplication | duplication accepted, reason
+- Utility reuse: JDK | project utilities | existing third-party utility | hand-written, reason
+- Existing third-party utilities considered: none | Hutool | Apache Commons | Guava | other
+- New dependency added: no | yes, approved by <plan/user>
+- Exception/logging style checked: yes | no, reason
+- Test readability checked: yes | no, reason
+
 ## Issues and Follow-Up
 
 - Item:

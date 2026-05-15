@@ -64,6 +64,10 @@ Must cover:
 
 - language, framework, runtime, and annotation conventions;
 - package, class, method, field, constant, DTO/VO/BO/entity, enum, and test naming;
+- utility package priority: JDK standard library, project utilities/components, already-introduced third-party utility packages such as Hutool, Apache Commons, Guava, then new dependencies;
+- dependency addition gates for new utility libraries, including rationale, alternatives, impact, and confirmation requirements;
+- readability, method complexity, expressive naming, and duplicate-code control;
+- DDD-lite domain expression: rich domain behavior naming, state transition methods, invariant encapsulation, and acceptable anemic-model exceptions;
 - dependency injection, visibility, null handling, validation, and type boundaries;
 - comment policy for key logic, domain fields, non-obvious decisions, and public contracts;
 - exception handling, business error codes, logging levels, sensitive-data masking, and i18n if present;
@@ -73,11 +77,17 @@ Common mistakes to prevent:
 
 - generic style rules that contradict existing code;
 - forcing a formatter or library that the repo does not use;
+- requiring Hutool, Apache Commons, Guava, or any tool library when the project has not introduced or approved it;
+- hand-written string, collection, date/time, IO, bean conversion, null-check, or assertion logic when an existing project or approved third-party utility already covers it;
+- spreading core domain behavior through setters, controllers, mappers, or application services when a domain object or domain method should own it;
 - omitting exception, logging, and sensitive-data constraints.
 
 Acceptance checks:
 
 - every mandatory style rule has evidence or an explicit default label;
+- utility and dependency rules follow the existing-first strategy and do not force new dependencies;
+- readability, complexity, and duplicate-code checks are explicit;
+- DDD-lite expression rules are present without forcing full DDD architecture;
 - uncertain conventions appear under `待确认约定`;
 - examples use project-like names rather than generic placeholders when evidence exists.
 
@@ -92,11 +102,13 @@ Must cover:
 - package naming and layer boundaries;
 - controller/API, service/application, domain, persistence, adapter, config, constants, strategy, utility, and shared module placement;
 - dependency direction between modules and layers;
+- DDD-lite boundary mapping for domain, application, infrastructure, and adapter responsibilities based on the repository's existing structure;
 - where `.specify/rules/`, `specs/`, project-local skills, `.specify/memory/`, and `.specify/sql/` belong.
 
 Common mistakes to prevent:
 
 - inventing modules or layers that do not exist;
+- forcing a full DDD package hierarchy for a single feature instead of mapping DDD-lite responsibilities to existing structure;
 - allowing lower-level modules to depend on app-level modules;
 - mixing infrastructure adapters into domain or application logic without a boundary.
 
@@ -104,6 +116,7 @@ Acceptance checks:
 
 - major modules and directories are named when discoverable;
 - dependency direction is explicit;
+- DDD-lite boundary rules protect domain code from infrastructure concerns while allowing lightweight CRUD exceptions;
 - missing module decisions are labeled as `待确认约定`.
 
 ## `features-rule.md`
@@ -118,6 +131,7 @@ Must cover:
 - technical design before non-trivial implementation;
 - task breakdown aligned with TDD;
 - reuse of existing utilities, components, and local conventions;
+- DDD-lite implementation rules for business behavior ownership, rich model usage, anemic-model exceptions, application-layer orchestration, and domain-service conditions;
 - migration, compatibility, rollback, observability, and security considerations;
 - knowledge sync for `.specify/memory/`, `.specify/sql/`, `.specify/rules/`, `docs/`, or other truth sources.
 
@@ -125,12 +139,14 @@ Common mistakes to prevent:
 
 - heavyweight process for tiny safe edits;
 - direct implementation of ambiguous feature requests;
+- putting core business rules in controllers, mappers, adapters, or long application-service methods without a documented DDD-lite exception;
 - changing public behavior or data semantics without SDD change analysis.
 
 Acceptance checks:
 
 - feature workflow explains when to use S1 and S2;
 - implementation is gated by approved tasks;
+- core business behavior has a DDD-lite ownership decision or an explicit lightweight exception;
 - durable business, technical, data, or governance facts have a knowledge-sync path.
 
 ## `testing-rule.md`

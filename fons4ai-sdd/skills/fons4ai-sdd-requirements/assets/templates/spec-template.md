@@ -6,6 +6,12 @@
 > Created: YYYY-MM-DD
 > Source: user request, repository facts, and open questions
 
+## Revision History
+
+| Date | Version | Author/Source | Notes |
+| --- | --- | --- | --- |
+| YYYY-MM-DD | V1.0.0 | <user/repository/source> | Initial requirement summary |
+
 ## Background
 
 Describe the current state, problem, user value, and relevant repository facts.
@@ -19,6 +25,56 @@ Describe the current state, problem, user value, and relevant repository facts.
 - Other truth sources:
 - Knowledge sync needed: no | yes
 - SQL DDL impact: none | add/update `.specify/sql/<database_or_service>/<business_model>.sql`
+
+## Requirement Summary
+
+| Requirement ID | Requirement | Priority | Source | Related AC |
+| --- | --- | --- | --- | --- |
+| REQ-001 | <specific requirement point> | P0/P1/P2 | <user/fact/source> | AC-001 |
+
+## Business Rules and Constraints
+
+- Permission and security rules:
+- Calculation or accounting rules:
+- Compatibility and integration constraints:
+- Boundary and exception rules:
+- Policy or governance constraints:
+
+## Functional Overview
+
+### <Sub-function 1>
+
+- Behavior:
+- Input or trigger:
+- Output or observable result:
+- Failure or boundary behavior:
+
+### <Sub-function 2>
+
+- Behavior:
+- Input or trigger:
+- Output or observable result:
+- Failure or boundary behavior:
+
+## Workflow Overview
+
+- Main flow:
+- Alternative flow:
+- Failure flow:
+- Async or scheduled flow:
+- Diagram: not applicable, reason | Mermaid sequence/state diagram when facts are known
+
+## Impact Overview
+
+| Area | Change Type | Candidate Change | Impact | Evidence Status |
+| --- | --- | --- | --- | --- |
+| Module/API/Data/Config/External System | add/update/remove | <candidate impact> | <scope> | confirmed/inferred/pending |
+
+## Risk Overview
+
+| Risk | Level | Description | Mitigation |
+| --- | --- | --- | --- |
+| <risk> | high/medium/low | <description> | <mitigation> |
 
 ## Clarifications
 
@@ -51,7 +107,7 @@ Describe the current state, problem, user value, and relevant repository facts.
 
 ## Acceptance Criteria
 
-- AC-001: Given <context>, when <action>, then <observable result>.
+- AC-001: Given <context>, when <action>, then <observable result>. Related requirement: REQ-001.
 
 ## Non-Functional Requirements
 

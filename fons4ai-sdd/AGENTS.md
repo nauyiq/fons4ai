@@ -35,8 +35,8 @@
 
 ## 场景化工作流
 
-- 全新需求接入：先使用 `fons4ai-sdd-requirements` 澄清需求和 AC，再使用 `fons4ai-sdd-design` 完成技术方案，然后使用 `fons4ai-sdd-tasks` 拆解任务，最后由 `fons4ai-sdd-implement` 执行实现；完成后按需使用 `fons4ai-knowledge-summary` 汇总长期知识。
-- 已有功能迭代：若目标功能已有 `specs/features/<feature-slug>/` 产物，必须先使用 `fons4ai-sdd-change` 分析影响、生成 CR 和增量任务，再进入实现与知识汇总；不得直接重写既有 spec、plan 或 tasks。
+- 全新需求接入：先使用 `fons4ai-sdd-requirements` 澄清需求和 AC，再使用 `fons4ai-sdd-design` 完成技术方案，然后使用 `fons4ai-sdd-tasks` 拆解任务；任务生成后必须等待用户确认执行，再由 `fons4ai-sdd-implement` 实现；完成后按需使用 `fons4ai-knowledge-summary` 汇总长期知识。
+- 已有功能迭代：若目标功能已有 `specs/features/<feature-slug>/` 产物，必须先使用 `fons4ai-sdd-change` 分析影响、生成 CR 和增量任务；增量任务生成后必须等待用户确认执行，再进入实现与知识汇总；不得直接重写既有 spec、plan 或 tasks。
 - BUG 修复：实现不符合既有预期、报错、异常、回归失败或线上/测试环境问题，优先使用 `fons4ai-bugfix-workflow`，默认报告产物为 `specs/bugfixes/<bug-slug>/bugfix-report.md`；若修复会改变需求、验收标准、公共行为或数据语义，必须转入 `fons4ai-sdd-change`。
 - 项目知识初始化：新项目或缺少长期知识库时，优先使用 `fons4ai-project-knowledge-base-init` 创建或补齐知识库，再开展 SDD 或 bugfix。
 - 场景无法识别：当用户意图无法明确归入全新需求、已有功能迭代、BUG 修复、知识初始化或知识汇总时，必须先询问用户希望执行哪类工作流；同时可以基于已知信息给出推荐工作流和理由，不得强行套用某个流程。
@@ -47,9 +47,13 @@
 - 仅使用 `S1` 和 `S2` 两级：
   - `S1`：默认级别，适用于小改动、普通功能、单模块或少量模块协作；至少维护 `spec.md`、`plan.md`、`tasks.md`。
   - `S2`：复杂级别，适用于跨核心模块、数据库迁移、公共 API、权限安全、缓存/MQ、兼容性、事务边界或高风险改动；按需补充 checklist、契约、数据模型、迁移和回滚说明。
-- `spec.md` 必须包含可测试验收标准，验收标准使用 `AC-001`、`AC-002` 等编号。
-- `plan.md` 必须覆盖每条 AC，并记录关键设计决策、影响范围、风险和验证策略。
-- `tasks.md` 中每个任务必须包含 `AC:`、`Files:`、`Verification:`、`Done:`，并能被实现者直接执行。
+- `spec.md` 必须包含需求概要、关键业务规则、功能概览、影响面和可测试验收标准；需求点使用 `REQ-001`、`REQ-002` 等编号，验收标准使用 `AC-001`、`AC-002` 等编号，并建立 REQ 到 AC 的映射。
+- `plan.md` 必须覆盖每条 AC，并记录详细技术设计、关键规则代码片段或伪代码、状态流转、数据结构变更、API/契约、事务一致性、风险和验证策略。
+- `tasks.md` 中每个任务必须包含 `AC:`、`Files:`、`Verification:`、`Quality:`、`Done:`，并能被实现者在获得执行确认后直接执行。
+- 实现确认门禁：`fons4ai-sdd-requirements`、`fons4ai-sdd-design`、`fons4ai-sdd-tasks` 和 `fons4ai-sdd-change` 只能生成或更新 SDD 产物，不得写业务代码。
+- `tasks.md` 或 CR 增量任务生成后必须暂停，提示用户可回复 `执行`、`开始实现`、`继续执行` 来执行全部未完成任务，或回复 `执行 T001,T002` 来指定任务。
+- 用户确认执行但未指定任务 ID 时，`fons4ai-sdd-implement` 默认执行全部未完成任务；用户明确指定任务 ID 时，只执行指定任务。
+- 若用户仅表达不明确意图，例如 `看看`、`下一步是什么`、`继续看`，不得进入实现阶段，应继续说明待确认执行范围。
 - 已完成功能的增量调整应走变更流程，不应推倒重来。
 
 ## Fons4AI 技能路由
@@ -59,7 +63,7 @@
 - 需求澄清和 AC 生成：优先使用 `fons4ai-sdd-requirements`。
 - 技术方案和代码库调研：优先使用 `fons4ai-sdd-design`。
 - 任务拆解和 AC 映射：优先使用 `fons4ai-sdd-tasks`。
-- TDD 实现和实施报告：优先使用 `fons4ai-sdd-implement`。
+- 确认执行后的 TDD 实现和实施报告：优先使用 `fons4ai-sdd-implement`。
 - 已完成功能的增量变更：优先使用 `fons4ai-sdd-change`。
 - BUG 修复、异常排查和回归修复：优先使用 `fons4ai-bugfix-workflow`。
 - 项目知识库初始化：优先使用 `fons4ai-project-knowledge-base-init`。
@@ -90,7 +94,13 @@
 
 - 修改前必须读取相关源码、测试、配置、文档和规则文件；若存在 `.specify/rules/` 五件套，按变更类型读取对应规则。
 - 优先保持现有分层、命名、异常、日志、测试和依赖方向。
-- 不得引入新框架、新模块、新抽象，除非需求、代码事实或设计方案明确需要。
+- `.specify/rules/code-style-rule.md` 是代码质量、可读性、工具包复用和依赖新增门禁的默认规则来源。
+- 工具包使用优先级为：JDK 标准库能力 -> 项目已有工具类/基础组件 -> 项目已引入三方工具包，如 Hutool、Apache Commons、Guava 等 -> 新增依赖。
+- 不得为字符串、集合、日期时间、IO、Bean 转换、判空、断言等常见场景重复手写低质量工具逻辑；新增三方依赖前必须在设计方案或用户确认中说明原因、替代方案和影响范围。
+- 默认采用 DDD-lite：核心业务规则、状态流转、校验和不变量应优先下沉到领域对象或领域方法，避免把复杂业务规则堆在应用服务中。
+- 应用服务优先负责编排、事务、权限、外部协作和持久化协调；简单 CRUD、纯查询和薄包装逻辑不强行 DDD 化。
+- 领域对象不得反向依赖 controller、repository、mapper、MQ、RPC、HTTP 等基础设施细节；如当前项目没有完整 DDD 分层，不得为了单次改动强行新增完整 DDD 包结构。
+- 不得引入新框架、新模块、新抽象或新依赖，除非需求、代码事实或设计方案明确需要。
 - 新增关键逻辑、复杂分支、领域字段含义时，应添加简洁注释。
 - 不得提交密钥、令牌、个人信息、生产数据或敏感日志。
 - 不得使用破坏性命令清理工作区，除非用户明确要求并确认范围。

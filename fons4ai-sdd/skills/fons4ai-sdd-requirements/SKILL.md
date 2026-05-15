@@ -17,7 +17,7 @@ If none is true, do not apply this skill automatically. Continue with normal Cod
 
 ## Overview
 
-Use this skill to turn a feature idea into the first SDD artifact: `specs/features/<feature-slug>/spec.md`.
+Use this skill to turn a feature idea into the first SDD artifact: a detailed requirement summary in `specs/features/<feature-slug>/spec.md`.
 Feature artifacts are written under `specs/features/`; `.specify/memory/` and `.specify/sql/` are read as long-lived project context when present.
 
 ## Required Context
@@ -36,17 +36,26 @@ Feature artifacts are written under `specs/features/`; `.specify/memory/` and `.
    - Use `S2` for database migrations, public API changes, security/permission changes, cache/MQ/transaction boundaries, cross-core-module work, compatibility risk, or high rollback cost.
    - Record the level and reason in `spec.md`.
 3. Perform the structured clarification scan below before finalizing requirements.
-4. Write acceptance criteria before technical design:
+4. Build the requirement summary before writing AC:
+   - Use `REQ-001`, `REQ-002`, ... for requirement points and business capabilities.
+   - Record priority, source, and related AC for every requirement.
+   - Include business rules, functional overview, workflow overview, impact overview, and risk overview.
+   - Keep `spec.md` focused on requirements, behavior, business rules, workflows, impacts, and acceptance. Do not move detailed technical design into `spec.md`.
+5. Write acceptance criteria before technical design:
    - Use `AC-001`, `AC-002`, ... IDs.
    - Use Given-When-Then.
    - Cover normal flow, boundary cases, and failure cases.
    - Keep AC observable from user, API, or system behavior; avoid implementation details.
-5. Define scope clearly:
+   - Link each AC to one or more `REQ-###` IDs through the requirement summary table or AC text.
+6. Define scope clearly:
    - Include in-scope items.
    - Exclude out-of-scope items.
    - Record assumptions and unresolved questions.
-6. Record knowledge impact when the feature appears to add or change long-lived business, technical, data, or governance facts. If it may add or change persistent data models, record expected `.specify/sql/` impact explicitly. Do not update truth sources such as `.specify/memory/`, `.specify/sql/`, `.specify/rules/`, or `docs/` from this skill.
-7. For S2, create `checklists/requirements.md` only when it adds real governance value. Checklist items must test requirement quality, not implementation behavior.
+7. For S1, keep details concise but cover requirement summary, key business rules, functional overview, impact overview, and AC. Use `not applicable, reason` where workflow, risk, or data impact is genuinely absent.
+8. For S2, include workflow overview, risk overview, data/domain objects, non-functional requirements, compatibility, security, and migration hints in enough detail for design work.
+9. Generate Mermaid sequence or state diagrams only when repository/user facts support the participants and flow. Do not invent systems, tables, APIs, or actors to fill the template.
+10. Record knowledge impact when the feature appears to add or change long-lived business, technical, data, or governance facts. If it may add or change persistent data models, record expected `.specify/sql/` impact explicitly. Do not update truth sources such as `.specify/memory/`, `.specify/sql/`, `.specify/rules/`, or `docs/` from this skill.
+11. For S2, create `checklists/requirements.md` only when it adds real governance value. Checklist items must test requirement quality, not implementation behavior.
 
 ## Structured Clarification
 
@@ -54,6 +63,10 @@ Use this process to migrate the useful `speckit-clarify` behavior into the `spec
 
 1. Scan the draft or existing `spec.md` across these categories and mark each internally as Clear, Partial, Missing, Deferred, or Outstanding:
    - Functional scope and behavior: goals, success criteria, out-of-scope items, user roles.
+   - Requirement summary and traceability: REQ IDs, priorities, sources, and related AC.
+   - Business rules and constraints: permission, security, calculation, compatibility, integration, boundary rules.
+   - Functional overview and workflow: sub-functions, main flow, alternate flow, failure flow, async or scheduled flow.
+   - Impact and risk overview: candidate modules, APIs, data, config, external systems, risks, mitigations.
    - Domain and data model: entities, identity rules, lifecycle, persistent storage, DDL impact, volume assumptions.
    - Interaction and UX flow: critical journeys, empty/error/loading states, accessibility or localization.
    - Non-functional requirements: performance, reliability, observability, security, privacy, compliance.
