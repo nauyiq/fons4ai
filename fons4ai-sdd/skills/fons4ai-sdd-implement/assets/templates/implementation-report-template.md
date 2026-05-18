@@ -1,75 +1,75 @@
-# <Feature Name> Implementation Report
+# <功能名称> 实施报告
 
-> Feature: `<feature-slug>`
-> Task Range: `Txxx`
-> Completed: YYYY-MM-DD
+> 功能标识：`<feature-slug>`
+> 任务范围：`Txxx`
+> 完成日期：YYYY-MM-DD
 
-## Summary
+## 实施摘要
 
-- Completed tasks:
-- SDD level:
-- Result:
+- 已完成任务：
+- SDD 等级：
+- 实施结果：
 
-## Changed Files
+## 变更文件
 
-- path/to/file:
-- .specify/sql/<database_or_service>/<business_model>.sql:
+- path/to/file：
+- .specify/sql/<database_or_service>/<business_model>.sql：
 
-## TDD Record
+## TDD 记录
 
-| Task | RED | GREEN | REFACTOR |
+| 任务 | RED | GREEN | REFACTOR |
 | --- | --- | --- | --- |
 | T001 |  |  |  |
 
-## Verification
+## 验证结果
 
-- Command:
-- Result:
+- 命令：
+- 结果：
 
-## AC Coverage
+## AC 覆盖
 
-| AC | Evidence |
+| AC | 证据 |
 | --- | --- |
 | AC-001 |  |
 
-## Code Quality Review
+## 代码质量复盘
 
-- Readability checked: yes | no, reason
-- Method size and responsibility checked: yes | no, reason
-- Expressive naming checked: yes | no, reason
-- Domain Modeling Review: DDD-lite rich model used | anemic model accepted, reason | not applicable
-- Domain behavior placement: domain object | domain method | domain service | application service, reason
-- Application-layer orchestration checked: yes | no, reason
-- Infrastructure dependency boundary checked: yes | no, reason
-- Duplicate logic check: no duplication | duplication accepted, reason
-- Utility reuse: JDK | project utilities | existing third-party utility | hand-written, reason
-- Existing third-party utilities considered: none | Hutool | Apache Commons | Guava | other
-- New dependency added: no | yes, approved by <plan/user>
-- Exception/logging style checked: yes | no, reason
-- Test readability checked: yes | no, reason
+- 可读性检查：是 | 否，原因
+- 方法长度与职责检查：是 | 否，原因
+- 命名表达力检查：是 | 否，原因
+- 领域建模复盘：已使用 DDD-lite 充血模型 | 接受贫血模型，原因 | 不适用
+- 领域行为归属：领域对象 | 领域方法 | 领域服务 | 应用服务，原因
+- 应用层编排检查：是 | 否，原因
+- 基础设施依赖边界检查：是 | 否，原因
+- 重复逻辑检查：无重复 | 接受重复，原因
+- 工具复用：JDK | 项目工具 | 已引入三方工具 | 手写，原因
+- 已考虑三方工具：无 | Hutool | Apache Commons | Guava | 其他
+- 新增依赖：否 | 是，已由 <plan/user> 确认
+- 异常与日志风格检查：是 | 否，原因
+- 测试可读性检查：是 | 否，原因
 
-## Issues and Follow-Up
+## 问题与后续事项
 
-- Item:
+- 事项：
 
-## S2 Gate Closure
+## S2 门禁关闭情况
 
-Use this section when SDD Level is S2.
+仅 SDD 等级为 S2 时使用本节。
 
-- Checklist closed: n/a | yes | no, reason
-- Rollback plan verified: n/a | yes | no, reason
-- Compatibility risk closed: n/a | yes | no, reason
-- Security/permission risk closed: n/a | yes | no, reason
-- Other risk-control tasks closed: n/a | yes | no, reason
+- Checklist 关闭：不适用 | 是 | 否，原因
+- 回滚方案验证：不适用 | 是 | 否，原因
+- 兼容性风险关闭：不适用 | 是 | 否，原因
+- 安全/权限风险关闭：不适用 | 是 | 否，原因
+- 其他风险控制任务关闭：不适用 | 是 | 否，原因
 
-## Knowledge Sync Needed
+## 知识同步需求
 
-- Business architecture: no
-- Technical architecture: no
-- Data architecture: no
-- Other truth sources: no
-- SQL DDL files: no | updated | still needed
-- SQL DDL evidence:
-- DDL grouping evidence:
-- Reason:
-- Suggested follow-up: none | fons4ai-knowledge-summary
+- 业务架构：否
+- 技术架构：否
+- 数据架构：否
+- 其他真理源：否
+- SQL DDL 文件：否 | 已更新 | 仍需更新
+- SQL DDL 证据：
+- DDL 分组证据：
+- 原因：
+- 建议后续：无 | fons4ai-knowledge-summary

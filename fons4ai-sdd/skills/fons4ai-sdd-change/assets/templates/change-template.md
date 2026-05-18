@@ -1,78 +1,78 @@
-# CR-xxx <Change Title>
+# CR-xxx <变更标题>
 
-> Feature: `<feature-slug>`
-> SDD Level: `S1|S2`
-> Status: Draft
-> Created: YYYY-MM-DD
+> 功能标识：`<feature-slug>`
+> SDD 等级：`S1|S2`
+> 文档状态：初稿
+> 创建日期：YYYY-MM-DD
 
-## Change Intent
+## 变更意图
 
-Describe what changes and why.
+说明要变更什么，以及为什么需要变更。
 
-## Impact Analysis
+## 影响分析
 
-### Requirements
+### 需求影响
 
-- Added AC:
-- Changed AC:
-- Removed AC:
+- 新增 AC：
+- 变更 AC：
+- 删除 AC：
 
-### Design
+### 设计影响
 
-- API/UI/data/module impact:
+- API/UI/数据/模块影响：
 
-### Code
+### 代码影响
 
-- Existing files likely affected:
-- New files likely needed:
+- 可能受影响的既有文件：
+- 可能需要新增的文件：
 
-### Tests
+### 测试影响
 
-- Existing tests likely affected:
-- New tests required:
+- 可能受影响的既有测试：
+- 需要新增的测试：
 
-### Knowledge Impact
+### 知识同步影响
 
-- Business architecture:
-- Technical architecture:
-- Data architecture:
-- Other truth sources:
-- SQL DDL files:
-- DDL grouping: same database/service + cohesive business model; split by database/service
-- SQL DDL action: none | add | update | rename
-- Knowledge Sync Needed: no
+- 业务架构：
+- 技术架构：
+- 数据架构：
+- 其他真理源：
+- SQL DDL 文件：
+- DDL 分组：同一数据库/服务 + 强耦合业务模型可合并；不同数据库/服务必须拆分
+- SQL DDL 动作：无 | 新增 | 更新 | 重命名
+- 知识同步标记：Knowledge Sync Needed: no
 
-## Regression and Rollback
+## 回归与回滚
 
-- Regression risks:
-- Rollback plan:
+- 回归风险：
+- 回滚方案：
 
-## Implementation Approval Gate
+## 实现确认门禁
 
-- Status: pending user approval
-- Planning artifacts are not implementation approval.
-- After this CR is generated, stop and wait for user confirmation before business-code implementation.
-- If the user confirms execution without task IDs, execute all unfinished incremental tasks.
-- If the user specifies task IDs, for example `执行 T001,T002`, execute only those tasks.
+- 状态：等待用户确认
+- 规划产物不等于实现授权。
+- 生成本 CR 后必须暂停，等待用户确认后才能进入业务代码实现。
+- 用户确认执行且未指定任务 ID 时，默认执行全部未完成增量任务。
+- 用户指定任务 ID 时，例如 `执行 T001,T002`，只执行指定任务。
 
-## Documentation Updates
+## 文档更新
 
-- `spec.md`:
-- `plan.md`:
-- `tasks.md`:
+- `spec.md`：
+- `plan.md`：
+- `tasks.md`：
 
-## Incremental Tasks
+## 增量任务
 
-- [ ] Txxx Task title
+- [ ] Txxx 任务标题
   - AC: AC-xxx
   - Files:
   - Verification:
-  - Quality: confirm readability, DDD-lite/domain-modeling check, method size, naming, duplicate-code check, utility reuse, and dependency gate
+  - Quality: 确认可读性、DDD-lite/领域建模、方法长度、命名、重复代码、工具复用和依赖门禁
   - Done:
 
-- [ ] Txxx Sync DDL knowledge file
+- [ ] Txxx 同步 DDL 知识文件
   - AC: AC-xxx
   - Files: .specify/sql/<database_or_service>/<business_model>.sql; .specify/memory/data-architecture.md
-  - Verification: SQL file matches the changed same-database business model/table group and is indexed by data-architecture.md when present
-  - Quality: confirm generated SQL knowledge is readable, grouped correctly, and avoids duplicate undocumented schema facts
-  - Done: DDL knowledge update is completed or explicitly deferred with owner/reason
+  - Verification: SQL 文件与变更后的同库业务模型/表组一致，并在存在 data-architecture.md 时完成索引
+  - Quality: 确认 SQL 知识文件可读、分组正确，且没有重复写入未证实的结构事实
+  - Done: DDL 知识更新完成，或已明确暂缓原因和负责人

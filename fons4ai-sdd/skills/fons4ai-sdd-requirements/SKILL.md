@@ -89,11 +89,11 @@ After each accepted answer:
 1. Ensure `spec.md` has `## Clarifications`; create `### Session YYYY-MM-DD` for the current date if missing.
 2. Append one bullet: `- Q: <question> -> A: <final answer>`.
 3. Immediately update the most relevant section:
-   - Functional ambiguity -> Functional Requirements or Acceptance Criteria.
-   - Actor or UX distinction -> Users and Scenarios.
-   - Data shape -> Key Data or Domain Objects.
-   - Non-functional constraint -> Non-Functional Requirements.
-   - Failure or boundary behavior -> Acceptance Criteria or Scope.
+   - Functional ambiguity -> `功能需求` or `验收标准`.
+   - Actor or UX distinction -> `用户与场景`.
+   - Data shape -> `关键数据或领域对象`.
+   - Non-functional constraint -> `非功能需求`.
+   - Failure or boundary behavior -> `验收标准` or `范围`.
    - Terminology conflict -> normalize the term across the spec.
 4. Replace contradictory or obsolete text instead of duplicating it.
 5. Save `spec.md` after each answer to reduce context-loss risk.
@@ -107,6 +107,7 @@ After each accepted answer:
 ## Output Rules
 
 - Create or update only `specs/features/<feature-slug>/spec.md` and, for S2 when needed, `specs/features/<feature-slug>/checklists/requirements.md`.
+- Generated artifact headings and fixed prose must be Chinese-first. Keep file names, IDs, paths, and technical markers such as `REQ-001` and `AC-001` unchanged.
 - Do not generate `plan.md` or `tasks.md`; leave that to `fons4ai-sdd-design` and `fons4ai-sdd-tasks`.
 - Do not write business code.
 - End with the feature path, SDD level, number of accepted clarification questions, sections touched, knowledge impact, outstanding or deferred gaps, and suggested next skill.

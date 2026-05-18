@@ -1,189 +1,189 @@
-# <Feature Name> Technical Plan
+# <功能名称> 技术方案
 
-> Feature: `<feature-slug>`
-> SDD Level: `S1|S2`
-> Source Spec: `specs/features/<feature-slug>/spec.md`
-> Status: Draft
+> 功能标识：`<feature-slug>`
+> SDD 等级：`S1|S2`
+> 来源需求：`specs/features/<feature-slug>/spec.md`
+> 文档状态：初稿
 
-## Repository Facts
+## 仓库事实
 
-- Existing modules:
-- Existing patterns:
-- Reusable utilities/components:
-- Test conventions:
-- Representative files inspected:
+- 现有模块：
+- 现有模式：
+- 可复用工具或组件：
+- 测试约定：
+- 已调研的代表性文件：
 
-## Knowledge Facts
+## 知识库事实
 
-- Business architecture:
-- Technical architecture:
-- Data architecture:
-- SQL DDL files:
-- Constitution constraints:
-- Other truth sources:
-- Conflicts between truth-source and code facts:
+- 业务架构：
+- 技术架构：
+- 数据架构：
+- SQL DDL 文件：
+- 治理约束：
+- 其他真理源：
+- 真理源事实与代码事实冲突：
 
-## Design Summary
+## 设计摘要
 
-Describe the simplest implementation that satisfies the AC and REQ scope.
+描述满足 AC 与 REQ 范围的最简可行实现方案。
 
-## Architecture Design
+## 架构设计
 
-- Target modules/layers:
-- Dependency direction:
-- Domain/application/infrastructure boundary:
-- Reused extension points:
-- New or changed abstractions: none | <name, reason>
+- 目标模块或层级：
+- 依赖方向：
+- 领域层/应用层/基础设施边界：
+- 复用的扩展点：
+- 新增或调整的抽象：无 | <名称与原因>
 
-## Implementation Approach
+## 实现方案
 
-- Main implementation path:
-- Existing code or pattern to reuse:
-- New or changed files:
-- Backward compatibility approach:
-- Implementation notes that affect tasks:
+- 主实现路径：
+- 复用的既有代码或模式：
+- 新增或调整的文件：
+- 向后兼容策略：
+- 会影响任务拆解的实现说明：
 
-## Domain Modeling Decisions
+## 领域建模决策
 
-- DDD-lite applies: yes | no, reason
-- Core domain objects:
-- Business rules and invariants:
-- State transitions:
-- Value object candidates:
-- Domain service candidates:
-- Application-layer orchestration:
-- Anemic model exception: none | simple CRUD | read-only query | DTO/projection | compatibility | unstable domain abstraction, reason
-- Infrastructure dependency boundary:
+- 是否适用 DDD-lite：是 | 否，原因
+- 核心领域对象：
+- 业务规则与不变量：
+- 状态流转：
+- 值对象候选：
+- 领域服务候选：
+- 应用层编排：
+- 贫血模型例外：无 | 简单 CRUD | 只读查询 | DTO/投影 | 兼容原因 | 领域抽象尚不稳定，原因
+- 基础设施依赖边界：
 
-## Key Rule Code Sketches
+## 关键规则代码片段
 
-Use short pseudocode or code-like snippets to explain key rules. Do not write final implementation here.
+使用短伪代码或类代码片段说明关键规则。这里不是最终生产代码。
 
 ```text
-not applicable, reason
+不适用，原因
 ```
 
-- Rule source: REQ-001 | AC-001 | repository fact
-- Existing types/utilities to reuse:
-- Edge cases covered:
+- 规则来源：REQ-001 | AC-001 | 仓库事实
+- 计划复用的既有类型或工具：
+- 已覆盖的边界情况：
 
-## State Transition Design
+## 状态流转设计
 
-| State | Trigger/Event | Preconditions | Next State | Failure Handling | Idempotency |
+| 状态 | 触发事件 | 前置条件 | 目标状态 | 失败处理 | 幂等要求 |
 | --- | --- | --- | --- | --- | --- |
-| not applicable, reason |  |  |  |  |  |
+| 不适用，原因 |  |  |  |  |  |
 
-Diagram: not applicable, reason | Mermaid stateDiagram when facts are known
+图示：不适用，原因 | 有事实依据时使用 Mermaid stateDiagram
 
-## Data Flow
+## 数据流
 
-- Request/input:
-- Validation:
-- Domain behavior:
-- Persistence:
-- External interaction:
-- Response/output:
+- 请求或输入：
+- 校验：
+- 领域行为：
+- 持久化：
+- 外部协作：
+- 响应或输出：
 
-## Utility and Dependency Decisions
+## 工具包与依赖决策
 
-- Reusable project utilities/components:
-- Existing third-party utilities: none | Hutool | Apache Commons | Guava | other
-- Utility choice for string/collection/date-time/IO/bean/null-check/assertion work:
-- New dependency needed: no | yes, reason
-- Alternatives considered:
-- Confirmation for new dependency: n/a | user/design approved | deferred
-- Readability and complexity notes:
+- 可复用项目工具或组件：
+- 已引入三方工具：无 | Hutool | Apache Commons | Guava | 其他
+- 字符串/集合/日期时间/IO/Bean/判空/断言的工具选择：
+- 是否需要新增依赖：否 | 是，原因
+- 备选方案：
+- 新增依赖确认状态：不适用 | 用户或设计已确认 | 暂缓
+- 可读性与复杂度说明：
 
-## Affected Areas
+## 影响范围
 
-| Area | File/Module | Change Type | Reason |
+| 影响区域 | 文件或模块 | 改动类型 | 原因 |
 | --- | --- | --- | --- |
-|  |  | add/update/remove |  |
+|  |  | 新增/更新/删除 |  |
 
-## API and Contract Details
+## API 与契约细节
 
-- API/UI/contract change: none | <details>
-- Request shape:
-- Response shape:
-- Compatibility impact:
-- Contract files: none | `contracts/<name>.md`
+- API/UI/契约变化：无 | <详情>
+- 请求结构：
+- 响应结构：
+- 兼容性影响：
+- 契约文件：无 | `contracts/<name>.md`
 
-## Data Structure Changes
+## 数据结构变更
 
-| Object/Table/DTO | Field | Type | Change | Default/Constraint | Compatibility |
+| 对象/表/DTO | 字段 | 类型 | 变更 | 默认值/约束 | 兼容策略 |
 | --- | --- | --- | --- | --- | --- |
-| not applicable, reason |  |  |  |  |  |
+| 不适用，原因 |  |  |  |  |  |
 
-- Database/service:
-- Business model:
-- Migration needed: yes/no
-- DDL sync required: no | yes
-- DDL file action: none | add | update | rename
-- DDL file impact: none | `.specify/sql/<database_or_service>/<business_model>.sql`
-- DDL sync timing: same implementation task | separate task | deferred with owner/reason
+- 数据库/服务：
+- 业务模型：
+- 是否需要迁移：是/否
+- 是否需要 DDL 同步：否 | 是
+- DDL 文件动作：无 | 新增 | 更新 | 重命名
+- DDL 文件影响：无 | `.specify/sql/<database_or_service>/<business_model>.sql`
+- DDL 同步时机：同一实现任务 | 独立任务 | 暂缓，说明负责人和原因
 
-## Error and Exception Handling
+## 错误与异常处理
 
-- Business errors:
-- Validation errors:
-- External dependency failures:
-- Retry or compensation:
-- Logging and sensitive-data masking:
+- 业务错误：
+- 校验错误：
+- 外部依赖失败：
+- 重试或补偿：
+- 日志与敏感数据脱敏：
 
-## Transaction and Consistency
+## 事务与一致性
 
-- Transaction boundary:
-- Consistency model:
-- Concurrency or locking:
-- Idempotency:
-- Cache/MQ/scheduled-task consistency:
+- 事务边界：
+- 一致性模型：
+- 并发或锁：
+- 幂等：
+- 缓存/MQ/定时任务一致性：
 
-## Migration and Rollback Details
+## 迁移与回滚细节
 
-- Migration steps: not applicable, reason | <steps>
-- Rollback steps:
-- Compatibility window:
-- Data repair or backfill:
-- Operational notes:
+- 迁移步骤：不适用，原因 | <步骤>
+- 回滚步骤：
+- 兼容窗口：
+- 数据修复或回填：
+- 运维说明：
 
-## Key Decisions
+## 关键决策
 
-| Decision | Rationale | Alternatives |
+| 决策 | 理由 | 备选方案 |
 | --- | --- | --- |
 |  |  |  |
 
-## AC Mapping
+## AC 映射
 
-| AC | Requirement | Design Coverage |
+| AC | 关联需求 | 设计覆盖 |
 | --- | --- | --- |
 | AC-001 | REQ-001 |  |
 
-## Risk and Rollback
+## 风险与回滚
 
-- Risk:
-- Mitigation:
-- Rollback:
+- 风险：
+- 缓解措施：
+- 回滚：
 
-## Verification Strategy
+## 验证策略
 
-- Unit tests:
-- Integration tests:
-- Contract/API tests:
-- Persistence or migration checks:
-- Manual checks:
+- 单元测试：
+- 集成测试：
+- 契约/API 测试：
+- 持久化或迁移检查：
+- 手动检查：
 
-## Knowledge Impact
+## 知识同步影响
 
-- Business architecture update needed: no
-- Technical architecture update needed: no
-- Data architecture update needed: no
-- Other truth sources update needed: no
-- SQL DDL update needed: no
-- SQL DDL files:
-- DDL grouping rule: same database/service + cohesive business model only; split files for different databases/services
-- Knowledge Sync Needed: no
-- Notes:
+- 是否需要更新业务架构：否
+- 是否需要更新技术架构：否
+- 是否需要更新数据架构：否
+- 是否需要更新其他真理源：否
+- 是否需要更新 SQL DDL：否
+- SQL DDL 文件：
+- DDL 分组规则：仅同一数据库/服务且业务模型强耦合时合并；不同数据库/服务必须拆分
+- 知识同步标记：Knowledge Sync Needed: no
+- 说明：
 
-## Open Questions
+## 待确认问题
 
-- Question:
+- 问题：

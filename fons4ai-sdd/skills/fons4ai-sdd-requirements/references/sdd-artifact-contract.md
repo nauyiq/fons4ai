@@ -80,16 +80,17 @@ Only create optional folders when they are needed.
 
 ## Detailed Document Requirements
 
-- `spec.md` must include `## Requirement Summary`, `## Business Rules and Constraints`, `## Functional Overview`, and `## Impact Overview`.
-- `spec.md` should include workflow and risk sections. S1 may use `not applicable, reason`; S2 must provide meaningful workflow, risk, data/domain, compatibility, security, and migration hints when applicable.
-- `plan.md` must include `## Key Rule Code Sketches`, `## State Transition Design`, `## Data Structure Changes`, `## API and Contract Details`, `## Transaction and Consistency`, and `## Verification Strategy`.
+- Generated artifact headings and fixed prose should be Chinese-first. Keep file names, IDs, paths, and machine-readable task labels such as `AC:`, `Files:`, `Verification:`, `Quality:`, and `Done:` in English when compatibility requires it.
+- `spec.md` must include `## 需求概要`, `## 关键业务规则与约束`, `## 功能概览`, and `## 影响面概览`. Legacy English headings are accepted only for existing artifacts.
+- `spec.md` should include workflow and risk sections. S1 may use `不适用，原因`; S2 must provide meaningful workflow, risk, data/domain, compatibility, security, and migration hints when applicable.
+- `plan.md` must include `## 关键规则代码片段`, `## 状态流转设计`, `## 数据结构变更`, `## API 与契约细节`, `## 事务与一致性`, and `## 验证策略`. Legacy English headings are accepted only for existing artifacts.
 - Code sketches in `plan.md` are design snippets or pseudocode for key rules, validation, status checks, and data transformations. They must be based on repository facts and must not be treated as production code.
-- State transition and data structure sections may use `not applicable, reason` for S1 when genuinely absent. S2 high-risk sections must be filled with concrete facts or explicit deferrals.
+- State transition and data structure sections may use `不适用，原因` for S1 when genuinely absent. S2 high-risk sections must be filled with concrete facts or explicit deferrals.
 
 ## Implementation Approval Gate
 
 - Planning artifacts are not implementation approval: `spec.md`, `plan.md`, `tasks.md`, and CR files define scope and tasks but do not authorize business-code implementation.
-- `tasks.md` and each CR with incremental tasks must contain `## Implementation Approval Gate`.
+- `tasks.md` and each CR with incremental tasks must contain `## 实现确认门禁`. Legacy `## Implementation Approval Gate` is accepted only for existing artifacts.
 - Requirements, design, task, and change skills must stop after writing planning artifacts and must not invoke implementation.
 - Implementation approval must come from the user's latest message.
 - If the latest user message confirms execution without task IDs, `fons4ai-sdd-implement` executes all unfinished tasks in dependency order.

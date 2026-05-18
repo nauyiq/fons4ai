@@ -1,136 +1,136 @@
-# <Feature Name> Requirements
+# <功能名称> 需求概要
 
-> Feature: `<feature-slug>`
-> SDD Level: `S1|S2`
-> Status: Draft
-> Created: YYYY-MM-DD
-> Source: user request, repository facts, and open questions
+> 功能标识：`<feature-slug>`
+> SDD 等级：`S1|S2`
+> 文档状态：初稿
+> 创建日期：YYYY-MM-DD
+> 信息来源：用户需求、仓库事实、已确认问题和待确认问题
 
-## Revision History
+## 版本修订记录
 
-| Date | Version | Author/Source | Notes |
+| 日期 | 版本 | 作者/来源 | 说明 |
 | --- | --- | --- | --- |
-| YYYY-MM-DD | V1.0.0 | <user/repository/source> | Initial requirement summary |
+| YYYY-MM-DD | V1.0.0 | <用户/仓库事实/其他来源> | 初始化需求概要 |
 
-## Background
+## 背景与问题
 
-Describe the current state, problem, user value, and relevant repository facts.
+描述当前状态、问题背景、用户价值和相关仓库事实。
 
-## Knowledge Context
+## 知识上下文
 
-- Business architecture facts:
-- Technical architecture facts:
-- Data architecture facts:
-- SQL DDL facts:
-- Other truth sources:
-- Knowledge sync needed: no | yes
-- SQL DDL impact: none | add/update `.specify/sql/<database_or_service>/<business_model>.sql`
+- 业务架构事实：
+- 技术架构事实：
+- 数据架构事实：
+- SQL DDL 事实：
+- 其他真理源：
+- 是否需要知识同步：否 | 是
+- SQL DDL 影响：无 | 新增/更新 `.specify/sql/<database_or_service>/<business_model>.sql`
 
-## Requirement Summary
+## 需求概要
 
-| Requirement ID | Requirement | Priority | Source | Related AC |
+| 需求编号 | 需求描述 | 优先级 | 来源 | 关联 AC |
 | --- | --- | --- | --- | --- |
-| REQ-001 | <specific requirement point> | P0/P1/P2 | <user/fact/source> | AC-001 |
+| REQ-001 | <具体需求点> | P0/P1/P2 | <用户/事实/来源> | AC-001 |
 
-## Business Rules and Constraints
+## 关键业务规则与约束
 
-- Permission and security rules:
-- Calculation or accounting rules:
-- Compatibility and integration constraints:
-- Boundary and exception rules:
-- Policy or governance constraints:
+- 权限与安全规则：
+- 计算或核算规则：
+- 兼容与对接约束：
+- 边界与异常规则：
+- 策略或治理约束：
 
-## Functional Overview
+## 功能概览
 
-### <Sub-function 1>
+### <子功能 1>
 
-- Behavior:
-- Input or trigger:
-- Output or observable result:
-- Failure or boundary behavior:
+- 行为说明：
+- 输入或触发：
+- 输出或可观察结果：
+- 失败或边界行为：
 
-### <Sub-function 2>
+### <子功能 2>
 
-- Behavior:
-- Input or trigger:
-- Output or observable result:
-- Failure or boundary behavior:
+- 行为说明：
+- 输入或触发：
+- 输出或可观察结果：
+- 失败或边界行为：
 
-## Workflow Overview
+## 流程概览
 
-- Main flow:
-- Alternative flow:
-- Failure flow:
-- Async or scheduled flow:
-- Diagram: not applicable, reason | Mermaid sequence/state diagram when facts are known
+- 主流程：
+- 可选流程：
+- 失败流程：
+- 异步或定时流程：
+- 图示：不适用，原因 | 有事实依据时使用 Mermaid sequence/state 图
 
-## Impact Overview
+## 影响面概览
 
-| Area | Change Type | Candidate Change | Impact | Evidence Status |
+| 影响区域 | 改动类型 | 候选改动 | 影响范围 | 证据状态 |
 | --- | --- | --- | --- | --- |
-| Module/API/Data/Config/External System | add/update/remove | <candidate impact> | <scope> | confirmed/inferred/pending |
+| 模块/API/数据/配置/外部系统 | 新增/更新/删除 | <候选影响> | <范围> | 已确认/推断/待确认 |
 
-## Risk Overview
+## 风险概览
 
-| Risk | Level | Description | Mitigation |
+| 风险 | 等级 | 说明 | 缓解措施 |
 | --- | --- | --- | --- |
-| <risk> | high/medium/low | <description> | <mitigation> |
+| <风险> | 高/中/低 | <说明> | <缓解措施> |
 
-## Clarifications
+## 澄清记录
 
-### Session YYYY-MM-DD
+### 会话 YYYY-MM-DD
 
-- Q: <question> -> A: <answer>
+- Q: <问题> -> A: <答案>
 
-## Goals
+## 目标
 
-- Goal 1.
+- 目标 1。
 
-## Scope
+## 范围
 
-### In Scope
+### 范围内
 
-- Item 1.
+- 事项 1。
 
-### Out of Scope
+### 范围外
 
-- Item 1.
+- 事项 1。
 
-## Users and Scenarios
+## 用户与场景
 
-- User or actor:
-- Scenario:
+- 用户或参与方：
+- 场景：
 
-## Functional Requirements
+## 功能需求
 
-- FR-001:
+- FR-001：
 
-## Acceptance Criteria
+## 验收标准
 
-- AC-001: Given <context>, when <action>, then <observable result>. Related requirement: REQ-001.
+- AC-001：Given <上下文>, when <动作>, then <可观察结果>。关联需求：REQ-001。
 
-## Non-Functional Requirements
+## 非功能需求
 
-- Performance:
-- Security:
-- Compatibility:
+- 性能：
+- 安全：
+- 兼容性：
 
-## Key Data or Domain Objects
+## 关键数据或领域对象
 
-- Object:
-  - Database/service: none | <database_or_service>
-  - Business model: none | <business_model>
-  - Persistent tables/models: none | <table_names_or_model_names>
-  - DDL sync expected: no | yes, `.specify/sql/<database_or_service>/<business_model>.sql`
+- 对象：
+  - 数据库/服务：无 | <database_or_service>
+  - 业务模型：无 | <business_model>
+  - 持久化表/模型：无 | <table_names_or_model_names>
+  - 是否需要 DDL 同步：否 | 是，`.specify/sql/<database_or_service>/<business_model>.sql`
 
-## Assumptions
+## 假设
 
-- Assumption 1.
+- 假设 1。
 
-## Open Questions
+## 待确认问题
 
-- Question 1.
+- 问题 1。
 
-## SDD Level Reason
+## SDD 等级理由
 
-Explain why this feature is S1 or S2.
+说明该功能为什么是 S1 或 S2。

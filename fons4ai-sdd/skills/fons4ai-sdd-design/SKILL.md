@@ -68,6 +68,7 @@ The output is a detailed technical design in `specs/features/<feature-slug>/plan
 ## Output Rules
 
 - Create or update `specs/features/<feature-slug>/plan.md`.
+- Generated artifact headings and fixed prose must be Chinese-first. Keep file names, IDs, paths, code identifiers, and technical terms such as `API`, `DDL`, `REQ-001`, and `AC-001` unchanged when needed.
 - Create extra S2 artifacts only when they prevent concrete implementation mistakes.
 - Do not generate `tasks.md`; leave task breakdown to `fons4ai-sdd-tasks`.
 - Do not write business code.

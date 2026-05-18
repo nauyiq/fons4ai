@@ -66,6 +66,7 @@ All features use the S1 or S2 path.
 ## Output Rules
 
 - Follow the task plan; do not implement unplanned scope.
+- Generated implementation reports must use Chinese-first headings and fixed prose. Keep file names, IDs, paths, and technical markers such as `T001`, `AC-001`, `RED`, `GREEN`, and `REFACTOR` unchanged.
 - Never treat `spec.md`, `plan.md`, `tasks.md`, or a previous planning response as implementation approval. Approval must come from the latest user message.
 - If the plan is wrong or incomplete, stop and recommend returning to `fons4ai-sdd-tasks` or `fons4ai-sdd-change`.
 - Treat `.specify/sql/**/*.sql` as required knowledge artifacts for planned persistent data model additions or changes, not as optional follow-up.

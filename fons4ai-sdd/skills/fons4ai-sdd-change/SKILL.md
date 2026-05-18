@@ -55,6 +55,7 @@ It must not write business code; implementation remains the responsibility of `f
 ## Output Rules
 
 - Do not rewrite the feature from scratch unless more than 70% of the feature is impacted; in that case recommend a new feature directory.
+- Generated CR headings and fixed prose must be Chinese-first. Keep file names, IDs, paths, and machine-readable task labels `AC:`, `Files:`, `Verification:`, `Quality:`, and `Done:` unchanged.
 - Do not write business code.
 - Do not delete existing AC, tasks, or docs without explicit user confirmation.
 - End with CR path, changed SDD artifacts, new or changed task IDs, SDD level, knowledge impact, implementation approval status `pending`, and this exact execution prompt: `确认执行后默认执行全部未完成任务；如需指定范围，请回复：执行 T001,T002。`
