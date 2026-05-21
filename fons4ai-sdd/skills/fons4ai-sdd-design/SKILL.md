@@ -22,11 +22,13 @@ The output is a detailed technical design in `specs/features/<feature-slug>/plan
 
 ## Required Context
 
-1. Load `../fons4ai-sdd-requirements/references/sdd-artifact-contract.md`.
+1. Load `../fons4ai-sdd-requirements/references/sdd-artifact-contract.md`, including its context-loading rules.
 2. Read `specs/features/<feature-slug>/spec.md` completely.
-3. Read project guidance: `AGENTS.md`, relevant project rules under `.specify/rules/` (`code-style-rule.md`, `project-structure-rule.md`, `features-rule.md`, `testing-rule.md`, `data-ddl-rule.md`), `.specify/memory/technical-architecture.md`, `.specify/memory/data-architecture.md`, `.specify/sql/`, `.specify/memory/constitution.md` if present, existing architecture notes under `specs/`, build files, and representative source/test files for affected modules.
-4. Use `assets/templates/plan-template.md`.
-5. If `plan.md` already exists, read it and ask before replacing or materially rewriting it.
+3. Search first by feature terms, AC/REQ IDs, modules, domain objects, APIs, tables, and error/risk terms. Do not bulk-read all project rules, memory, SQL, specs, or docs by default.
+   - Optionally run `../fons4ai-sdd-requirements/scripts/find_relevant_context.py --root <repo-root> <keyword...>` to get candidate truth-source files before reading.
+4. Read `AGENTS.md`, relevant project rules, matching truth-source sections, targeted SQL files, build files, and representative source/test files for affected modules.
+5. Use `assets/templates/plan-template.md`.
+6. If `plan.md` already exists, read it and ask before replacing or materially rewriting it.
 
 ## Workflow
 
@@ -34,7 +36,7 @@ The output is a detailed technical design in `specs/features/<feature-slug>/plan
 2. Build a fact base from the repository:
    - Existing modules, layers, package conventions, reusable utilities, components, test style, domain objects, application services, and integration boundaries.
    - Current APIs, data objects, domain rules, state transitions, configs, caches, queues, transactions, permissions, dependencies, utility packages, and extension points relevant to the feature.
-   - Long-lived architecture and data facts from `.specify/memory/` and `.specify/sql/` when available.
+   - Relevant long-lived architecture and data facts from `.specify/memory/` and targeted `.specify/sql/` files when available.
    - Any conflict between truth-source and code facts; mark likely stale knowledge explicitly instead of silently overriding it.
 3. Design the simplest implementation that satisfies all AC.
    - Prefer existing helpers and patterns.
@@ -47,12 +49,14 @@ The output is a detailed technical design in `specs/features/<feature-slug>/plan
    - Avoid introducing new frameworks, modules, abstractions, or dependencies unless the repository facts justify them.
    - If a new dependency is needed, record rationale, alternatives, impact, and user/design confirmation before implementation.
 4. Write a detailed technical design, not just a lightweight plan:
-   - Describe architecture design, implementation approach, data flow, affected areas, API/contract details, error handling, transaction and consistency, migration and rollback, and verification strategy.
+   - Describe architecture design, implementation approach, key business-rule and strategy landing, data flow, affected areas, API/contract details, error handling, transaction and consistency, migration and rollback, and verification strategy.
+   - For core business rules, policies, scoring, routing, approval, permission, pricing, status transition, or matching logic, record the technical landing: module, domain/application object, strategy component, data dependency, transaction boundary, extension point, and verification approach.
+   - Include Mermaid `sequenceDiagram`, `flowchart`, or `stateDiagram-v2` for important business-rule execution, strategy decisions, or core business flows when facts support it. If facts are partial, write `不适用，原因` or mark uncertain nodes as `待确认`; do not invent actors or systems.
    - Include key rule code sketches for important business rules, validation, status checks, or data transformations. These sketches must be short pseudocode or code-like snippets based on repository facts, existing types, existing utilities, approved dependencies, and DDD-lite domain methods.
    - Do not write final production code in `plan.md`; code sketches explain intent and edge cases for later implementation.
    - Record state transition design with source state, trigger, preconditions, next state, failure handling, and idempotency. Use a table by default; use Mermaid `stateDiagram` only when facts support it.
    - Record data structure changes with fields, types, defaults, indexes, constraints, compatibility, DDL path, migration, and rollback expectations when applicable.
-5. For S1, keep the design practical but not empty. If there is no state transition, data structure change, API change, migration, or rule snippet, write `not applicable, reason` in that section.
+5. For S1, use the minimal complete profile: keep all required sections, cover every AC, and keep the design practical but not empty. If there is no state transition, data structure change, API change, migration, rollback, diagram, or rule snippet, write `不适用，原因` in that section instead of fabricating content.
 6. For S2, include the additional governance sections that apply:
    - Compatibility and migration impact.
    - Rollback plan.
@@ -61,6 +65,8 @@ The output is a detailed technical design in `specs/features/<feature-slug>/plan
    - Public contract changes under `contracts/` when needed.
    - Data model notes under `data-model.md` when database or persistent schema changes are involved.
    - A concrete DDL sync plan naming every impacted `.specify/sql/<database_or_service>/<business_model>.sql` file for persistent data model additions or changes.
+   - Migration scripts are not required before naming a DDL knowledge file. If no migration script exists, derive the SQL knowledge plan from entities, ORM metadata, mapper SQL, repository code, database configuration, existing SQL, or user facts.
+   - If database/service ownership is unknown, use `.specify/sql/pending/<business_model>.sql` and mark unresolved schema facts as `推断` or `待确认`.
    - DDL files are grouped by database/service plus cohesive business model. Same-database strongly related tables may share one file; cross-database or cross-service tables must use separate files.
 7. Map every AC and relevant REQ to one or more design decisions.
 8. Record whether this feature needs knowledge synchronization. For data model additions or changes, `.specify/sql/` synchronization is required unless the user explicitly defers it.

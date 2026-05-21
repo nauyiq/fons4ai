@@ -22,11 +22,13 @@ Feature artifacts are written under `specs/features/`; `.specify/memory/` and `.
 
 ## Required Context
 
-1. Read project guidance before drafting: `AGENTS.md`, project rules under `.specify/rules/` when present (`code-style-rule.md`, `project-structure-rule.md`, `features-rule.md`, `testing-rule.md`, `data-ddl-rule.md`), `.specify/memory/` and `.specify/sql/` if present, existing `specs/`, and relevant source files when the feature touches existing behavior.
-2. Load the SDD contract from `references/sdd-artifact-contract.md`.
-3. Use `assets/templates/spec-template.md` as the output structure.
-4. If a target feature directory or `spec.md` already exists, read it first and ask the user before replacing or materially rewriting it.
-5. Prefer facts from `.specify/memory/business-architecture.md` for business domains, roles, processes, business objects, and durable business rules. Prefer `.specify/memory/data-architecture.md` and `.specify/sql/**/*.sql` for confirmed data model and DDL facts. If absent, continue from repository and user facts.
+1. Read `AGENTS.md` and load the SDD contract from `references/sdd-artifact-contract.md`, including its context-loading rules.
+2. Locate context before drafting by searching feature names, business terms, module names, table/model names, API names, and related `REQ-###`/`AC-###` IDs. Do not bulk-read all of `.specify/memory/`, `.specify/sql/`, `.specify/rules/`, or `specs/` by default.
+   - Optionally run `scripts/find_relevant_context.py --root <repo-root> <keyword...>` to get candidate truth-source files before reading.
+3. Read only relevant project rules, matching truth-source sections, related SQL files, existing SDD artifacts, and source files when the feature touches existing behavior.
+4. Use `assets/templates/spec-template.md` as the output structure.
+5. If a target feature directory or `spec.md` already exists, read it first and ask the user before replacing or materially rewriting it.
+6. Prefer facts from `.specify/memory/business-architecture.md` for business domains, roles, processes, business objects, and durable business rules. Prefer `.specify/memory/data-architecture.md` and targeted `.specify/sql/**/*.sql` files for confirmed data model and DDL facts. If absent, continue from repository and user facts.
 
 ## Workflow
 
@@ -51,7 +53,7 @@ Feature artifacts are written under `specs/features/`; `.specify/memory/` and `.
    - Include in-scope items.
    - Exclude out-of-scope items.
    - Record assumptions and unresolved questions.
-7. For S1, keep details concise but cover requirement summary, key business rules, functional overview, impact overview, and AC. Use `not applicable, reason` where workflow, risk, or data impact is genuinely absent.
+7. For S1, use the minimal complete profile: keep details concise but cover requirement summary, key business rules, functional overview, impact overview, REQ/AC mapping, and AC. Use `不适用，原因` where workflow, risk, diagram, or data impact is genuinely absent.
 8. For S2, include workflow overview, risk overview, data/domain objects, non-functional requirements, compatibility, security, and migration hints in enough detail for design work.
 9. Generate Mermaid sequence or state diagrams only when repository/user facts support the participants and flow. Do not invent systems, tables, APIs, or actors to fill the template.
 10. Record knowledge impact when the feature appears to add or change long-lived business, technical, data, or governance facts. If it may add or change persistent data models, record expected `.specify/sql/` impact explicitly. Do not update truth sources such as `.specify/memory/`, `.specify/sql/`, `.specify/rules/`, or `docs/` from this skill.

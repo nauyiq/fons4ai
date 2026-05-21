@@ -40,7 +40,7 @@ Required evidence sources to inspect when present:
 - `.specify/memory/business-architecture.md`, `technical-architecture.md`, `data-architecture.md`, and `constitution.md`;
 - `.specify/sql/**/*.sql`;
 - test framework, test naming, fixtures, mocks, and regression checks;
-- migration scripts, ORM models, mapper XML, entity classes, repositories, and transaction boundaries.
+- migration scripts, ORM models, mapper XML, entity classes, repositories, query SQL, database configuration, and transaction boundaries. Migration scripts are strong evidence but not a prerequisite for DDL knowledge generation.
 
 ## Shared Document Structure
 
@@ -127,7 +127,7 @@ Must cover:
 
 - requirement clarification before design or coding;
 - S1/S2 SDD usage, artifact paths, and confirmation gates;
-- fact-first repository investigation;
+- fact-first repository investigation with progressive context loading: file inventory, keyword search, targeted truth-source sections, and scoped source/test reads;
 - technical design before non-trivial implementation;
 - task breakdown aligned with TDD;
 - reuse of existing utilities, components, and local conventions;
@@ -138,6 +138,7 @@ Must cover:
 Common mistakes to prevent:
 
 - heavyweight process for tiny safe edits;
+- full-loading every `.specify/memory/`, `.specify/sql/`, `.specify/rules/`, `specs/`, or `docs/` file when targeted search would be enough;
 - direct implementation of ambiguous feature requests;
 - putting core business rules in controllers, mappers, adapters, or long application-service methods without a documented DDD-lite exception;
 - changing public behavior or data semantics without SDD change analysis.
@@ -145,6 +146,7 @@ Common mistakes to prevent:
 Acceptance checks:
 
 - feature workflow explains when to use S1 and S2;
+- context sources are targeted and listed, with skipped truth sources explained when relevant;
 - implementation is gated by approved tasks;
 - core business behavior has a DDD-lite ownership decision or an explicit lightweight exception;
 - durable business, technical, data, or governance facts have a knowledge-sync path.
@@ -183,7 +185,9 @@ Must cover:
 - persistent model ownership, entity/table naming, field naming, indexes, constraints, lifecycle, and audit fields when discoverable;
 - transaction boundaries, consistency, idempotency, concurrency, and rollback expectations;
 - migration script location and review expectations when the repo has migrations;
+- mandatory SQL knowledge generation from entities, ORM metadata, mapper SQL, repositories, query SQL, database configuration, existing SQL, or user facts when migration scripts are absent;
 - `.specify/sql/<database_or_service>/<business_model>.sql` DDL knowledge files;
+- `.specify/sql/pending/<business_model>.sql` fallback when database/service ownership is unknown;
 - same database/service plus cohesive business-model grouping;
 - mandatory split when tables belong to different databases, service-owned schemas, or physical data sources.
 
@@ -191,6 +195,8 @@ Common mistakes to prevent:
 
 - one table per file when strongly coupled tables belong to the same database and business model;
 - merging DDL across databases or service-owned schemas;
+- skipping SQL knowledge files because no migration script exists;
+- presenting inferred columns, indexes, or constraints as confirmed facts;
 - treating `.specify/sql/**/*.sql` as executable migrations;
 - changing schema without updating SDD tasks and data architecture knowledge.
 
@@ -198,4 +204,5 @@ Acceptance checks:
 
 - DDL grouping rule is explicit;
 - every schema-changing feature has a DDL sync task or approved deferral;
+- missing migration scripts still result in SQL knowledge files with `推断` or `待确认` evidence status;
 - data architecture indexes generated SQL files when present.

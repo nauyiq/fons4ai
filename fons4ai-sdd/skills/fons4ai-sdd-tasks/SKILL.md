@@ -22,10 +22,11 @@ The output is a reviewed `tasks.md` for `fons4ai-sdd-implement`. Planning artifa
 
 ## Required Context
 
-1. Load `../fons4ai-sdd-requirements/references/sdd-artifact-contract.md`.
+1. Load `../fons4ai-sdd-requirements/references/sdd-artifact-contract.md`, including its context-loading rules.
 2. Read `spec.md`, `plan.md`, and any S2 artifacts in the feature directory.
-3. Read relevant project rules under `.specify/rules/` when present: `code-style-rule.md`, `project-structure-rule.md`, `features-rule.md`, `testing-rule.md`, and `data-ddl-rule.md`.
-4. Read `.specify/memory/` and `.specify/sql/` when present to respect long-lived module, data, DDL, and governance boundaries.
+3. Search by AC IDs, task scope, modules, files, domain objects, tables, and business model paths before loading truth sources.
+   - Optionally run `../fons4ai-sdd-requirements/scripts/find_relevant_context.py --root <repo-root> <keyword...>` to get candidate truth-source files before reading.
+4. Read only relevant project rules, matching memory sections, and targeted SQL files needed to respect module, data, DDL, and governance boundaries.
 5. Use `assets/templates/tasks-template.md`.
 6. If `tasks.md` already exists, read it and ask before replacing or materially rewriting it.
 
@@ -38,6 +39,7 @@ The output is a reviewed `tasks.md` for `fons4ai-sdd-implement`. Planning artifa
    - Contract/data/model tasks before services.
    - Core business logic before adapters/UI.
    - Integration and regression tasks after the implementation path is complete.
+   - For S1, keep the task list compact and implementation-oriented. Do not add standalone checklist, contract, risk, or documentation tasks unless `plan.md` identifies a concrete need; still keep every task traceable and verifiable.
 4. Make every task TDD-ready:
    - Include `AC:` with one or more AC IDs.
    - Include `Files:` with exact expected file paths or file groups.
@@ -50,13 +52,15 @@ The output is a reviewed `tasks.md` for `fons4ai-sdd-implement`. Planning artifa
 5. For S2, add explicit tasks for applicable risk controls: migration, rollback, compatibility, permissions, regression, observability, and checklist closure.
 6. If `plan.md` declares data model additions or changes, add a mandatory DDL synchronization task for every impacted `.specify/sql/<database_or_service>/<business_model>.sql` file.
    - The task must name the exact SQL file.
+   - Do not omit the DDL sync task because the project lacks migration scripts. If database/service ownership is unknown, use `.specify/sql/pending/<business_model>.sql`.
    - One SQL file may cover multiple strongly related tables only when they are in the same database/service and cohesive business model.
    - Split tasks and SQL files when the affected tables belong to different databases, service-owned schemas, or physical data sources.
    - Place it with the related model/migration task, before service-layer tasks that depend on the schema.
    - Verification must confirm the SQL file matches the implemented model/table group and is indexed by `.specify/memory/data-architecture.md` when that document exists.
    - Only mark it as deferred when `plan.md` records user-approved owner/reason.
 7. If `plan.md` declares non-DDL knowledge impact, add a documentation synchronization or follow-up task that names the impacted truth-source path.
-8. Run `scripts/validate_sdd_artifacts.py --feature-dir <feature-dir>` after writing tasks. This validates AC coverage, DDL mapping, knowledge impact, and S2 risk gates. Fix validation failures before reporting success.
+8. Run `scripts/validate_sdd_artifacts.py --feature-dir <feature-dir> --strict` after writing new tasks. This validates AC coverage, DDL mapping, knowledge impact, modern required sections, and S2 risk gates. Fix validation failures before reporting success.
+   - For legacy feature directories created before the latest template upgrade, `scripts/validate_sdd_artifacts.py --feature-dir <feature-dir>` may be used first to surface warnings; new or updated artifacts should pass `--strict`.
 9. Stop after task planning. Do not invoke implementation. Tell the user they can reply `执行`, `开始实现`, or `继续执行` to execute all unfinished tasks, or `执行 T001,T002` to specify task IDs.
 
 ## Task Format

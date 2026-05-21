@@ -1,6 +1,6 @@
 ---
 name: fons4ai-project-knowledge-base-init
-description: "Fons4AI gated knowledge-base initialization workflow. Auto-trigger only when an in-scope AGENTS.md contains '<!-- fons4ai-skill-routing: enabled -->'; otherwise use only when the user explicitly names this skill or asks for the Fons4AI workflow."
+description: "Fons4AI gated generic project knowledge-base initialization workflow. Auto-trigger only when an in-scope AGENTS.md enables the Fons4AI routing marker; otherwise use only when the user explicitly names this skill or asks for the Fons4AI workflow. Use to initialize architecture memory documents and database-scoped SQL knowledge from repository facts."
 ---
 
 # Fons4AI Project Knowledge Base Init
@@ -17,15 +17,15 @@ If none is true, do not apply this skill automatically. Continue with normal Cod
 
 ## Overview
 
-Use this skill to initialize a project knowledge base from repository facts and user-provided context.
-The default document output location is `.specify/memory/`; DDL SQL files live under `.specify/sql/`.
+Use this skill to initialize a generic project knowledge base from repository facts and user-provided context.
+The default document output location is `.specify/memory/`; SQL knowledge files live under `.specify/sql/`.
 
 Default output files:
 
 - `.specify/memory/business-architecture.md`
 - `.specify/memory/technical-architecture.md`
 - `.specify/memory/data-architecture.md`
-- `.specify/sql/<database_or_service>/<business_model>.sql` for each database-scoped business model group with known DDL
+- `.specify/sql/<database_or_service>/<business_model>.sql` for each discovered or user-specified persistent business model group. If the database/service is unknown, use `.specify/sql/pending/<business_model>.sql` until confirmed.
 
 Read the matching template before drafting each document:
 
@@ -36,46 +36,47 @@ Read the matching template before drafting each document:
 ## Workflow
 
 1. Inspect available facts before writing.
-   - Read user-provided requirements, product notes, and target output path if provided.
-   - Search `.specify/memory/`, `.specify/sql/`, project rules under `.specify/rules/` (`code-style-rule.md`, `project-structure-rule.md`, `features-rule.md`, `testing-rule.md`, `data-ddl-rule.md`), `specs/`, README files, existing architecture notes, build files, module names, database migration files, ORM models, mapper XML, entity classes, and representative source files when code exists.
-   - Prefer observed project facts over generic architecture assumptions.
+   - Build a file inventory with `rg --files`, then inspect project guidance, existing knowledge, build files, module names, ORM models, mapper XML, repository interfaces, API contracts, representative source files, and user-provided context.
+   - Do not load every discovered file into context. Read indexes, headings, and representative files first; expand only around confirmed domains, modules, integrations, and persistent models.
+   - Prefer observed project facts over generic assumptions. Concrete business names must come from the current repository or explicit user facts, not from this skill.
 
 2. Handle existing target files conservatively.
    - If any target document or SQL file already exists, read it first.
    - Explain whether the work should merge, replace, or append.
-   - Ask the user for confirmation before modifying existing target documents or SQL files.
-   - Preserve unrelated `.specify/memory` files such as `constitution.md`; do not rewrite them unless the user explicitly asks.
-   - Preserve unrelated `.specify/sql` files; do not delete or rename DDL files without explicit confirmation.
+   - Ask for confirmation before replacing existing target documents or SQL files unless the user already requested a rebuild.
+   - Preserve unrelated `.specify/memory` and `.specify/sql` files; do not delete or rename files without explicit confirmation.
 
-3. Generate the architecture documents.
-   - Create `.specify/memory/` if it does not exist.
-   - Use `business-architecture-template.md` for business goals, scope, stakeholders, capabilities, processes, business objects, business rules, collaboration boundaries, and open questions.
-   - Use `technical-architecture-template.md` for architecture goals, system view, module boundaries, layers, core technical flows, integrations, non-functional requirements, and risks.
-   - Use `data-architecture-template.md` for data goals, data domains, core data objects, data relationships, data models, DDL file index, data flows, data quality, metric definitions, and risks.
+3. Build a scenario ledger before writing memory documents.
+   - Identify core business scenarios and high-value capabilities from actual code, docs, specs, APIs, jobs, messages, controllers, services, and data models.
+   - Do not hardcode any domain names as mandatory scenarios. Terms such as loan, repayment, payment, refund, order, settlement, approval, cancellation, and reconciliation are examples only.
+   - For each scenario, capture trigger, participants, goal, rules, decision points, exception paths, state/data changes, outputs, source evidence, and evidence status.
+   - If facts are partial, keep the scenario and mark uncertain fields as `待确认`; do not collapse important scenarios into one-line summaries.
 
-4. Generate DDL SQL files when concrete schemas are known.
-   - Create `.specify/sql/` if it does not exist.
-   - Group DDL by database/service plus cohesive business model: `.specify/sql/<database_or_service>/<business_model>.sql`.
-   - A file may contain multiple strongly related tables when they belong to the same database/service and one cohesive business model, such as account, login, and authorization.
-   - Never place tables from different databases, service-owned schemas, or physical data sources in the same SQL file, even when they belong to the same broad business area.
-   - Use lowercase snake_case names for database/service directories and business model files.
-   - Include a short SQL header comment with source evidence, database/service, business model, included tables, status, and last generated date.
-   - Do not invent DDL for models that are not supported by repository facts or explicit user input. Record unsupported models as `待确认` in `data-architecture.md` instead.
-   - Keep DDL database-specific only when the project has a confirmed database dialect. If the dialect is unknown, write portable SQL and mark dialect assumptions in the header.
+4. Generate architecture documents.
+   - Use `business-architecture-template.md` for goals, scope, stakeholders, capabilities, scenario ledger, rule orchestration, business objects, collaboration boundaries, and open questions.
+   - Use `technical-architecture-template.md` as the landing document for the business scenario ledger. Every actual core scenario from business architecture must have a technical landing row covering entrypoint, orchestration service, domain/strategy object, data access, integrations, transaction boundary, exception path, and verification.
+   - Technical diagrams must be scenario-specific. Include Mermaid `sequenceDiagram`, `flowchart`, or `stateDiagram-v2` when the repository gives enough participants/events. If facts are partial, keep the landing table and mark unknown nodes as `待确认`.
+   - Use `data-architecture-template.md` for data goals, domains, objects, relationships, SQL file index, data flows, lifecycle, quality, and risks.
 
-5. Preserve evidence quality.
+5. Generate SQL knowledge files when persistent models are in scope.
+   - Prefer `scripts/generate_sql_knowledge.py --repo-root <repo> --sql-root <repo>/.specify/sql --database <database_or_service>`.
+   - Use `--groups <group_a,group_b>` only as an optional filter. The script must not require project-specific group names.
+   - Include persistent models backed by Mapper XML/resultMap, DAO/BaseDao, ORM table annotations, repository interfaces, query SQL, mapper-bound entity classes, or explicit table evidence.
+   - Exclude Criteria, Key, DTO, Request, Response, and non-persistent fields such as `@TableField(exist = false)`, unless explicit table evidence proves persistence.
+   - Treat migration scripts as strong evidence, not a prerequisite. Without real DDL, generate knowledge SQL with `推断` or `待确认` markers.
+   - Keep SQL `COMMENT` clauses business-readable and short: use only cleaned field/table meaning. Do not put Java field names, Java types, evidence paths, raw JavaDoc, HTML, `@link`, `@return`, mojibake, or long metadata into SQL `COMMENT`; put evidence in `-- Field Evidence:` blocks instead.
+
+6. Preserve evidence quality.
    - Write Markdown documents in Chinese unless the user explicitly requests another language.
-   - Separate `已确认`, `推断`, and `待确认` content.
-   - Do not invent business rules, technology choices, database schemas, integrations, metrics, or ownership.
-   - Mark uncertain content as `待确认` instead of presenting it as fact.
-   - Keep KISS: use compact sections, short tables, and diagrams only when they improve verification.
+   - Separate `已确认`, `推断`, and `待确认`.
+   - Do not invent business rules, technology choices, schemas, integrations, metrics, or ownership.
+   - Keep KISS, but do not over-compress critical scenarios, rule orchestration, state changes, exception paths, and data interactions.
 
-6. Validate before finishing.
-   - Confirm all requested documents exist under `.specify/memory/` unless the user provided another explicit path.
-   - Confirm every generated DDL file is indexed from `.specify/memory/data-architecture.md`.
-   - Confirm Markdown headings, tables, Mermaid blocks, and SQL files are structurally complete.
-   - Confirm generated content matches the discovered repository facts.
-   - Report created or updated document paths, SQL paths, and the main `待确认` items.
+7. Validate before finishing.
+   - Run `scripts/validate_sql_knowledge.py --sql-root .specify/sql --repo-root . --strict-comments` after SQL files are generated or updated.
+   - Run `scripts/validate_memory_knowledge.py --memory-root .specify/memory` after memory documents are generated or updated.
+   - Confirm Markdown headings, tables, Mermaid blocks, SQL headers, status values, source evidence, `CREATE TABLE` blocks, scenario-to-technical mapping, and absence of mojibake.
+   - Report created or updated paths, key evidence sources, main `待确认` items, and validation results.
 
 ## SQL File Contract
 
@@ -85,29 +86,24 @@ Each generated SQL file should use this structure:
 -- Database/Service: <database_or_service>
 -- Business Model: <business_model>
 -- Tables: <table_1>, <table_2>
--- Source: <repository file, user input, or待确认>
+-- Source: <repository evidence or 待确认>
 -- Status: <已确认 | 推断 | 待确认>
+-- Migration Script: <path | none | 待确认>
 -- Last Generated: YYYY-MM-DD
 
-CREATE TABLE <table_name> (
-  id BIGINT PRIMARY KEY
+CREATE TABLE `<table_name>` (
+  `<column_name>` <type> NULL COMMENT '<clean business meaning>'
 );
+
+-- Field Evidence:
+-- - `<column_name>`; java=<field>; type=<java_type>; source=<evidence>; sql=<inferred_sql_type>; nullable=待确认
 ```
 
-Use one SQL file per database-scoped business model. Multiple strongly related tables may share one file only when they belong to the same database/service and cohesive business model. Avoid placing unrelated tables or tables from different databases in one file.
+If no reliable business meaning is available for a column, omit the column `COMMENT` instead of filling it with evidence metadata.
+
+Use one SQL file per database-scoped business model. Multiple strongly related tables may share one file only when they belong to the same database/service and cohesive business model. Cross-database or cross-service tables must remain separate.
 
 ## Output Contract
 
-When no path is specified, create the default knowledge base under `.specify/memory/` and DDL files under `.specify/sql/`.
-
-Each generated Markdown document must start with:
-
-```markdown
-# <文档标题>
-
-> 适用范围：<系统、模块或业务域>
-> 生成依据：<用户输入、现有文档、代码或待确认>
-> 文档状态：<初稿 | 已评审 | 待补充>
-```
-
+When no path is specified, create the default knowledge base under `.specify/memory/` and SQL knowledge files under `.specify/sql/`.
 Do not create extra index files, README files, or example outputs unless the user explicitly asks.

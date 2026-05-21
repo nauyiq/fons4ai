@@ -22,10 +22,11 @@ All features use the S1 or S2 path.
 
 ## Required Context
 
-1. Load `../fons4ai-sdd-requirements/references/sdd-artifact-contract.md`.
+1. Load `../fons4ai-sdd-requirements/references/sdd-artifact-contract.md`, including its context-loading rules.
 2. Read `specs/features/<feature-slug>/tasks.md` first.
-3. Read relevant project rules under `.specify/rules/` when present: `code-style-rule.md`, `project-structure-rule.md`, `features-rule.md`, `testing-rule.md`, and `data-ddl-rule.md`.
-4. Read `.specify/memory/` and `.specify/sql/` when present for module boundaries, data rules, DDL, and governance constraints relevant to the selected tasks.
+3. Search by selected task IDs, AC IDs, file paths, modules, domain objects, business model names, and SQL paths before loading truth sources.
+   - Optionally run `../fons4ai-sdd-requirements/scripts/find_relevant_context.py --root <repo-root> <keyword...>` to get candidate truth-source files before reading.
+4. Read only relevant project rules, matching memory sections, targeted SQL files, and governance constraints for the selected tasks.
 5. Load `spec.md`, `plan.md`, or S2 artifacts only when the selected task references them or when the task text is insufficient.
 6. Use `assets/templates/implementation-report-template.md` for completion reports.
 
@@ -35,6 +36,7 @@ All features use the S1 or S2 path.
    - Valid approval without task IDs includes `执行`, `开始实现`, `继续执行`, `开始开发`, or an equivalent explicit request to implement. In this case, select all unfinished tasks.
    - Valid approval with task IDs includes patterns such as `执行 T001`, `执行 T001,T002`, or `实现 T003`. In this case, select only the specified unfinished tasks.
    - Ambiguous follow-ups such as `看看`, `下一步是什么`, `继续看`, or a generated `tasks.md` alone are not approval. Stop and ask the user to confirm execution.
+   - Capture the exact approval evidence from the latest user message, either as a short quote or a concise message summary. If this evidence cannot be identified, stop.
 2. Identify the requested feature directory. If the feature directory is ambiguous, ask for the exact feature path.
 3. Select tasks:
    - If task IDs are named in the latest user message, use exactly those task IDs.
@@ -60,14 +62,18 @@ All features use the S1 or S2 path.
    - Multiple strongly related tables may share one SQL file only when they belong to the same database/service.
    - Never merge DDL from different databases, service-owned schemas, or physical data sources into one SQL file.
    - Preserve source evidence, status, and last generated date in the SQL header.
+   - Do not require migration scripts before creating SQL knowledge files. If schema evidence is partial, include known columns and commented `TODO`/`待确认` lines for unknown fields, indexes, constraints, and relationships.
+   - If the task names `.specify/sql/pending/<business_model>.sql`, keep the database/service as `待确认` until a later SDD change or knowledge-summary task confirms ownership.
    - If implementation changes a persistent model but no selected task names the matching database-scoped business-model SQL file, stop and recommend returning to `fons4ai-sdd-tasks` or `fons4ai-sdd-change` to add the DDL sync task.
-10. Write a report under `specs/features/<feature-slug>/reports/` summarizing tasks, files, tests, AC coverage, unresolved risks, updated DDL files, S2 gate closure when applicable, and whether knowledge-base or source-of-truth documents need synchronization.
+   - After updating SQL knowledge files, run `../fons4ai-project-knowledge-base-init/scripts/validate_sql_knowledge.py --sql-root .specify/sql` when Python is available, or record manual validation when it cannot run.
+10. Write a report under `specs/features/<feature-slug>/reports/` summarizing tasks, approval evidence, files, tests, AC coverage, unresolved risks, updated DDL files, S2 gate closure when applicable, and whether knowledge-base or source-of-truth documents need synchronization.
 
 ## Output Rules
 
 - Follow the task plan; do not implement unplanned scope.
 - Generated implementation reports must use Chinese-first headings and fixed prose. Keep file names, IDs, paths, and technical markers such as `T001`, `AC-001`, `RED`, `GREEN`, and `REFACTOR` unchanged.
 - Never treat `spec.md`, `plan.md`, `tasks.md`, or a previous planning response as implementation approval. Approval must come from the latest user message.
+- Record `实现确认依据` in the implementation report. Use the latest user message quote or concise summary; never infer approval from artifact existence.
 - If the plan is wrong or incomplete, stop and recommend returning to `fons4ai-sdd-tasks` or `fons4ai-sdd-change`.
 - Treat `.specify/sql/**/*.sql` as required knowledge artifacts for planned persistent data model additions or changes, not as optional follow-up.
 - Never skip RED for behavior changes. If automated testing is impossible, record an explicit manual verification reason and steps.

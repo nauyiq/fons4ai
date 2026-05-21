@@ -5,6 +5,7 @@
 > 来源需求：`specs/features/<feature-slug>/spec.md`
 > 来源方案：`specs/features/<feature-slug>/plan.md`
 > 文档状态：初稿
+> S1 拆解规则：任务保持紧凑，覆盖实现、验证和必要知识/DDL 同步；无明确风险或契约影响时，不额外生成形式化门禁任务。
 
 ## 执行策略
 

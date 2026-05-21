@@ -29,20 +29,22 @@ This skill fixes implementation defects. If the work changes requirements, accep
 
 ## Required Context
 
-1. Read `AGENTS.md`, project rules, and relevant truth sources before editing:
-   - `.specify/rules/code-style-rule.md`, `.specify/rules/project-structure-rule.md`, `.specify/rules/features-rule.md`, `.specify/rules/testing-rule.md`, and `.specify/rules/data-ddl-rule.md` when present and relevant.
-   - `.specify/memory/` when present.
-   - `.specify/sql/` when data model or DDL knowledge may be involved.
-   - Other project-declared knowledge sources such as `docs/`, custom rule directories, or API documents.
-2. Read existing SDD artifacts for the affected feature when discoverable:
+1. Read `AGENTS.md`, then search by error text, stack traces, module names, API paths, table/model names, and affected feature names before loading truth sources.
+   - Optionally run `../fons4ai-sdd-requirements/scripts/find_relevant_context.py --root <repo-root> <keyword...>` to get candidate truth-source files before reading.
+2. Read only relevant project rules and truth-source sections before editing:
+   - `.specify/rules/*.md` files that match the affected area.
+   - Matching `.specify/memory/` sections when expected behavior or architecture is involved.
+   - Targeted `.specify/sql/**/*.sql` files when data model or DDL knowledge may be involved.
+   - Other project-declared knowledge sources such as `docs/`, custom rule directories, or API documents when search results or file paths indicate relevance.
+3. Read existing SDD artifacts for the affected feature when discoverable:
    - `specs/features/<feature-slug>/spec.md`
    - `plan.md`
    - `tasks.md`
    - `changes/`
    - `reports/`
-3. Read related source, tests, configuration, logs, and build files before modifying anything.
-4. Use `assets/templates/bugfix-report-template.md` for the report.
-5. Use `scripts/validate_bugfix_report.py --report <report-path>` after writing the report when Python is available.
+4. Read related source, tests, configuration, logs, and build files before modifying anything.
+5. Use `assets/templates/bugfix-report-template.md` for the report.
+6. Use `scripts/validate_bugfix_report.py --report <report-path>` after writing the report when Python is available.
 
 ## Workflow
 
@@ -90,6 +92,7 @@ This skill fixes implementation defects. If the work changes requirements, accep
 8. Handle knowledge sync.
    - If the fix confirms durable business, technical, data, or governance facts, mark `Knowledge Sync Needed: yes` in the report and suggest `fons4ai-knowledge-summary`.
    - If the fix updates DDL knowledge, list the `.specify/sql/**/*.sql` files in the report.
+   - If DDL knowledge files were updated, run `../fons4ai-project-knowledge-base-init/scripts/validate_sql_knowledge.py --sql-root .specify/sql` when Python is available, or record manual SQL knowledge validation.
    - Do not promote debugging notes or guesses into source-of-truth documents from this skill unless explicitly scoped.
 
 ## Hard Gates

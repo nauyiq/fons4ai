@@ -30,6 +30,9 @@ PLAN_REQUIRED_HEADING_GROUPS = (
     ("事务与一致性", ("## 事务与一致性", "## Transaction and Consistency")),
     ("验证策略", ("## 验证策略", "## Verification Strategy")),
 )
+PLAN_MODERN_HEADING_GROUPS = (
+    ("关键业务规则与策略设计", ("## 关键业务规则与策略设计",)),
+)
 KNOWLEDGE_IMPACT_HEADINGS = ("## 知识同步影响", "## Knowledge Impact")
 RISK_ROLLBACK_HEADINGS = ("## 风险与回滚", "## Risk and Rollback")
 S2_QUALITY_GATE_HEADINGS = ("## S2 质量门禁", "## S2 Quality Gates")
@@ -153,8 +156,9 @@ def plan_declares_sql_sync(plan_text: str) -> bool:
     )
 
 
-def validate(feature_dir: Path) -> list[str]:
+def validate(feature_dir: Path, strict: bool = False) -> tuple[list[str], list[str]]:
     errors: list[str] = []
+    warnings: list[str] = []
     spec = feature_dir / "spec.md"
     plan = feature_dir / "plan.md"
     tasks = feature_dir / "tasks.md"
@@ -164,7 +168,7 @@ def validate(feature_dir: Path) -> list[str]:
             errors.append(f"Missing required artifact: {required}")
 
     if errors:
-        return errors
+        return errors, warnings
 
     spec_text = read(spec)
     plan_text = read(plan)
@@ -178,6 +182,14 @@ def validate(feature_dir: Path) -> list[str]:
     errors.extend(validate_required_heading_groups(spec_text, SPEC_REQUIRED_HEADING_GROUPS, "spec.md"))
     errors.extend(validate_req_ac_mapping(spec_text))
     errors.extend(validate_required_heading_groups(plan_text, PLAN_REQUIRED_HEADING_GROUPS, "plan.md"))
+    modern_plan_errors = validate_required_heading_groups(plan_text, PLAN_MODERN_HEADING_GROUPS, "plan.md")
+    if strict:
+        errors.extend(modern_plan_errors)
+    else:
+        warnings.extend(
+            f"{message}; legacy-compatible mode allows this, but update plan.md before new implementation"
+            for message in modern_plan_errors
+        )
 
     for ac_id in ac_ids:
         if ac_id not in plan_text:
@@ -210,7 +222,7 @@ def validate(feature_dir: Path) -> list[str]:
     if S2_RE.search(all_text):
         if not has_any_heading(plan_text, RISK_ROLLBACK_HEADINGS):
             errors.append("S2 plan.md is missing risk and rollback section")
-        for display_name, headings in PLAN_REQUIRED_HEADING_GROUPS:
+        for display_name, headings in PLAN_REQUIRED_HEADING_GROUPS + PLAN_MODERN_HEADING_GROUPS:
             if has_any_heading(plan_text, headings) and not has_section_content(plan_text, headings):
                 errors.append(f"S2 plan.md section '{display_name}' has no content")
         has_s2_quality_gate = has_any_heading(tasks_text, S2_QUALITY_GATE_HEADINGS)
@@ -233,7 +245,7 @@ def validate(feature_dir: Path) -> list[str]:
                 errors.append(f"{task_id} is missing '{label}'")
         errors.extend(validate_quality_domain_check(task_id, block, "tasks.md"))
 
-    return errors
+    return errors, warnings
 
 
 def validate_change_file(change_file: Path) -> list[str]:
@@ -299,6 +311,7 @@ def main() -> int:
     parser.add_argument("--feature-dir", help="Path to specs/features/<feature-slug>")
     parser.add_argument("--change-file", help="Path to specs/features/<feature-slug>/changes/CR-xxx.md")
     parser.add_argument("--bugfix-report", help="Path to specs/bugfixes/<bug-slug>/bugfix-report.md")
+    parser.add_argument("--strict", action="store_true", help="Fail modern SDD section omissions instead of warning")
     args = parser.parse_args()
 
     selected = [value for value in (args.feature_dir, args.change_file, args.bugfix_report) if value]
@@ -308,17 +321,21 @@ def main() -> int:
 
     if args.feature_dir:
         target = Path(args.feature_dir).resolve()
-        errors = validate(target)
+        errors, warnings = validate(target, strict=args.strict)
         success = f"OK: {target} SDD artifacts are valid"
     elif args.change_file:
         target = Path(args.change_file).resolve()
         errors = validate_change_file(target)
+        warnings = []
         success = f"OK: {target} SDD change artifact is valid"
     else:
         target = Path(args.bugfix_report).resolve()
         errors = validate_bugfix_report(target)
+        warnings = []
         success = f"OK: {target} bugfix report is valid"
 
+    for warning in warnings:
+        print(f"WARN: {warning}", file=sys.stderr)
     if errors:
         for error in errors:
             print(f"ERROR: {error}", file=sys.stderr)

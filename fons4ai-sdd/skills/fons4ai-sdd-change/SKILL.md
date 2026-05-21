@@ -22,10 +22,11 @@ It must not write business code; implementation remains the responsibility of `f
 
 ## Required Context
 
-1. Load `../fons4ai-sdd-requirements/references/sdd-artifact-contract.md`.
+1. Load `../fons4ai-sdd-requirements/references/sdd-artifact-contract.md`, including its context-loading rules.
 2. Identify the target `specs/features/<feature-slug>/` directory.
-3. Read relevant project rules under `.specify/rules/` when present: `code-style-rule.md`, `project-structure-rule.md`, `features-rule.md`, `testing-rule.md`, and `data-ddl-rule.md`.
-4. Read `.specify/memory/` and `.specify/sql/` when present, especially business, technical, data architecture, DDL, and constitution files.
+3. Search by change intent, AC IDs, modules, APIs, domain objects, table/model names, and SQL paths before loading truth sources.
+   - Optionally run `../fons4ai-sdd-requirements/scripts/find_relevant_context.py --root <repo-root> <keyword...>` to get candidate truth-source files before reading.
+4. Read only relevant project rules, matching `.specify/memory/` sections, targeted `.specify/sql/` files, and governance files that affect the change.
 5. Read existing `spec.md`, `plan.md`, `tasks.md`, prior `changes/`, reports, and relevant source/test files.
 6. Use `assets/templates/change-template.md`.
 
@@ -49,7 +50,7 @@ It must not write business code; implementation remains the responsibility of `f
 6. Update affected docs in place and append a concise change log entry.
 7. Create `changes/CR-xxx.md` and add incremental tasks to `tasks.md` or a CR-specific task section. Every incremental task must include `AC:`, `Files:`, `Verification:`, `Quality:`, and `Done:`; implementation tasks must include a DDD-lite/domain-modeling check in `Quality:`.
 8. When the change affects persistent data models, add mandatory DDL synchronization tasks for `.specify/sql/**/*.sql`; do not leave SQL knowledge updates as implicit follow-up.
-9. Run `../fons4ai-sdd-tasks/scripts/validate_sdd_artifacts.py --change-file <CR-file>` after writing the CR. Fix validation failures before reporting success.
+9. Run `../fons4ai-sdd-tasks/scripts/validate_sdd_artifacts.py --change-file <CR-file>` after writing the CR. If DDL knowledge files were created or updated, also run `../fons4ai-project-knowledge-base-init/scripts/validate_sql_knowledge.py --sql-root .specify/sql`. Fix validation failures before reporting success.
 10. Stop after change planning. Do not invoke implementation. Tell the user they can reply `执行`, `开始实现`, or `继续执行` to execute all unfinished incremental tasks, or `执行 T001,T002` to specify task IDs.
 
 ## Output Rules

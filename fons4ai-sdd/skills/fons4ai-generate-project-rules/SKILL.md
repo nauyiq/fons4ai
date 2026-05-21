@@ -40,8 +40,9 @@ Read `references/rule-files.md` before drafting or updating rules. Use the templ
 2. Build a fact inventory before writing.
    - Read root build files such as `pom.xml`, `package.json`, `build.gradle`, or equivalent.
    - Read module build files and list source/resource/test directories.
-   - Search `.specify/memory/`, `.specify/sql/`, `.specify/rules/`, `specs/`, `AGENTS.md`, `.cursorrules`, `.cursor/rules/`, legacy/custom rule directories, and local skill files.
+   - Search `.specify/memory/`, `.specify/sql/`, `.specify/rules/`, `specs/`, `AGENTS.md`, `.cursorrules`, `.cursor/rules/`, legacy/custom rule directories, and local skill files, but do not bulk-read them.
    - Sample representative source, configuration, test, migration, entity/model, mapper/repository, API/controller, service, and adapter files from each major module.
+   - Use a progressive context strategy: file inventory -> targeted keyword search -> representative samples -> full file reads only for files that directly justify rules.
    - Record missing evidence explicitly instead of guessing.
 
 3. Create a rule evidence matrix before drafting.
@@ -74,6 +75,7 @@ Read `references/rule-files.md` before drafting or updating rules. Use the templ
 - Prefer enforceable wording: `必须`, `禁止`, `优先`, `仅当`, `除非`, `需要确认`.
 - Use repository evidence first, then explicit user decisions, then conservative defaults.
 - Separate `强制规则`, `推荐规则`, `禁止事项`, `例外机制`, and `待确认约定`.
+- Include a context-loading rule in generated feature/workflow rules: agents must search first and read targeted truth-source sections rather than loading every knowledge file by default.
 - Include concrete examples only when they prevent ambiguity; keep examples short and project-specific.
 - Never invent frameworks, modules, CI, deployment, database, migration tools, or release processes that are not visible in the repository or explicitly requested.
 - Keep KISS: avoid architecture mandates that the repository does not need or cannot enforce.
