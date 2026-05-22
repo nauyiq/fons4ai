@@ -9,14 +9,15 @@
 | 类型 | 已确认事实 | 证据来源 | 状态 |
 | --- | --- | --- | --- |
 | 数据库/服务 | <database_or_service> | <config/migration/sql> | <已确认/默认建议/待确认> |
-| 数据模型 | <business model/table group> | <entity/mapper/migration> | <已确认/默认建议/待确认> |
+| 数据模型 | <business model/table group> | <MCP DDL/repository SQL/config/code locator> | <已确认/默认建议/待确认> |
 | DDL 知识文件 | <sql knowledge path> | <.specify/sql/**/*.sql> | <已确认/默认建议/待确认> |
 
 ## 强制规则
 
 - 模型变更：当新增、删除、重命名或修改持久化模型、表、字段、索引、约束、关系或默认值时，必须同步设计、任务、测试和数据知识。
 - DDL 知识路径：DDL 知识文件必须使用 `.specify/sql/<database_or_service>/<business_model>.sql`。
-- 无迁移脚本也要生成：迁移脚本是强证据，但不是生成 SQL 知识文件的前置条件；只要识别到持久化模型或用户指定数据模型，就必须生成或更新 `.specify/sql/**/*.sql`。
+- DDL 来源优先级：SQL 知识文件必须来自真实 DDL 证据，优先使用已配置数据库 MCP 查询结果，其次使用仓库中已有 SQL DDL 文件。
+- 缺少 DDL 证据：未配置 MCP 且仓库无 SQL DDL 时，不得从实体、Mapper、ORM 注解或代码字段推断生成 `CREATE TABLE`；应标记 `待确认` 并要求配置 MCP 或提供 SQL 文件。
 - 归属未知暂存：若数据库/服务归属无法确认，先使用 `.specify/sql/pending/<business_model>.sql`，并在文件头标记 `待确认`。
 - 业务模型分组：同一数据库/服务内强业务耦合的多张表可以放入同一个业务模型 SQL 文件。
 - 跨库拆分：即使属于同一业务域，只要分属不同数据库、服务库或物理数据源，必须拆分为不同 SQL 文件，不得跨库合并。
@@ -25,13 +26,15 @@
 
 ## 推荐规则
 
-- 优先从实体、Mapper、Repository、迁移脚本、ORM 注解、查询 SQL、数据库配置和现有 SQL 知识文件交叉确认结构。
+- 可用实体、Mapper、Repository、ORM 注解和代码字段辅助定位候选表或业务模型，但不能作为 DDL 结构证据。
+- 优先从数据库 MCP、仓库 SQL 文件、迁移脚本、Schema 初始化脚本和现有 SQL 知识文件确认结构。
 - 优先让事务边界贴合业务一致性边界，避免跨服务或跨库长事务。
 - 对幂等、并发、唯一约束、审计字段、软删除、状态流转和数据修复路径进行显式说明。
 
 ## 禁止事项
 
 - 禁止在证据不足时把 DDL、字段类型、索引或约束包装成已确认事实；必须用注释标记 `推断` 或 `待确认`。
+- 禁止根据实体类、Mapper、ORM 注解、Repository 方法或 Java 字段类型生成 SQL DDL。
 - 禁止把不同数据库、服务库或物理数据源的表合并到一个 SQL 知识文件。
 - 禁止只改代码或迁移脚本而遗漏 `.specify/sql/` 和数据架构索引。
 - 禁止把 `.specify/sql/**/*.sql` 当作可直接执行的生产迁移脚本。
@@ -48,7 +51,8 @@
 ## 验收检查
 
 - [ ] 数据模型变更已同步 SDD 任务、测试和知识文件。
-- [ ] 没有迁移脚本时仍生成了 SQL 知识文件，并明确证据来源与 `推断/待确认` 状态。
+- [ ] SQL 知识文件来源于数据库 MCP 查询或仓库 SQL DDL 文件，并明确证据来源与状态。
+- [ ] 未配置 MCP 且仓库无 SQL DDL 时，没有从实体或 Mapper 推断生成 SQL。
 - [ ] `.specify/sql/<database_or_service>/<business_model>.sql` 分组符合“同库同业务模型”原则。
 - [ ] 跨数据库、跨服务库或跨物理数据源的表没有合并。
 - [ ] SQL 知识文件头包含数据库/服务、业务模型、包含表、来源、状态和更新时间。

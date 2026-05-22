@@ -65,7 +65,8 @@ The output is a detailed technical design in `specs/features/<feature-slug>/plan
    - Public contract changes under `contracts/` when needed.
    - Data model notes under `data-model.md` when database or persistent schema changes are involved.
    - A concrete DDL sync plan naming every impacted `.specify/sql/<database_or_service>/<business_model>.sql` file for persistent data model additions or changes.
-   - Migration scripts are not required before naming a DDL knowledge file. If no migration script exists, derive the SQL knowledge plan from entities, ORM metadata, mapper SQL, repository code, database configuration, existing SQL, or user facts.
+   - DDL knowledge files must be backed by real DDL evidence: configured database MCP query results or existing repository SQL files. Entities, ORM metadata, mapper interfaces, repository methods, and Java field types may locate candidate tables but must not generate `CREATE TABLE`.
+   - If no MCP DDL and no repository SQL DDL are available, record the SQL source as `待确认` and add a follow-up to configure MCP or provide SQL files instead of fabricating schema details.
    - If database/service ownership is unknown, use `.specify/sql/pending/<business_model>.sql` and mark unresolved schema facts as `推断` or `待确认`.
    - DDL files are grouped by database/service plus cohesive business model. Same-database strongly related tables may share one file; cross-database or cross-service tables must use separate files.
 7. Map every AC and relevant REQ to one or more design decisions.

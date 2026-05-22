@@ -1,4 +1,4 @@
 interface:
   display_name: "Fons4AI Project Knowledge Base Init"
-  short_description: "Generic Fons4AI knowledge initialization with SQL generation and validation."
-  default_prompt: "Use $fons4ai-project-knowledge-base-init when Fons4AI routing is enabled or explicitly requested to initialize architecture memory documents and database-scoped SQL knowledge from repository facts."
+  short_description: "Generic Fons4AI knowledge initialization with MCP or repository SQL DDL validation."
+  default_prompt: "Use $fons4ai-project-knowledge-base-init when Fons4AI routing is enabled or explicitly requested to initialize architecture memory documents and database-scoped SQL knowledge from MCP DDL or repository SQL files."

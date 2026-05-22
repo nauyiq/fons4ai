@@ -62,7 +62,7 @@ All features use the S1 or S2 path.
    - Multiple strongly related tables may share one SQL file only when they belong to the same database/service.
    - Never merge DDL from different databases, service-owned schemas, or physical data sources into one SQL file.
    - Preserve source evidence, status, and last generated date in the SQL header.
-   - Do not require migration scripts before creating SQL knowledge files. If schema evidence is partial, include known columns and commented `TODO`/`待确认` lines for unknown fields, indexes, constraints, and relationships.
+   - SQL knowledge updates must be backed by actual DDL evidence from implementation migration/schema SQL, repository SQL files, or configured database MCP query results. Do not infer `CREATE TABLE` from entity classes, Mapper interfaces, ORM annotations, or Java field types.
    - If the task names `.specify/sql/pending/<business_model>.sql`, keep the database/service as `待确认` until a later SDD change or knowledge-summary task confirms ownership.
    - If implementation changes a persistent model but no selected task names the matching database-scoped business-model SQL file, stop and recommend returning to `fons4ai-sdd-tasks` or `fons4ai-sdd-change` to add the DDL sync task.
    - After updating SQL knowledge files, run `../fons4ai-project-knowledge-base-init/scripts/validate_sql_knowledge.py --sql-root .specify/sql` when Python is available, or record manual validation when it cannot run.

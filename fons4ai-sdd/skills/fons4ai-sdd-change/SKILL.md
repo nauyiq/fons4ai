@@ -44,12 +44,12 @@ It must not write business code; implementation remains the responsibility of `f
    - Test impact: existing tests likely affected and new tests required.
    - Regression risk and rollback needs.
    - Knowledge impact: business, technical, data architecture, governance, other truth-source, or DDL facts that must be synchronized.
-   - For any persistent data model addition or change, name each impacted `.specify/sql/<database_or_service>/<business_model>.sql` file and required action.
+   - For any persistent data model addition or change, name each impacted `.specify/sql/<database_or_service>/<business_model>.sql` file, required action, and DDL evidence source: MCP query, repository SQL file, or implementation migration/schema SQL.
    - Keep same-database cohesive business model tables together when useful, but split files for different databases, service-owned schemas, or physical data sources.
 5. Ask before modifying existing SDD artifacts. Preserve unaffected content and avoid full rewrites.
 6. Update affected docs in place and append a concise change log entry.
 7. Create `changes/CR-xxx.md` and add incremental tasks to `tasks.md` or a CR-specific task section. Every incremental task must include `AC:`, `Files:`, `Verification:`, `Quality:`, and `Done:`; implementation tasks must include a DDD-lite/domain-modeling check in `Quality:`.
-8. When the change affects persistent data models, add mandatory DDL synchronization tasks for `.specify/sql/**/*.sql`; do not leave SQL knowledge updates as implicit follow-up.
+8. When the change affects persistent data models, add mandatory DDL synchronization tasks for `.specify/sql/**/*.sql`; do not leave SQL knowledge updates as implicit follow-up. Do not infer DDL from entity classes, Mapper interfaces, ORM annotations, or Java field types.
 9. Run `../fons4ai-sdd-tasks/scripts/validate_sdd_artifacts.py --change-file <CR-file>` after writing the CR. If DDL knowledge files were created or updated, also run `../fons4ai-project-knowledge-base-init/scripts/validate_sql_knowledge.py --sql-root .specify/sql`. Fix validation failures before reporting success.
 10. Stop after change planning. Do not invoke implementation. Tell the user they can reply `执行`, `开始实现`, or `继续执行` to execute all unfinished incremental tasks, or `执行 T001,T002` to specify task IDs.
 

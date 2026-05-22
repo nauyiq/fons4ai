@@ -52,7 +52,8 @@ The output is a reviewed `tasks.md` for `fons4ai-sdd-implement`. Planning artifa
 5. For S2, add explicit tasks for applicable risk controls: migration, rollback, compatibility, permissions, regression, observability, and checklist closure.
 6. If `plan.md` declares data model additions or changes, add a mandatory DDL synchronization task for every impacted `.specify/sql/<database_or_service>/<business_model>.sql` file.
    - The task must name the exact SQL file.
-   - Do not omit the DDL sync task because the project lacks migration scripts. If database/service ownership is unknown, use `.specify/sql/pending/<business_model>.sql`.
+   - The task must name the DDL evidence source when known: configured database MCP query, repository SQL file, or implementation migration/schema SQL. Do not ask implementers to infer DDL from entity classes, Mapper interfaces, ORM annotations, or Java field types.
+   - If DDL evidence is not available, add a follow-up task to configure MCP or provide SQL files instead of fabricating `CREATE TABLE`; use `.specify/sql/pending/<business_model>.sql` only for an explicitly approved placeholder.
    - One SQL file may cover multiple strongly related tables only when they are in the same database/service and cohesive business model.
    - Split tasks and SQL files when the affected tables belong to different databases, service-owned schemas, or physical data sources.
    - Place it with the related model/migration task, before service-layer tasks that depend on the schema.

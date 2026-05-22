@@ -1,6 +1,6 @@
 ---
 name: fons4ai-project-knowledge-base-init
-description: "Fons4AI gated generic project knowledge-base initialization workflow. Auto-trigger only when an in-scope AGENTS.md enables the Fons4AI routing marker; otherwise use only when the user explicitly names this skill or asks for the Fons4AI workflow. Use to initialize architecture memory documents and database-scoped SQL knowledge from repository facts."
+description: "Fons4AI gated generic project knowledge-base initialization workflow. Auto-trigger only when an in-scope AGENTS.md enables the Fons4AI routing marker; otherwise use only when the user explicitly names this skill or asks for the Fons4AI workflow. Use to initialize architecture memory documents and database-scoped SQL knowledge from database MCP DDL or repository SQL files."
 ---
 
 # Fons4AI Project Knowledge Base Init
@@ -17,7 +17,7 @@ If none is true, do not apply this skill automatically. Continue with normal Cod
 
 ## Overview
 
-Use this skill to initialize a generic project knowledge base from repository facts and user-provided context.
+Use this skill to initialize a generic project knowledge base from repository facts, database MCP facts, existing SQL files, and user-provided context.
 The default document output location is `.specify/memory/`; SQL knowledge files live under `.specify/sql/`.
 
 Default output files:
@@ -36,7 +36,8 @@ Read the matching template before drafting each document:
 ## Workflow
 
 1. Inspect available facts before writing.
-   - Build a file inventory with `rg --files`, then inspect project guidance, existing knowledge, build files, module names, ORM models, mapper XML, repository interfaces, API contracts, representative source files, and user-provided context.
+   - Build a file inventory with `rg --files`, then inspect project guidance, existing knowledge, build files, module names, database config, repository SQL files, migration directories, API contracts, representative source files, and user-provided context.
+   - Check whether local database MCP tools are configured for the target database. When available, treat MCP query results as the preferred DDL source.
    - Do not load every discovered file into context. Read indexes, headings, and representative files first; expand only around confirmed domains, modules, integrations, and persistent models.
    - Prefer observed project facts over generic assumptions. Concrete business names must come from the current repository or explicit user facts, not from this skill.
 
@@ -58,13 +59,13 @@ Read the matching template before drafting each document:
    - Technical diagrams must be scenario-specific. Include Mermaid `sequenceDiagram`, `flowchart`, or `stateDiagram-v2` when the repository gives enough participants/events. If facts are partial, keep the landing table and mark unknown nodes as `待确认`.
    - Use `data-architecture-template.md` for data goals, domains, objects, relationships, SQL file index, data flows, lifecycle, quality, and risks.
 
-5. Generate SQL knowledge files when persistent models are in scope.
-   - Prefer `scripts/generate_sql_knowledge.py --repo-root <repo> --sql-root <repo>/.specify/sql --database <database_or_service>`.
-   - Use `--groups <group_a,group_b>` only as an optional filter. The script must not require project-specific group names.
-   - Include persistent models backed by Mapper XML/resultMap, DAO/BaseDao, ORM table annotations, repository interfaces, query SQL, mapper-bound entity classes, or explicit table evidence.
-   - Exclude Criteria, Key, DTO, Request, Response, and non-persistent fields such as `@TableField(exist = false)`, unless explicit table evidence proves persistence.
-   - Treat migration scripts as strong evidence, not a prerequisite. Without real DDL, generate knowledge SQL with `推断` or `待确认` markers.
-   - Keep SQL `COMMENT` clauses business-readable and short: use only cleaned field/table meaning. Do not put Java field names, Java types, evidence paths, raw JavaDoc, HTML, `@link`, `@return`, mojibake, or long metadata into SQL `COMMENT`; put evidence in `-- Field Evidence:` blocks instead.
+5. Generate SQL knowledge files only from real DDL sources.
+   - Preferred source: configured database MCP service. Use the available read-only database MCP tool to query schemas and real table DDL, for example MySQL `information_schema.tables` plus `SHOW CREATE TABLE <schema>.<table>`. Save the returned DDL into `.specify/sql/<database_or_service>/<business_model>.sql` with the SQL File Contract header.
+   - Secondary source: existing repository SQL DDL files, such as migration scripts, schema files, `*.sql` init scripts, or checked-in database DDL. Import them with `scripts/import_sql_knowledge_file.py --source <source.sql> --sql-root .specify/sql --database <database_or_service> --business-model <business_model> --repo-root .`.
+   - Do not generate SQL DDL from Java entities, Mapper interfaces, ORM annotations, DTOs, repository method names, query method names, or inferred Java field types. These code facts may help locate candidate business models or table names, but they are not DDL evidence.
+   - `scripts/generate_sql_knowledge.py` is deprecated and must not be used for new knowledge-base initialization because it inferred DDL from code metadata.
+   - If neither MCP DDL nor repository SQL DDL is available, do not fabricate `CREATE TABLE` content. Record the missing DDL source in `.specify/memory/data-architecture.md` as `待确认`, ask the user to configure a database MCP service or provide SQL files, and create a `.specify/sql/pending/<business_model>.sql` placeholder only when the user explicitly requests a placeholder.
+   - Keep SQL `COMMENT` clauses as returned by the database or existing SQL source unless they contain secrets or corrupted text. Do not inject Java field names, Java types, evidence paths, raw JavaDoc, HTML, `@link`, `@return`, mojibake, or long metadata into SQL `COMMENT`; put source evidence in SQL header comments instead.
 
 6. Preserve evidence quality.
    - Write Markdown documents in Chinese unless the user explicitly requests another language.
@@ -73,7 +74,7 @@ Read the matching template before drafting each document:
    - Keep KISS, but do not over-compress critical scenarios, rule orchestration, state changes, exception paths, and data interactions.
 
 7. Validate before finishing.
-   - Run `scripts/validate_sql_knowledge.py --sql-root .specify/sql --repo-root . --strict-comments` after SQL files are generated or updated.
+   - Run `scripts/validate_sql_knowledge.py --sql-root .specify/sql --repo-root . --strict-comments` after SQL files are generated, copied, imported, or updated.
    - Run `scripts/validate_memory_knowledge.py --memory-root .specify/memory` after memory documents are generated or updated.
    - Confirm Markdown headings, tables, Mermaid blocks, SQL headers, status values, source evidence, `CREATE TABLE` blocks, scenario-to-technical mapping, and absence of mojibake.
    - Report created or updated paths, key evidence sources, main `待确认` items, and validation results.
@@ -86,7 +87,7 @@ Each generated SQL file should use this structure:
 -- Database/Service: <database_or_service>
 -- Business Model: <business_model>
 -- Tables: <table_1>, <table_2>
--- Source: <repository evidence or 待确认>
+-- Source: <database MCP query | repository SQL file | 待确认>
 -- Status: <已确认 | 推断 | 待确认>
 -- Migration Script: <path | none | 待确认>
 -- Last Generated: YYYY-MM-DD
@@ -95,8 +96,8 @@ CREATE TABLE `<table_name>` (
   `<column_name>` <type> NULL COMMENT '<clean business meaning>'
 );
 
--- Field Evidence:
--- - `<column_name>`; java=<field>; type=<java_type>; source=<evidence>; sql=<inferred_sql_type>; nullable=待确认
+-- DDL Evidence:
+-- - <MCP server/query or repository SQL file path>
 ```
 
 If no reliable business meaning is available for a column, omit the column `COMMENT` instead of filling it with evidence metadata.

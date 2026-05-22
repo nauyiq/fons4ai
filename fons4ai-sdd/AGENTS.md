@@ -101,7 +101,8 @@
 - SQL 文件必须保留来源、状态和更新时间等证据说明。
 - 生成或更新 SQL 知识文件后，应使用 `skills/fons4ai-project-knowledge-base-init/scripts/validate_sql_knowledge.py --sql-root .specify/sql` 做结构校验；若运行环境无法执行脚本，交付时必须说明并按同等字段手动检查。
 - `.specify/sql/**/*.sql` 是知识库文件，不替代项目自身的数据库迁移脚本。
-- 只要识别到持久化数据模型、表组或用户明确提出数据模型，必须创建或更新对应 SQL 知识文件；没有迁移脚本时，仍应基于实体、Mapper、ORM 元数据、数据库配置、现有 SQL、代码命名或用户事实生成 SQL 知识文件。
+- 初始化知识库或汇总长期 SQL 知识时，DDL 来源优先级为：已配置的数据库 MCP 查询结果 -> 仓库中已有 SQL DDL 文件。实体类、Mapper、ORM 注解、Repository 方法和代码字段只能辅助定位候选表或业务模型，不得作为生成 `CREATE TABLE` 的依据。
+- 若未配置可用数据库 MCP，且仓库中没有对应 SQL DDL 文件，不得臆造 SQL DDL；应在数据架构中标记 `待确认`，提示用户配置 MCP 或提供 SQL 文件。只有用户明确要求占位时，才创建 `.specify/sql/pending/<business_model>.sql`。
 - 证据不足时不得把字段、类型、索引或约束包装成已确认事实；应在 SQL 文件头和字段注释中标记 `推断` 或 `待确认`。若数据库/服务归属未知，先使用 `.specify/sql/pending/<business_model>.sql` 暂存，确认后再迁移到目标数据库/服务目录。
 
 ## 代码修改约束

@@ -185,7 +185,8 @@ Must cover:
 - persistent model ownership, entity/table naming, field naming, indexes, constraints, lifecycle, and audit fields when discoverable;
 - transaction boundaries, consistency, idempotency, concurrency, and rollback expectations;
 - migration script location and review expectations when the repo has migrations;
-- mandatory SQL knowledge generation from entities, ORM metadata, mapper SQL, repositories, query SQL, database configuration, existing SQL, or user facts when migration scripts are absent;
+- SQL knowledge generation from real DDL evidence: configured database MCP query results or existing repository SQL DDL files;
+- prohibition on generating `CREATE TABLE` from entities, ORM metadata, mapper interfaces, repositories, Java fields, or code-only guesses;
 - `.specify/sql/<database_or_service>/<business_model>.sql` DDL knowledge files;
 - `.specify/sql/pending/<business_model>.sql` fallback when database/service ownership is unknown;
 - same database/service plus cohesive business-model grouping;

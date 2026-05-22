@@ -154,7 +154,8 @@ flowchart TD
 - 是否需要 DDL 同步：否 | 是
 - DDL 文件动作：无 | 新增 | 更新 | 重命名
 - DDL 文件影响：无 | `.specify/sql/<database_or_service>/<business_model>.sql` | `.specify/sql/pending/<business_model>.sql`
-- 无迁移脚本处理：不适用 | 基于实体/ORM/Mapper/查询 SQL/用户事实生成 SQL 知识文件，并标记推断或待确认字段
+- DDL 证据来源：不适用 | 数据库 MCP 查询 | 仓库 SQL DDL 文件 | 实现迁移/Schema SQL | 待确认
+- 缺少 DDL 证据处理：不适用 | 配置 MCP | 提供 SQL 文件 | 用户明确同意 pending 占位；不得从实体/ORM/Mapper 推断生成 `CREATE TABLE`
 - DDL 同步时机：同一实现任务 | 独立任务 | 暂缓，说明负责人和原因
 
 ## 错误与异常处理

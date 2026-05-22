@@ -77,11 +77,12 @@ Common output targets:
 
 6. Handle SQL knowledge when relevant.
    - If data architecture references a concrete persistent model, table group, or user-specified data model, ensure the corresponding `.specify/sql/<database_or_service>/<business_model>.sql` exists and is listed.
-   - Prefer `../fons4ai-project-knowledge-base-init/scripts/generate_sql_knowledge.py` for full or broad regeneration.
+   - Preferred DDL source is a configured database MCP service. Use read-only database MCP queries to retrieve real DDL, then save it under `.specify/sql/<database_or_service>/<business_model>.sql`.
+   - Secondary DDL source is existing repository SQL files. Import them with `../fons4ai-project-knowledge-base-init/scripts/import_sql_knowledge_file.py --source <source.sql> --sql-root .specify/sql --database <database_or_service> --business-model <business_model> --repo-root .`.
    - Same-database cohesive business model tables may share one SQL file; cross-database or cross-service tables must remain separate.
-   - Migration scripts are evidence, not a prerequisite. If no migration script exists, derive SQL knowledge from entity classes, ORM annotations, mapper XML, repository interfaces, query SQL, database config, existing SQL files, and explicit user facts.
-   - Do not invent unsupported DDL as confirmed truth. Mark inferred or incomplete structures as `推断` or `待确认`.
-   - Keep SQL `COMMENT` clauses short, business-readable, and free of mojibake. Put source evidence, Java field names, Java types, inferred SQL types, and pending nullability in `-- Field Evidence:` blocks, not inside SQL `COMMENT`.
+   - Do not generate SQL DDL from entity classes, ORM annotations, Mapper interfaces, repository method names, or inferred Java field types. Code facts may locate candidate tables or business models, but they are not DDL evidence.
+   - If neither MCP DDL nor repository SQL DDL is available, mark the SQL source as `待确认` in the target knowledge document and ask for MCP configuration or SQL files instead of fabricating `CREATE TABLE`.
+   - Keep SQL `COMMENT` clauses short, business-readable, and free of mojibake. Put MCP query or repository SQL source evidence in SQL header comments, not inside SQL `COMMENT`.
 
 7. Validate before finishing.
    - Every durable fact added to a truth source must be backed by a source artifact or explicit user fact.
@@ -94,7 +95,7 @@ Common output targets:
 ## Output Rules
 
 - Update only the selected knowledge-base documents and explicitly scoped SQL knowledge files.
-- When selected sources confirm or introduce persistent models, treat matching `.specify/sql/**/*.sql` files as in scope even if migration scripts do not exist.
+- When selected sources confirm or introduce persistent models, treat matching `.specify/sql/**/*.sql` files as in scope only when MCP DDL or repository SQL DDL evidence is available, or when the user explicitly requests a pending placeholder.
 - Do not write business code.
 - Do not create new SDD requirements, plans, or implementation tasks unless the user explicitly asks.
 - Do not invent business, technical, data, or governance facts.

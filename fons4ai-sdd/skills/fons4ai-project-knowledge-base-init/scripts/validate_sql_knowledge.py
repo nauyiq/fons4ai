@@ -14,6 +14,11 @@ VALID_STATUS = {"已确认", "推断", "待确认"}
 DATE_RE = re.compile(r"^\d{4}-\d{2}-\d{2}$")
 CREATE_TABLE_RE = re.compile(r"\bCREATE\s+TABLE\b|TODO:\s*CREATE\s+TABLE", re.IGNORECASE)
 BAD_TEXT_PATTERNS = tuple(s.encode("utf-8").decode("unicode_escape") for s in (r"\ufffd", r"\u9225", r"\u9239", r"\u93ba\u3126", r"\u5bf0\u5477", r"\u5bb8\u8336", r"\u93c2\u56e8", r"\u740c\u3126"))
+DISALLOWED_DDL_SOURCE_RE = re.compile(
+    r"实体|entity|mapper\s*(?:xml|interface)?|ORM|annotation|Java\s*(?:field|type)|"
+    r"Repository\s*method|inferred\s+java",
+    re.IGNORECASE,
+)
 
 
 def read_text(path: Path) -> str:
@@ -80,6 +85,8 @@ def validate_sql_file(path: Path, sql_root: Path | None = None, strict_comments:
     source = header_value(text, "Source") or ""
     if source in {"<repository evidence or 待确认>", "<source>", ""}:
         errors.append(f"{path} Source header must name evidence or 待确认")
+    if source and DISALLOWED_DDL_SOURCE_RE.search(source):
+        errors.append(f"{path} Source header uses code metadata instead of MCP or repository SQL DDL evidence: {source}")
 
     for pattern in BAD_TEXT_PATTERNS:
         if pattern in text:

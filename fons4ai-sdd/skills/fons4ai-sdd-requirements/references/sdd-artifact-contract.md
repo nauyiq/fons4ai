@@ -20,7 +20,7 @@ Use `.specify/memory/`, `.specify/sql/`, and `.specify/rules/` as default long-l
 - `technical-architecture.md` stores module boundaries, layers, integrations, technical constraints, and non-functional decisions.
 - `data-architecture.md` stores data domains, core objects, relationships, quality rules, metrics, and data flows.
 - `.specify/sql/**/*.sql` stores one DDL SQL file per database-scoped business model. A file may contain multiple strongly related tables only when they belong to the same database/service and cohesive business model.
-- Missing migration scripts do not exempt DDL knowledge generation. If a persistent model or table group is known from entities, ORM metadata, mapper SQL, repository code, database configuration, existing SQL, or explicit user facts, create or update the SQL knowledge file and mark incomplete facts as `推断` or `待确认`.
+- SQL knowledge should come from real DDL evidence: configured database MCP query results or existing repository SQL DDL files. Entities, ORM metadata, Mapper interfaces, repository methods, and Java field types may locate candidate models, but must not be used to generate `CREATE TABLE`.
 - `.specify/rules/` may contain project rules: `code-style-rule.md`, `project-structure-rule.md`, `features-rule.md`, `testing-rule.md`, and `data-ddl-rule.md`.
 - `constitution.md`, when present, is governance context and must not be rewritten by SDD feature skills.
 
@@ -47,8 +47,8 @@ When SDD work adds, removes, renames, or changes a concrete persistent data mode
 - `tasks.md` must include an explicit DDL synchronization task for every impacted SQL file, unless the plan records a user-approved deferral with owner and reason.
 - `fons4ai-sdd-implement` may create or update `.specify/sql/**/*.sql` only when the selected task names the SQL file or when the implementation reveals a necessary schema change and the user approves updating the task/artifact scope.
 - Generated SQL knowledge files are documentation artifacts, not migration scripts. Keep migration scripts in the repository's normal migration location when the project has one.
-- If no migration script exists, derive the SQL knowledge file from the best available code or user evidence. Use `.specify/sql/pending/<business_model>.sql` when database/service ownership is unknown.
-- Do not skip SQL knowledge files because evidence is partial. Generate the file with known columns and commented `TODO`/`待确认` lines for unknown fields, indexes, constraints, and relationships.
+- If no repository SQL file exists, query the configured database MCP service for actual DDL. If no MCP DDL and no repository SQL DDL are available, mark SQL evidence as `待确认` and ask for MCP configuration or SQL files instead of fabricating table structure.
+- Use `.specify/sql/pending/<business_model>.sql` only when ownership is unknown or the user explicitly requests a pending placeholder.
 - Never merge DDL from different databases, service-owned schemas, or physical data sources into one SQL knowledge file, even when the tables belong to the same broad business area.
 - After creating or updating SQL knowledge files, run `../fons4ai-project-knowledge-base-init/scripts/validate_sql_knowledge.py --sql-root .specify/sql` when Python is available. If the script cannot run, perform the same header, grouping, status, source, and `CREATE TABLE` checks manually and report the reason.
 
