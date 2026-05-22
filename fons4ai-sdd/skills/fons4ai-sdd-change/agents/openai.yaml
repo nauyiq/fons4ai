@@ -1,4 +1,4 @@
 interface:
   display_name: "Fons4AI SDD Change"
-  short_description: "Routing-gated Fons4AI SDD change planning."
-  default_prompt: "Use $fons4ai-sdd-change when Fons4AI routing is enabled or explicitly requested to analyze and plan an incremental change to an existing SDD feature, then stop for implementation approval."
+  short_description: "Routing-gated Fons4AI SDD change planning with a clarification gate."
+  default_prompt: "Use $fons4ai-sdd-change when Fons4AI routing is enabled or explicitly requested to clarify an incremental change first, stop on blocking ambiguity, then analyze impact, create a CR, and stop for implementation approval."

@@ -1,0 +1,28 @@
+logging:
+  config: classpath:logback.xml
+
+server:
+  port: 8081
+
+spring:
+  application:
+    name: doudou-agent
+  main:
+    allow-bean-definition-overriding: true
+
+  config:
+    import:
+      - classpath:nacos_config.yml
+      - nacos:@profiles.active@.yaml
+      - nacos:redis.yaml
+      - nacos:datasource-doudou.yaml
+
+  freemarker:
+    template-loader-path:
+      - classpath:/template/
+    suffix: .ftl
+  mvc:
+    static-path-pattern: /static/*
+
+
+

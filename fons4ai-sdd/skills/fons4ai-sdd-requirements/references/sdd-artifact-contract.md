@@ -12,6 +12,19 @@ Feature artifacts use `specs/features/`. Bugfix artifacts use `specs/bugfixes/`.
 - `tasks.md` is the executable task breakdown. It converts `spec.md` and `plan.md` into task IDs with AC mapping, files, verification, quality checks, and done criteria.
 - Planning artifacts are not implementation approval; implementation still requires the approval gate below.
 
+## Clarification Approval Gate
+
+Requirements and change planning must close blocking ambiguity before formal artifact generation.
+
+- `使用 SDD`, `继续`, `先生成`, `看一下`, existing artifact files, or a partially inferred plan are not clarification approval.
+- `fons4ai-sdd-requirements` must ask the highest-impact requirement question first when blocking ambiguity can change scope, AC, business terms, data meaning, compatibility, security, integration, SDD level, or task breakdown.
+- `fons4ai-sdd-change` must ask the highest-impact change question first when blocking ambiguity can change existing feature semantics, AC changes, naming/ownership, public behavior, data model, DDL source, migration, rollback, risk gates, or affected modules.
+- While a blocking ambiguity exists, requirements and change skills must not write a formal `spec.md`, formal CR, `plan.md`, `tasks.md`, or business code.
+- If the user explicitly asks for a draft before answering, the artifact may be written only as a draft with `澄清状态：草案-含待确认`; it must not be used by design, task, or implementation skills.
+- A formal `spec.md` must include `澄清状态：已关闭` and `## 需求澄清门禁`.
+- A formal CR must include `澄清状态：已关闭` and `## 变更澄清门禁`.
+- Design and task skills must stop if the input `spec.md` or CR is marked `阻塞-等待回答`, `草案-含待确认`, `blocking`, or `draft`.
+
 ## Project Knowledge
 
 Use `.specify/memory/`, `.specify/sql/`, and `.specify/rules/` as default long-lived project fact sources when they exist. Also respect other project-declared truth sources such as `docs/`, API documents, product documents, custom rule directories, or external knowledge bases.

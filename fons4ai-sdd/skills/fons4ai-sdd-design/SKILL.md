@@ -17,13 +17,13 @@ If none is true, do not apply this skill automatically. Continue with normal Cod
 
 ## Overview
 
-Use this skill after `fons4ai-sdd-requirements` has produced `spec.md`.
+Use this skill after `fons4ai-sdd-requirements` has produced a formal `spec.md` with closed clarification status.
 The output is a detailed technical design in `specs/features/<feature-slug>/plan.md`; S2 features may also need `contracts/`, `data-model.md`, or migration notes when the design requires them.
 
 ## Required Context
 
 1. Load `../fons4ai-sdd-requirements/references/sdd-artifact-contract.md`, including its context-loading rules.
-2. Read `specs/features/<feature-slug>/spec.md` completely.
+2. Read `specs/features/<feature-slug>/spec.md` completely and confirm the clarification gate is closed.
 3. Search first by feature terms, AC/REQ IDs, modules, domain objects, APIs, tables, and error/risk terms. Do not bulk-read all project rules, memory, SQL, specs, or docs by default.
    - Optionally run `../fons4ai-sdd-requirements/scripts/find_relevant_context.py --root <repo-root> <keyword...>` to get candidate truth-source files before reading.
 4. Read `AGENTS.md`, relevant project rules, matching truth-source sections, targeted SQL files, build files, and representative source/test files for affected modules.
@@ -32,7 +32,10 @@ The output is a detailed technical design in `specs/features/<feature-slug>/plan
 
 ## Workflow
 
-1. Confirm the SDD level from `spec.md`. If repository facts show the level should be `S2`, upgrade it in the design summary and ask the user before editing `spec.md`.
+1. Confirm the SDD level and clarification status from `spec.md`.
+   - If `spec.md` says `澄清状态：阻塞-等待回答`, `澄清状态：草案-含待确认`, `Clarification Status: blocking`, or `Clarification Status: draft`, stop and route back to `fons4ai-sdd-requirements`.
+   - If a legacy `spec.md` has no clarification gate, do a quick ambiguity scan. If blocking requirement ambiguity remains, stop and ask to run `fons4ai-sdd-requirements` before design.
+   - If repository facts show the level should be `S2`, upgrade it in the design summary and ask the user before editing `spec.md`.
 2. Build a fact base from the repository:
    - Existing modules, layers, package conventions, reusable utilities, components, test style, domain objects, application services, and integration boundaries.
    - Current APIs, data objects, domain rules, state transitions, configs, caches, queues, transactions, permissions, dependencies, utility packages, and extension points relevant to the feature.

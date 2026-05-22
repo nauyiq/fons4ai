@@ -16,6 +16,11 @@ SQL_PATH_RE = re.compile(r"\.specify/sql/[A-Za-z0-9_./-]+\.sql")
 S2_RE = re.compile(r"(SDD\s*Level|SDD\s*等级)\s*[:：]\s*`?S2`?", re.IGNORECASE)
 
 APPROVAL_GATE_HEADINGS = ("## 实现确认门禁", "## Implementation Approval Gate")
+CLARIFICATION_GATE_HEADINGS = ("## 需求澄清门禁", "## Requirement Clarification Gate")
+CHANGE_CLARIFICATION_GATE_HEADINGS = ("## 变更澄清门禁", "## Change Clarification Gate")
+CLARIFICATION_STATUS_RE = re.compile(r"(澄清状态|Clarification Status)\s*[:：]\s*([^\n\r]+)", re.IGNORECASE)
+BLOCKING_CLARIFICATION_RE = re.compile(r"阻塞|草案|blocking|draft", re.IGNORECASE)
+CLOSED_CLARIFICATION_RE = re.compile(r"已关闭|closed", re.IGNORECASE)
 SPEC_REQUIRED_HEADING_GROUPS = (
     ("需求概要", ("## 需求概要", "## Requirement Summary")),
     ("关键业务规则与约束", ("## 关键业务规则与约束", "## Business Rules and Constraints")),
@@ -138,6 +143,27 @@ def validate_req_ac_mapping(spec_text: str) -> list[str]:
     return errors
 
 
+def validate_clarification_gate(
+    text: str,
+    artifact_name: str,
+    gate_headings: tuple[str, ...],
+) -> list[str]:
+    errors: list[str] = []
+    if not has_any_heading(text, gate_headings):
+        errors.append(f"{artifact_name} is missing clarification gate section")
+
+    statuses = [match.group(2).strip() for match in CLARIFICATION_STATUS_RE.finditer(text)]
+    if not statuses:
+        errors.append(f"{artifact_name} is missing clarification status")
+        return errors
+
+    if any(BLOCKING_CLARIFICATION_RE.search(status) for status in statuses):
+        errors.append(f"{artifact_name} clarification gate is not closed")
+    if not any(CLOSED_CLARIFICATION_RE.search(status) for status in statuses):
+        errors.append(f"{artifact_name} clarification status must be closed before design, task, or implementation planning")
+    return errors
+
+
 def validate_quality_domain_check(task_id: str, block: str, context: str) -> list[str]:
     if KNOWLEDGE_OR_DDL_TASK_RE.search(block):
         return []
@@ -180,6 +206,14 @@ def validate(feature_dir: Path, strict: bool = False) -> tuple[list[str], list[s
         errors.append("spec.md contains no AC-### acceptance criteria IDs")
 
     errors.extend(validate_required_heading_groups(spec_text, SPEC_REQUIRED_HEADING_GROUPS, "spec.md"))
+    clarification_errors = validate_clarification_gate(spec_text, "spec.md", CLARIFICATION_GATE_HEADINGS)
+    if strict:
+        errors.extend(clarification_errors)
+    else:
+        warnings.extend(
+            f"{message}; legacy-compatible mode allows this, but close requirements clarification before new design/tasks"
+            for message in clarification_errors
+        )
     errors.extend(validate_req_ac_mapping(spec_text))
     errors.extend(validate_required_heading_groups(plan_text, PLAN_REQUIRED_HEADING_GROUPS, "plan.md"))
     modern_plan_errors = validate_required_heading_groups(plan_text, PLAN_MODERN_HEADING_GROUPS, "plan.md")
@@ -255,6 +289,7 @@ def validate_change_file(change_file: Path) -> list[str]:
 
     text = read(change_file)
     errors.extend(validate_required_heading_groups(text, CHANGE_REQUIRED_HEADING_GROUPS, str(change_file)))
+    errors.extend(validate_clarification_gate(text, str(change_file), CHANGE_CLARIFICATION_GATE_HEADINGS))
 
     if not AC_RE.search(text):
         errors.append(f"{change_file} contains no AC-### mapping")
