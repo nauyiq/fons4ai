@@ -78,18 +78,20 @@ Common output targets:
 6. Handle SQL knowledge when relevant.
    - If data architecture references a concrete persistent model, table group, or user-specified data model, ensure the corresponding `.specify/sql/<database_or_service>/<business_model>.sql` exists and is listed.
    - Preferred DDL source is a configured database MCP service. Use read-only database MCP queries to retrieve real DDL, then save it under `.specify/sql/<database_or_service>/<business_model>.sql`.
+   - If multiple database MCP tools or candidate databases exist and explicit user input or project facts do not identify one target unambiguously, ask the user which MCP tool/database scope to use before querying DDL.
    - Secondary DDL source is existing repository SQL files. Import them with `../fons4ai-project-knowledge-base-init/scripts/import_sql_knowledge_file.py --source <source.sql> --sql-root .specify/sql --database <database_or_service> --business-model <business_model> --repo-root .`.
    - Same-database cohesive business model tables may share one SQL file; cross-database or cross-service tables must remain separate.
    - Do not generate SQL DDL from entity classes, ORM annotations, Mapper interfaces, repository method names, or inferred Java field types. Code facts may locate candidate tables or business models, but they are not DDL evidence.
    - If neither MCP DDL nor repository SQL DDL is available, mark the SQL source as `待确认` in the target knowledge document and ask for MCP configuration or SQL files instead of fabricating `CREATE TABLE`.
-   - Keep SQL `COMMENT` clauses short, business-readable, and free of mojibake. Put MCP query or repository SQL source evidence in SQL header comments, not inside SQL `COMMENT`.
+   - Keep SQL `COMMENT` clauses short, business-readable, and free of mojibake.
+   - SQL knowledge files must not contain MCP/Tool identifiers, query text, repository source paths, `Source`, `Migration Script`, or `DDL Evidence` metadata. Source validation is part of the workflow, not persisted SQL content.
 
 7. Validate before finishing.
    - Every durable fact added to a truth source must be backed by a source artifact or explicit user fact.
    - No planned-only item should be represented as completed behavior.
    - Target documents should remain concise and non-duplicative.
    - Untouched knowledge documents should not be rewritten.
-   - If SQL files were updated, run `../fons4ai-project-knowledge-base-init/scripts/validate_sql_knowledge.py --sql-root .specify/sql --repo-root . --strict-comments` when Python is available.
+   - Updating SQL files does not by itself require running `../fons4ai-project-knowledge-base-init/scripts/validate_sql_knowledge.py`. Run it only when the user explicitly requests SQL artifact validation or when diagnosing malformed existing SQL knowledge files.
    - If memory files were updated, run `../fons4ai-project-knowledge-base-init/scripts/validate_memory_knowledge.py --memory-root .specify/memory` when Python is available.
 
 ## Output Rules

@@ -55,12 +55,16 @@ The output is a reviewed `tasks.md` for `fons4ai-sdd-implement`. Planning artifa
 6. If `plan.md` declares data model additions or changes, add a mandatory DDL synchronization task for every impacted `.specify/sql/<database_or_service>/<business_model>.sql` file.
    - The task must name the exact SQL file.
    - The task must name the DDL evidence source when known: configured database MCP query, repository SQL file, or implementation migration/schema SQL. Do not ask implementers to infer DDL from entity classes, Mapper interfaces, ORM annotations, or Java field types.
+   - When multiple database MCP tools or candidate databases could provide DDL and selected facts do not resolve the target, add a user-confirmation prerequisite before retrieval; do not choose a database speculatively.
+   - The generated `.specify/sql/**/*.sql` file must not contain MCP/Tool identifiers, query text, source paths, or provenance headers.
    - If DDL evidence is not available, add a follow-up task to configure MCP or provide SQL files instead of fabricating `CREATE TABLE`; use `.specify/sql/pending/<business_model>.sql` only for an explicitly approved placeholder.
    - One SQL file may cover multiple strongly related tables only when they are in the same database/service and cohesive business model.
    - Split tasks and SQL files when the affected tables belong to different databases, service-owned schemas, or physical data sources.
    - Place it with the related model/migration task, before service-layer tasks that depend on the schema.
    - Verification must confirm the SQL file matches the implemented model/table group and is indexed by `.specify/memory/data-architecture.md` when that document exists.
    - Only mark it as deferred when `plan.md` records user-approved owner/reason.
+   - If `plan.md` declares a structural change to an existing table with confirmed baseline DDL in `.specify/sql/`, add a separate executable change DDL task. The task must name either the established migration path or `specs/features/<feature-slug>/ddl-changes/<change-id>-<database_or_service>-<business_model>.sql`, and require implementation to produce copy-executable `ALTER TABLE` or equivalent statements after user approval.
+   - Do not generate the executable change DDL while writing `tasks.md`; this is an implementation output guarded by the implementation approval gate.
 7. If `plan.md` declares non-DDL knowledge impact, add a documentation synchronization or follow-up task that names the impacted truth-source path.
 8. Run `scripts/validate_sdd_artifacts.py --feature-dir <feature-dir> --strict` after writing new tasks. This validates AC coverage, DDL mapping, knowledge impact, modern required sections, and S2 risk gates. Fix validation failures before reporting success.
    - For legacy feature directories created before the latest template upgrade, `scripts/validate_sdd_artifacts.py --feature-dir <feature-dir>` may be used first to surface warnings; new or updated artifacts should pass `--strict`.

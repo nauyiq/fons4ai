@@ -59,6 +59,7 @@ The output is a detailed technical design in `specs/features/<feature-slug>/plan
    - Do not write final production code in `plan.md`; code sketches explain intent and edge cases for later implementation.
    - Record state transition design with source state, trigger, preconditions, next state, failure handling, and idempotency. Use a table by default; use Mermaid `stateDiagram` only when facts support it.
    - Record data structure changes with fields, types, defaults, indexes, constraints, compatibility, DDL path, migration, and rollback expectations when applicable.
+   - When an existing `.specify/sql/<database_or_service>/<business_model>.sql` contains the baseline DDL for a table that will be altered, record the required executable change DDL target: use the repository migration directory when established, otherwise `specs/features/<feature-slug>/ddl-changes/<change-id>-<database_or_service>-<business_model>.sql`. Design names the artifact and expected `ALTER TABLE` intent but does not generate the executable SQL before implementation approval.
 5. For S1, use the minimal complete profile: keep all required sections, cover every AC, and keep the design practical but not empty. If there is no state transition, data structure change, API change, migration, rollback, diagram, or rule snippet, write `不适用，原因` in that section instead of fabricating content.
 6. For S2, include the additional governance sections that apply:
    - Compatibility and migration impact.
@@ -68,7 +69,10 @@ The output is a detailed technical design in `specs/features/<feature-slug>/plan
    - Public contract changes under `contracts/` when needed.
    - Data model notes under `data-model.md` when database or persistent schema changes are involved.
    - A concrete DDL sync plan naming every impacted `.specify/sql/<database_or_service>/<business_model>.sql` file for persistent data model additions or changes.
+   - For existing-table structural changes backed by an existing SQL knowledge baseline, a concrete executable change DDL plan naming the migration-script path or fallback `ddl-changes/` artifact path, plus forward-change and rollback expectations.
    - DDL knowledge files must be backed by real DDL evidence: configured database MCP query results or existing repository SQL files. Entities, ORM metadata, mapper interfaces, repository methods, and Java field types may locate candidate tables but must not generate `CREATE TABLE`.
+   - If multiple candidate database MCP tools or databases could supply DDL and explicit user input or project facts do not uniquely select one, record the ambiguity and require user selection before DDL retrieval.
+   - DDL knowledge SQL files must not persist MCP/Tool identifiers, query text, source paths, `Source`, `Migration Script`, or `DDL Evidence` headers.
    - If no MCP DDL and no repository SQL DDL are available, record the SQL source as `待确认` and add a follow-up to configure MCP or provide SQL files instead of fabricating schema details.
    - If database/service ownership is unknown, use `.specify/sql/pending/<business_model>.sql` and mark unresolved schema facts as `推断` or `待确认`.
    - DDL files are grouped by database/service plus cohesive business model. Same-database strongly related tables may share one file; cross-database or cross-service tables must use separate files.

@@ -157,6 +157,10 @@ flowchart TD
 - DDL 证据来源：不适用 | 数据库 MCP 查询 | 仓库 SQL DDL 文件 | 实现迁移/Schema SQL | 待确认
 - 缺少 DDL 证据处理：不适用 | 配置 MCP | 提供 SQL 文件 | 用户明确同意 pending 占位；不得从实体/ORM/Mapper 推断生成 `CREATE TABLE`
 - DDL 同步时机：同一实现任务 | 独立任务 | 暂缓，说明负责人和原因
+- 是否为存量表结构变更：否 | 是，原始 DDL 已存在 | 是，但原始 DDL 待确认
+- 执行型变更 DDL：不适用 | 项目迁移目录中的 `<path>.sql` | `specs/features/<feature-slug>/ddl-changes/<INIT|CR-xxx>-<database_or_service>-<business_model>.sql`
+- 变更语句设计：不适用 | `ALTER TABLE` 增加/修改/删除字段、索引、约束或默认值的设计说明
+- 生成时机：规划阶段仅记录路径和意图；用户确认实现后生成可执行 SQL
 
 ## 错误与异常处理
 
@@ -181,6 +185,7 @@ flowchart TD
 - 兼容窗口：
 - 数据修复或回填：
 - 运维说明：
+- 执行型 DDL 回滚语句或回退策略：不适用，原因 | <反向 ALTER/备份恢复/人工修复说明>
 
 ## 关键决策
 
@@ -216,6 +221,7 @@ flowchart TD
 - 是否需要更新其他真理源：否
 - 是否需要更新 SQL DDL：否
 - SQL DDL 文件：
+- 执行型变更 DDL 文件：无 | `<migration-path>.sql` | `ddl-changes/<change-id>-<database_or_service>-<business_model>.sql`
 - DDL 分组规则：仅同一数据库/服务且业务模型强耦合时合并；不同数据库/服务必须拆分
 - 知识同步标记：Knowledge Sync Needed: no
 - 说明：

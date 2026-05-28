@@ -52,6 +52,13 @@
   - Quality: 确认 SQL 知识文件可读、分组正确，且没有重复写入未证实的结构事实
   - Done: DDL 知识更新完成，或已明确暂缓原因和负责人
 
+- [ ] Txxx 生成存量表执行型变更 DDL
+  - AC: AC-xxx
+  - Files: specs/features/<feature-slug>/ddl-changes/<INIT|CR-xxx>-<database_or_service>-<business_model>.sql | <project-migration-path>.sql
+  - Verification: 对照原始 `.specify/sql/<database_or_service>/<business_model>.sql` 与目标结构，确认生成的 `ALTER TABLE` 或等价语句覆盖字段/索引/约束/默认值变更且可供用户复制执行
+  - Quality: 明确执行前置条件、兼容与回滚策略；执行型变更 DDL 与变更后 SQL 知识快照分别维护
+  - Done: 用户确认实现后已生成执行型变更 DDL 文件，或已明确不适用原因
+
 - [ ] Txxx 汇总知识影响
   - AC: AC-xxx
   - Files: <truth-source-path>

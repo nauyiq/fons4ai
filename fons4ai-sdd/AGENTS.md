@@ -102,11 +102,14 @@
 - 涉及持久化数据模型新增、删除、重命名、字段变更、索引变更、约束变更、关系变更时，必须同步对应 `.specify/sql/<database_or_service>/<business_model>.sql`。
 - SQL DDL 文件按“数据库/服务 + 业务模型”归档；同一数据库内强业务耦合的多张表可以放入同一个业务模型 SQL 文件，例如账号、登录、授权相关表。
 - 即使属于同一业务域，只要分属不同数据库、服务库或物理数据源，必须拆分为不同 SQL 文件，不得跨库合并。
-- 每个 SQL DDL 知识文件必须在文件头标明数据库/服务、业务模型、包含的数据表和来源证据。
-- SQL 文件必须保留来源、状态和更新时间等证据说明。
-- 生成或更新 SQL 知识文件后，应使用 `skills/fons4ai-project-knowledge-base-init/scripts/validate_sql_knowledge.py --sql-root .specify/sql` 做结构校验；若运行环境无法执行脚本，交付时必须说明并按同等字段手动检查。
+- 每个 SQL DDL 知识文件必须在文件头标明数据库/服务、业务模型、包含的数据表、确认状态和更新时间。
+- SQL 知识文件不得包含 MCP/Tool 名称、查询语句、源文件路径、`Source`、`Migration Script` 或 `DDL Evidence` 等来源元数据；DDL 来源只用于生成过程中的事实校验，不写入 SQL 产物。
+- 生成或更新 SQL 知识文件后，默认不执行 `validate_sql_knowledge.py` 脚本校验；仅在用户明确要求，或需要排查既有 SQL 知识文件格式问题时按需使用该脚本。
 - `.specify/sql/**/*.sql` 是知识库文件，不替代项目自身的数据库迁移脚本。
+- SDD 实现涉及存量表字段、索引、约束、默认值或关系结构变更，且 `.specify/sql/<database_or_service>/<business_model>.sql` 中已有可确认的原始 DDL 时，必须同时生成可直接复制执行的变更 DDL 脚本，优先使用项目既有迁移脚本目录；若项目没有明确迁移目录，则生成至 `specs/features/<feature-slug>/ddl-changes/<change-id>-<database_or_service>-<business_model>.sql`，其中 `<change-id>` 使用 `INIT` 或 `CR-xxx`。
+- 执行型变更 DDL 与 SQL 知识快照职责不同：变更脚本记录本次 `ALTER TABLE` 等执行语句，`.specify/sql/**/*.sql` 更新为变更后的当前结构；二者不得相互替代。规划阶段仅记录目标路径和动作，用户确认实现后才生成执行型 SQL 文件；执行型 SQL 同样不得包含 MCP/Tool 名称、查询文本或来源路径等元数据。
 - 初始化知识库或汇总长期 SQL 知识时，DDL 来源优先级为：已配置的数据库 MCP 查询结果 -> 仓库中已有 SQL DDL 文件。实体类、Mapper、ORM 注解、Repository 方法和代码字段只能辅助定位候选表或业务模型，不得作为生成 `CREATE TABLE` 的依据。
+- 如果存在多个可用数据库 MCP 工具或多个候选数据库，并且无法根据用户指定、项目配置或数据库归属事实唯一定位目标，必须先询问用户选择使用的 MCP 工具/数据库范围，再获取 DDL；不得自行选库或合并多个数据源。
 - 若未配置可用数据库 MCP，且仓库中没有对应 SQL DDL 文件，不得臆造 SQL DDL；应在数据架构中标记 `待确认`，提示用户配置 MCP 或提供 SQL 文件。只有用户明确要求占位时，才创建 `.specify/sql/pending/<business_model>.sql`。
 - 证据不足时不得把字段、类型、索引或约束包装成已确认事实；应在 SQL 文件头和字段注释中标记 `推断` 或 `待确认`。若数据库/服务归属未知，先使用 `.specify/sql/pending/<business_model>.sql` 暂存，确认后再迁移到目标数据库/服务目录。
 

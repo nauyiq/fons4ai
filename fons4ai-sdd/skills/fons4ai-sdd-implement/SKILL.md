@@ -61,11 +61,16 @@ All features use the S1 or S2 path.
    - Keep one database-scoped cohesive business model per SQL file.
    - Multiple strongly related tables may share one SQL file only when they belong to the same database/service.
    - Never merge DDL from different databases, service-owned schemas, or physical data sources into one SQL file.
-   - Preserve source evidence, status, and last generated date in the SQL header.
+   - Preserve database/service, business model, table list, status, and last generated date in the SQL header.
    - SQL knowledge updates must be backed by actual DDL evidence from implementation migration/schema SQL, repository SQL files, or configured database MCP query results. Do not infer `CREATE TABLE` from entity classes, Mapper interfaces, ORM annotations, or Java field types.
+   - If multiple database MCP tools or candidate databases could provide required DDL and selected tasks or project facts do not resolve the target, stop and ask the user to select the MCP tool/database scope before retrieving DDL.
+   - Generated SQL knowledge files must not contain MCP/Tool identifiers, query text, source paths, `Source`, `Migration Script`, or `DDL Evidence` metadata.
    - If the task names `.specify/sql/pending/<business_model>.sql`, keep the database/service as `待确认` until a later SDD change or knowledge-summary task confirms ownership.
    - If implementation changes a persistent model but no selected task names the matching database-scoped business-model SQL file, stop and recommend returning to `fons4ai-sdd-tasks` or `fons4ai-sdd-change` to add the DDL sync task.
-   - After updating SQL knowledge files, run `../fons4ai-project-knowledge-base-init/scripts/validate_sql_knowledge.py --sql-root .specify/sql` when Python is available, or record manual validation when it cannot run.
+   - Updating SQL knowledge files does not by itself require running `../fons4ai-project-knowledge-base-init/scripts/validate_sql_knowledge.py`; use it only when the user explicitly requests SQL artifact validation or when diagnosing malformed existing SQL knowledge files.
+   - If implementation changes the structure of an existing table and the selected task identifies confirmed baseline DDL in `.specify/sql/`, generate the planned executable change DDL file after approval. Prefer the project's migration directory; otherwise create `specs/features/<feature-slug>/ddl-changes/<change-id>-<database_or_service>-<business_model>.sql`.
+   - The executable change DDL file must contain the concrete `ALTER TABLE` or database-equivalent operations needed for this change, with concise execution prerequisites and rollback notes when required. It is provided for user execution and must not be substituted by the updated `.specify/sql/` current-state snapshot; do not write MCP/Tool identifiers, query text, or source-path/provenance metadata into this SQL file.
+   - If the task requires executable change DDL but does not identify an output path or the original DDL baseline is not reliable, stop and return to task/change planning rather than inventing an executable script.
 10. Write a report under `specs/features/<feature-slug>/reports/` summarizing tasks, approval evidence, files, tests, AC coverage, unresolved risks, updated DDL files, S2 gate closure when applicable, and whether knowledge-base or source-of-truth documents need synchronization.
 
 ## Output Rules
@@ -76,5 +81,6 @@ All features use the S1 or S2 path.
 - Record `实现确认依据` in the implementation report. Use the latest user message quote or concise summary; never infer approval from artifact existence.
 - If the plan is wrong or incomplete, stop and recommend returning to `fons4ai-sdd-tasks` or `fons4ai-sdd-change`.
 - Treat `.specify/sql/**/*.sql` as required knowledge artifacts for planned persistent data model additions or changes, not as optional follow-up.
+- Treat planned executable change DDL for confirmed existing-table structural changes as an implementation deliverable, separate from `.specify/sql/**/*.sql` current-state knowledge.
 - Never skip RED for behavior changes. If automated testing is impossible, record an explicit manual verification reason and steps.
 - End with completed task IDs, changed files, verification commands/results, knowledge/DDL sync need, remaining tasks, and suggest `fons4ai-knowledge-summary` when verified changes should be merged into a knowledge base or source-of-truth document.

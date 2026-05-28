@@ -110,6 +110,10 @@ def validate_rules_dir(rules_dir: Path) -> list[str]:
             errors.append("data-ddl-rule.md missing no-migration-script SQL generation rule")
         if "推断" not in data_text or "待确认" not in data_text:
             errors.append("data-ddl-rule.md missing inferred/pending evidence state rule")
+        if "执行型变更 DDL" not in data_text or "ALTER TABLE" not in data_text:
+            errors.append("data-ddl-rule.md missing executable DDL requirement for existing-table structural changes")
+        if "ddl-changes/" not in data_text:
+            errors.append("data-ddl-rule.md missing fallback executable DDL artifact path")
 
     code_style_rule = rules_dir / "code-style-rule.md"
     if code_style_rule.exists():

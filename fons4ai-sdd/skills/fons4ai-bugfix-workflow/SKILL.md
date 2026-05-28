@@ -92,7 +92,7 @@ This skill fixes implementation defects. If the work changes requirements, accep
 8. Handle knowledge sync.
    - If the fix confirms durable business, technical, data, or governance facts, mark `Knowledge Sync Needed: yes` in the report and suggest `fons4ai-knowledge-summary`.
    - If the fix updates DDL knowledge, list the `.specify/sql/**/*.sql` files in the report.
-   - If DDL knowledge files were updated, run `../fons4ai-project-knowledge-base-init/scripts/validate_sql_knowledge.py --sql-root .specify/sql` when Python is available, or record manual SQL knowledge validation.
+   - Updating DDL knowledge files does not by itself require running `../fons4ai-project-knowledge-base-init/scripts/validate_sql_knowledge.py`; use it only when the user explicitly requests SQL artifact validation or when diagnosing malformed existing SQL knowledge files.
    - Do not promote debugging notes or guesses into source-of-truth documents from this skill unless explicitly scoped.
 
 ## Hard Gates

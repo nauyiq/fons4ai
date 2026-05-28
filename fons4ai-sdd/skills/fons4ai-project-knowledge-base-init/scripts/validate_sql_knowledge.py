@@ -9,16 +9,26 @@ import sys
 from pathlib import Path
 
 
-REQUIRED_HEADERS = ("Database/Service", "Business Model", "Tables", "Source", "Status", "Migration Script", "Last Generated")
+REQUIRED_HEADERS = ("Database/Service", "Business Model", "Tables", "Status", "Last Generated")
+FORBIDDEN_METADATA_HEADERS = (
+    "Source",
+    "DDL Source",
+    "Origin",
+    "Original File",
+    "Migration Script",
+    "Repository SQL File",
+    "DDL Evidence",
+    "Evidence",
+    "Query",
+    "Tool",
+    "MCP Tool",
+    "MCP Server",
+)
 VALID_STATUS = {"已确认", "推断", "待确认"}
 DATE_RE = re.compile(r"^\d{4}-\d{2}-\d{2}$")
 CREATE_TABLE_RE = re.compile(r"\bCREATE\s+TABLE\b|TODO:\s*CREATE\s+TABLE", re.IGNORECASE)
 BAD_TEXT_PATTERNS = tuple(s.encode("utf-8").decode("unicode_escape") for s in (r"\ufffd", r"\u9225", r"\u9239", r"\u93ba\u3126", r"\u5bf0\u5477", r"\u5bb8\u8336", r"\u93c2\u56e8", r"\u740c\u3126"))
-DISALLOWED_DDL_SOURCE_RE = re.compile(
-    r"实体|entity|mapper\s*(?:xml|interface)?|ORM|annotation|Java\s*(?:field|type)|"
-    r"Repository\s*method|inferred\s+java",
-    re.IGNORECASE,
-)
+TOOL_METADATA_RE = re.compile(r"^\s*--.*(?:\bMCP\b|\bTOOL\b|mcp__)", re.IGNORECASE | re.MULTILINE)
 
 
 def read_text(path: Path) -> str:
@@ -63,6 +73,11 @@ def validate_sql_file(path: Path, sql_root: Path | None = None, strict_comments:
     for header in REQUIRED_HEADERS:
         if not header_value(text, header):
             errors.append(f"{path} missing SQL header: -- {header}: <value>")
+    for header in FORBIDDEN_METADATA_HEADERS:
+        if re.search(rf"^\s*--\s*{re.escape(header)}\s*:", text, re.IGNORECASE | re.MULTILINE):
+            errors.append(f"{path} must not contain provenance header: -- {header}:")
+    if TOOL_METADATA_RE.search(text):
+        errors.append(f"{path} must not contain MCP/Tool metadata comments")
 
     status = header_value(text, "Status")
     if status and status not in VALID_STATUS:
@@ -81,12 +96,6 @@ def validate_sql_file(path: Path, sql_root: Path | None = None, strict_comments:
 
     if status in {"推断", "待确认"} and not re.search(r"推断|待确认|TODO", text):
         errors.append(f"{path} has inferred/pending status but no inline 推断/待确认/TODO evidence markers")
-
-    source = header_value(text, "Source") or ""
-    if source in {"<repository evidence or 待确认>", "<source>", ""}:
-        errors.append(f"{path} Source header must name evidence or 待确认")
-    if source and DISALLOWED_DDL_SOURCE_RE.search(source):
-        errors.append(f"{path} Source header uses code metadata instead of MCP or repository SQL DDL evidence: {source}")
 
     for pattern in BAD_TEXT_PATTERNS:
         if pattern in text:

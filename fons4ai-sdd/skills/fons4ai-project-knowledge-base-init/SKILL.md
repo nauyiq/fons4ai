@@ -19,6 +19,7 @@ If none is true, do not apply this skill automatically. Continue with normal Cod
 
 Use this skill to initialize a generic project knowledge base from repository facts, database MCP facts, existing SQL files, and user-provided context.
 The default document output location is `.specify/memory/`; SQL knowledge files live under `.specify/sql/`.
+DDL source evidence is used while working but is not persisted in generated SQL knowledge files.
 
 Default output files:
 
@@ -38,6 +39,8 @@ Read the matching template before drafting each document:
 1. Inspect available facts before writing.
    - Build a file inventory with `rg --files`, then inspect project guidance, existing knowledge, build files, module names, database config, repository SQL files, migration directories, API contracts, representative source files, and user-provided context.
    - Check whether local database MCP tools are configured for the target database. When available, treat MCP query results as the preferred DDL source.
+   - If multiple database MCP tools or candidate databases exist and explicit user input, project configuration, or ownership facts do not identify one target unambiguously, ask the user which MCP tool and database scope to use before retrieving DDL.
+   - Do not query multiple candidate databases and merge DDL speculatively.
    - Do not load every discovered file into context. Read indexes, headings, and representative files first; expand only around confirmed domains, modules, integrations, and persistent models.
    - Prefer observed project facts over generic assumptions. Concrete business names must come from the current repository or explicit user facts, not from this skill.
 
@@ -60,12 +63,13 @@ Read the matching template before drafting each document:
    - Use `data-architecture-template.md` for data goals, domains, objects, relationships, SQL file index, data flows, lifecycle, quality, and risks.
 
 5. Generate SQL knowledge files only from real DDL sources.
-   - Preferred source: configured database MCP service. Use the available read-only database MCP tool to query schemas and real table DDL, for example MySQL `information_schema.tables` plus `SHOW CREATE TABLE <schema>.<table>`. Save the returned DDL into `.specify/sql/<database_or_service>/<business_model>.sql` with the SQL File Contract header.
+   - Preferred source: a user-confirmed or unambiguous configured database MCP service. Use the available read-only database MCP tool to query schemas and real table DDL, for example MySQL `information_schema.tables` plus `SHOW CREATE TABLE <schema>.<table>`. Save the returned DDL into `.specify/sql/<database_or_service>/<business_model>.sql` with the SQL File Contract header.
    - Secondary source: existing repository SQL DDL files, such as migration scripts, schema files, `*.sql` init scripts, or checked-in database DDL. Import them with `scripts/import_sql_knowledge_file.py --source <source.sql> --sql-root .specify/sql --database <database_or_service> --business-model <business_model> --repo-root .`.
    - Do not generate SQL DDL from Java entities, Mapper interfaces, ORM annotations, DTOs, repository method names, query method names, or inferred Java field types. These code facts may help locate candidate business models or table names, but they are not DDL evidence.
    - `scripts/generate_sql_knowledge.py` is deprecated and must not be used for new knowledge-base initialization because it inferred DDL from code metadata.
    - If neither MCP DDL nor repository SQL DDL is available, do not fabricate `CREATE TABLE` content. Record the missing DDL source in `.specify/memory/data-architecture.md` as `待确认`, ask the user to configure a database MCP service or provide SQL files, and create a `.specify/sql/pending/<business_model>.sql` placeholder only when the user explicitly requests a placeholder.
-   - Keep SQL `COMMENT` clauses as returned by the database or existing SQL source unless they contain secrets or corrupted text. Do not inject Java field names, Java types, evidence paths, raw JavaDoc, HTML, `@link`, `@return`, mojibake, or long metadata into SQL `COMMENT`; put source evidence in SQL header comments instead.
+   - Keep SQL `COMMENT` clauses as returned by the database or existing SQL source unless they contain secrets or corrupted text. Do not inject Java field names, Java types, evidence paths, raw JavaDoc, HTML, `@link`, `@return`, mojibake, or long metadata into SQL `COMMENT`.
+   - Generated SQL files must not contain MCP/Tool names, MCP query text, repository source paths, `Source`, `Migration Script`, or `DDL Evidence` headers. Use source evidence transiently for validation, not as SQL file content.
 
 6. Preserve evidence quality.
    - Write Markdown documents in Chinese unless the user explicitly requests another language.
@@ -74,10 +78,10 @@ Read the matching template before drafting each document:
    - Keep KISS, but do not over-compress critical scenarios, rule orchestration, state changes, exception paths, and data interactions.
 
 7. Validate before finishing.
-   - Run `scripts/validate_sql_knowledge.py --sql-root .specify/sql --repo-root . --strict-comments` after SQL files are generated, copied, imported, or updated.
+   - Do not run `scripts/validate_sql_knowledge.py` merely because SQL knowledge files were generated, copied, imported, or updated. Use it only when the user explicitly requests SQL artifact validation or when diagnosing malformed existing SQL knowledge files.
    - Run `scripts/validate_memory_knowledge.py --memory-root .specify/memory` after memory documents are generated or updated.
-   - Confirm Markdown headings, tables, Mermaid blocks, SQL headers, status values, source evidence, `CREATE TABLE` blocks, scenario-to-technical mapping, and absence of mojibake.
-   - Report created or updated paths, key evidence sources, main `待确认` items, and validation results.
+   - Confirm Markdown headings, tables, Mermaid blocks, scenario-to-technical mapping, and absence of mojibake. Apply SQL artifact validation only when it is explicitly in scope under the preceding rule.
+   - Report created or updated paths, DDL acquisition status, main `待确认` items, and any validation that was explicitly performed. Do not disclose MCP tool identifiers or SQL-file source paths in generated SQL content.
 
 ## SQL File Contract
 
@@ -87,20 +91,16 @@ Each generated SQL file should use this structure:
 -- Database/Service: <database_or_service>
 -- Business Model: <business_model>
 -- Tables: <table_1>, <table_2>
--- Source: <database MCP query | repository SQL file | 待确认>
 -- Status: <已确认 | 推断 | 待确认>
--- Migration Script: <path | none | 待确认>
 -- Last Generated: YYYY-MM-DD
 
 CREATE TABLE `<table_name>` (
   `<column_name>` <type> NULL COMMENT '<clean business meaning>'
 );
-
--- DDL Evidence:
--- - <MCP server/query or repository SQL file path>
 ```
 
 If no reliable business meaning is available for a column, omit the column `COMMENT` instead of filling it with evidence metadata.
+Do not include source paths, MCP/tool identifiers, query text, or evidence headers anywhere in generated SQL files.
 
 Use one SQL file per database-scoped business model. Multiple strongly related tables may share one file only when they belong to the same database/service and cohesive business model. Cross-database or cross-service tables must remain separate.
 

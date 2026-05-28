@@ -15,6 +15,7 @@
 
 - path/to/file：
 - .specify/sql/<database_or_service>/<business_model>.sql：
+- specs/features/<feature-slug>/ddl-changes/<INIT|CR-xxx>-<database_or_service>-<business_model>.sql | <project-migration-path>.sql：
 
 ## TDD 记录
 
@@ -70,6 +71,7 @@
 - 数据架构：否
 - 其他真理源：否
 - SQL DDL 文件：否 | 已更新 | 仍需更新
+- 执行型变更 DDL：不适用 | 已生成 `<path>.sql` | 仍需生成，原因
 - SQL DDL 证据：
 - DDL 分组证据：
 - 原因：

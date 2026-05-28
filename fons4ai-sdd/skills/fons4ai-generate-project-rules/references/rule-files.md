@@ -186,6 +186,10 @@ Must cover:
 - transaction boundaries, consistency, idempotency, concurrency, and rollback expectations;
 - migration script location and review expectations when the repo has migrations;
 - SQL knowledge generation from real DDL evidence: configured database MCP query results or existing repository SQL DDL files;
+- user selection before DDL retrieval when multiple MCP tools or plausible databases exist and current facts do not uniquely identify the target;
+- SQL artifact privacy: generated `.specify/sql/**/*.sql` files must not store MCP/Tool identifiers, queries, source paths, or provenance headers;
+- executable change DDL: when SDD implementation alters an existing table with confirmed original DDL in `.specify/sql/`, require a separate copy-executable `ALTER TABLE` or equivalent script in the established migration location or `specs/features/<feature-slug>/ddl-changes/<change-id>-<database_or_service>-<business_model>.sql`, without MCP/Tool identifiers or provenance metadata;
+- stage boundary: design/tasks/CR artifacts plan the executable DDL path and rollback needs, while only approved implementation writes the executable SQL file;
 - prohibition on generating `CREATE TABLE` from entities, ORM metadata, mapper interfaces, repositories, Java fields, or code-only guesses;
 - `.specify/sql/<database_or_service>/<business_model>.sql` DDL knowledge files;
 - `.specify/sql/pending/<business_model>.sql` fallback when database/service ownership is unknown;
@@ -199,6 +203,7 @@ Common mistakes to prevent:
 - skipping SQL knowledge files because no migration script exists;
 - presenting inferred columns, indexes, or constraints as confirmed facts;
 - treating `.specify/sql/**/*.sql` as executable migrations;
+- updating the current-state SQL knowledge file without generating the required executable change DDL for an existing-table structural change;
 - changing schema without updating SDD tasks and data architecture knowledge.
 
 Acceptance checks:
@@ -207,3 +212,4 @@ Acceptance checks:
 - every schema-changing feature has a DDL sync task or approved deferral;
 - missing migration scripts still result in SQL knowledge files with `推断` or `待确认` evidence status;
 - data architecture indexes generated SQL files when present.
+- confirmed existing-table schema changes include an executable change DDL deliverable distinct from the SQL knowledge snapshot.

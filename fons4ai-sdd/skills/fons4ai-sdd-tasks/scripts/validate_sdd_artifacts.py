@@ -13,6 +13,10 @@ AC_RE = re.compile(r"\bAC-\d{3}\b")
 REQ_RE = re.compile(r"\bREQ-\d{3}\b")
 TASK_RE = re.compile(r"^- \[[ xX]\] (T\d{3})(?:\s|$)", re.MULTILINE)
 SQL_PATH_RE = re.compile(r"\.specify/sql/[A-Za-z0-9_./-]+\.sql")
+EXECUTABLE_DDL_PATH_RE = re.compile(
+    r"\.?[A-Za-z0-9_.-]+(?:/[A-Za-z0-9_.-]+)*\.sql",
+    re.IGNORECASE,
+)
 S2_RE = re.compile(r"(SDD\s*Level|SDD\s*等级)\s*[:：]\s*`?S2`?", re.IGNORECASE)
 
 APPROVAL_GATE_HEADINGS = ("## 实现确认门禁", "## Implementation Approval Gate")
@@ -182,6 +186,24 @@ def plan_declares_sql_sync(plan_text: str) -> bool:
     )
 
 
+def declares_existing_table_change_with_baseline(text: str) -> bool:
+    return bool(
+        re.search(r"Existing\s+table.*baseline\s+DDL\s*:\s*(yes|confirmed)", text, re.IGNORECASE)
+        or re.search(r"存量表原始\s*DDL\s*[：:]\s*已存在", text)
+        or re.search(r"是否为存量表结构变更\s*[：:]\s*是[，,]?\s*原始\s*DDL\s*已存在", text)
+    )
+
+
+def executable_ddl_paths(text: str) -> list[str]:
+    return sorted(
+        {
+            path
+            for path in EXECUTABLE_DDL_PATH_RE.findall(text)
+            if not path.startswith(".specify/sql/")
+        }
+    )
+
+
 def validate(feature_dir: Path, strict: bool = False) -> tuple[list[str], list[str]]:
     errors: list[str] = []
     warnings: list[str] = []
@@ -237,6 +259,16 @@ def validate(feature_dir: Path, strict: bool = False) -> tuple[list[str], list[s
     for sql_file in plan_sql_files:
         if sql_file not in tasks_text:
             errors.append(f"{sql_file} is referenced in plan.md but not in tasks.md")
+
+    if declares_existing_table_change_with_baseline(plan_text):
+        executable_ddl_files = executable_ddl_paths(plan_text)
+        if not executable_ddl_files:
+            errors.append("plan.md declares an existing-table change with baseline DDL but names no executable change DDL file")
+        for ddl_file in executable_ddl_files:
+            if ddl_file not in tasks_text:
+                errors.append(f"{ddl_file} is referenced as executable change DDL in plan.md but not in tasks.md")
+        if not re.search(r"(执行型变更\s*DDL|Executable\s+change\s+DDL|ALTER\s+TABLE)", tasks_text, re.IGNORECASE):
+            errors.append("tasks.md has no executable change DDL task for the existing-table structural change")
 
     if not has_any_heading(plan_text, KNOWLEDGE_IMPACT_HEADINGS):
         errors.append("plan.md is missing knowledge impact section")
@@ -312,6 +344,12 @@ def validate_change_file(change_file: Path) -> list[str]:
             errors.append(f"{change_file} declares SQL DDL action but names no .specify/sql/**/*.sql file")
         if not re.search(r"(Sync\s+DDL|同步\s*DDL)", text, re.IGNORECASE):
             errors.append(f"{change_file} declares SQL DDL action but has no DDL sync task")
+    if declares_existing_table_change_with_baseline(text):
+        executable_ddl_files = executable_ddl_paths(text)
+        if not executable_ddl_files:
+            errors.append(f"{change_file} declares an existing-table change with baseline DDL but names no executable change DDL file")
+        if not re.search(r"(执行型变更\s*DDL|Executable\s+change\s+DDL|ALTER\s+TABLE)", text, re.IGNORECASE):
+            errors.append(f"{change_file} has no executable change DDL task for the existing-table structural change")
 
     return errors
 

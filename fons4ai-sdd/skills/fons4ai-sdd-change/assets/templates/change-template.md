@@ -55,6 +55,8 @@
 - SQL DDL 文件：
 - DDL 分组：同一数据库/服务 + 强耦合业务模型可合并；不同数据库/服务必须拆分
 - SQL DDL 动作：无 | 新增 | 更新 | 重命名
+- 存量表原始 DDL：无 | 已存在于 `.specify/sql/<database_or_service>/<business_model>.sql` | 待确认
+- 执行型变更 DDL：不适用 | `<project-migration-path>.sql` | `specs/features/<feature-slug>/ddl-changes/CR-xxx-<database_or_service>-<business_model>.sql`
 - 知识同步标记：Knowledge Sync Needed: no
 
 ## 回归与回滚
@@ -91,3 +93,10 @@
   - Verification: SQL 文件与变更后的同库业务模型/表组一致，并在存在 data-architecture.md 时完成索引
   - Quality: 确认 SQL 知识文件可读、分组正确，且没有重复写入未证实的结构事实
   - Done: DDL 知识更新完成，或已明确暂缓原因和负责人
+
+- [ ] Txxx 生成存量表执行型变更 DDL
+  - AC: AC-xxx
+  - Files: specs/features/<feature-slug>/ddl-changes/CR-xxx-<database_or_service>-<business_model>.sql | <project-migration-path>.sql
+  - Verification: 对照原始 SQL DDL 与目标结构确认 `ALTER TABLE` 或等价语句覆盖本次表结构变更，可供用户复制执行
+  - Quality: 执行型变更 DDL 与 `.specify/sql/` 当前结构快照分离维护，并说明执行前置条件和回滚策略
+  - Done: 用户确认实现后已生成执行型变更 DDL 文件，或已明确不适用原因

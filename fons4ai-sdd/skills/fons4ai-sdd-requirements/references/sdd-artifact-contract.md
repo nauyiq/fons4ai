@@ -34,6 +34,8 @@ Use `.specify/memory/`, `.specify/sql/`, and `.specify/rules/` as default long-l
 - `data-architecture.md` stores data domains, core objects, relationships, quality rules, metrics, and data flows.
 - `.specify/sql/**/*.sql` stores one DDL SQL file per database-scoped business model. A file may contain multiple strongly related tables only when they belong to the same database/service and cohesive business model.
 - SQL knowledge should come from real DDL evidence: configured database MCP query results or existing repository SQL DDL files. Entities, ORM metadata, Mapper interfaces, repository methods, and Java field types may locate candidate models, but must not be used to generate `CREATE TABLE`.
+- If multiple database MCP tools or multiple plausible databases are available, ask the user to select the MCP tool/database scope before retrieving DDL unless explicit user input or repository facts identify one unambiguously.
+- Generated SQL knowledge files keep database/service, business model, included tables, status, update date, and DDL only. They must not contain MCP/Tool identifiers, query text, repository source paths, or provenance headers such as `Source`, `Migration Script`, or `DDL Evidence`.
 - `.specify/rules/` may contain project rules: `code-style-rule.md`, `project-structure-rule.md`, `features-rule.md`, `testing-rule.md`, and `data-ddl-rule.md`.
 - `constitution.md`, when present, is governance context and must not be rewritten by SDD feature skills.
 
@@ -60,10 +62,13 @@ When SDD work adds, removes, renames, or changes a concrete persistent data mode
 - `tasks.md` must include an explicit DDL synchronization task for every impacted SQL file, unless the plan records a user-approved deferral with owner and reason.
 - `fons4ai-sdd-implement` may create or update `.specify/sql/**/*.sql` only when the selected task names the SQL file or when the implementation reveals a necessary schema change and the user approves updating the task/artifact scope.
 - Generated SQL knowledge files are documentation artifacts, not migration scripts. Keep migration scripts in the repository's normal migration location when the project has one.
+- When an approved implementation changes columns, indexes, constraints, defaults, or relationships of an existing table and the corresponding `.specify/sql/<database_or_service>/<business_model>.sql` already contains confirmed baseline DDL, the plan and tasks must require an executable change DDL script containing the needed `ALTER TABLE` or equivalent statements.
+- Prefer the repository's established migration-script location for executable change DDL. If no migration location is established, use `specs/features/<feature-slug>/ddl-changes/<change-id>-<database_or_service>-<business_model>.sql`, where `<change-id>` is `INIT` for initial feature work or `CR-xxx` for an incremental change.
+- Executable change DDL is generated only during approved implementation, not during requirements, design, task planning, or change planning. It records the operation to execute; `.specify/sql/**/*.sql` separately records the resulting current structure. Like other generated SQL artifacts, it must not contain MCP/Tool identifiers, query text, or source-path/provenance metadata.
 - If no repository SQL file exists, query the configured database MCP service for actual DDL. If no MCP DDL and no repository SQL DDL are available, mark SQL evidence as `待确认` and ask for MCP configuration or SQL files instead of fabricating table structure.
 - Use `.specify/sql/pending/<business_model>.sql` only when ownership is unknown or the user explicitly requests a pending placeholder.
 - Never merge DDL from different databases, service-owned schemas, or physical data sources into one SQL knowledge file, even when the tables belong to the same broad business area.
-- After creating or updating SQL knowledge files, run `../fons4ai-project-knowledge-base-init/scripts/validate_sql_knowledge.py --sql-root .specify/sql` when Python is available. If the script cannot run, perform the same header, grouping, status, source, and `CREATE TABLE` checks manually and report the reason.
+- Creating or updating SQL knowledge files does not require executing `../fons4ai-project-knowledge-base-init/scripts/validate_sql_knowledge.py`. Use that script only when the user explicitly requests SQL artifact validation or when diagnosing malformed existing SQL knowledge files.
 
 ## Levels
 
@@ -83,6 +88,7 @@ specs/features/<feature-slug>/
   tasks.md
   checklists/
   contracts/
+  ddl-changes/
   changes/
   reports/
 ```

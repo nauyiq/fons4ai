@@ -50,12 +50,15 @@ It must not write business code; implementation remains the responsibility of `f
    - Regression risk and rollback needs.
    - Knowledge impact: business, technical, data architecture, governance, other truth-source, or DDL facts that must be synchronized.
    - For any persistent data model addition or change, name each impacted `.specify/sql/<database_or_service>/<business_model>.sql` file, required action, and DDL evidence source: MCP query, repository SQL file, or implementation migration/schema SQL.
+   - If the change alters an existing table whose SQL knowledge file already contains confirmed baseline DDL, name an executable change DDL output file: use an established migration path when present, otherwise `specs/features/<feature-slug>/ddl-changes/CR-xxx-<database_or_service>-<business_model>.sql`.
+   - If multiple database MCP tools or candidate databases could provide DDL and explicit user input or existing facts do not select one, capture a clarification question and obtain user selection before retrieving DDL.
+   - Generated SQL knowledge files must not include MCP/Tool identifiers, query text, source paths, or provenance headers.
    - Keep same-database cohesive business model tables together when useful, but split files for different databases, service-owned schemas, or physical data sources.
 6. Ask before modifying existing SDD artifacts. Preserve unaffected content and avoid full rewrites.
 7. Update affected docs in place and append a concise change log entry.
 8. Create `changes/CR-xxx.md` and add incremental tasks to `tasks.md` or a CR-specific task section. Every incremental task must include `AC:`, `Files:`, `Verification:`, `Quality:`, and `Done:`; implementation tasks must include a DDD-lite/domain-modeling check in `Quality:`.
-9. When the change affects persistent data models, add mandatory DDL synchronization tasks for `.specify/sql/**/*.sql`; do not leave SQL knowledge updates as implicit follow-up. Do not infer DDL from entity classes, Mapper interfaces, ORM annotations, or Java field types.
-10. Run `../fons4ai-sdd-tasks/scripts/validate_sdd_artifacts.py --change-file <CR-file>` after writing the CR. If DDL knowledge files were created or updated, also run `../fons4ai-project-knowledge-base-init/scripts/validate_sql_knowledge.py --sql-root .specify/sql`. Fix validation failures before reporting success.
+9. When the change affects persistent data models, add mandatory DDL synchronization tasks for `.specify/sql/**/*.sql`; do not leave SQL knowledge updates as implicit follow-up. For an existing-table structural change with confirmed baseline DDL, also add an implementation task that generates copy-executable `ALTER TABLE` or equivalent change SQL after user approval. Do not infer DDL from entity classes, Mapper interfaces, ORM annotations, or Java field types.
+10. Run `../fons4ai-sdd-tasks/scripts/validate_sdd_artifacts.py --change-file <CR-file>` after writing the CR. Creating or updating DDL knowledge files does not require running `../fons4ai-project-knowledge-base-init/scripts/validate_sql_knowledge.py`; use that script only when the user explicitly requests SQL artifact validation or when diagnosing malformed existing SQL knowledge files. Fix required validation failures before reporting success.
 11. Stop after change planning. Do not invoke implementation. Tell the user they can reply `执行`, `开始实现`, or `继续执行` to execute all unfinished incremental tasks, or `执行 T001,T002` to specify task IDs.
 
 ## Change Clarification Gate
