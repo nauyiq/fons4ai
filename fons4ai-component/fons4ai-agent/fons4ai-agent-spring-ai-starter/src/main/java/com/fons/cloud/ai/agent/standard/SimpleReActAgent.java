@@ -1,7 +1,7 @@
 package com.fons.cloud.ai.agent.standard;
 
 import cn.hutool.core.lang.Assert;
-import com.fons.cloud.ai.exception.SystemIntervalException;
+import com.fons.cloud.common.base.exception.SystemIntervalException;
 import lombok.extern.slf4j.Slf4j;
 import org.apache.commons.collections4.CollectionUtils;
 import org.apache.commons.lang3.StringUtils;

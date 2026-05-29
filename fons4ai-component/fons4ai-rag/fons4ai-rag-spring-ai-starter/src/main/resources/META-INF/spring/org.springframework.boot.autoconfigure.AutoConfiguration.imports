@@ -1,0 +1,2 @@
+com.fons.cloud.ai.rag.config.DocumentReaderAutoConfiguration
+com.fons.cloud.ai.rag.config.PgVectorStoreAutoConfiguration

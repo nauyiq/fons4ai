@@ -21,13 +21,19 @@
     <dependencies>
         <dependency>
             <groupId>com.fons.cloud.ai</groupId>
-            <artifactId>fons4ai-agent-core</artifactId>
+            <artifactId>fons4ai-agent-common</artifactId>
             <version>${revision}</version>
         </dependency>
 
         <dependency>
             <groupId>com.alibaba.cloud.ai</groupId>
             <artifactId>spring-ai-alibaba-agent-framework</artifactId>
+            <exclusions>
+                <exclusion>
+                    <artifactId>mcp</artifactId>
+                    <groupId>io.modelcontextprotocol.sdk</groupId>
+                </exclusion>
+            </exclusions>
         </dependency>
     </dependencies>
 

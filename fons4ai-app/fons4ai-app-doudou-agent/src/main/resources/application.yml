@@ -17,6 +17,17 @@ spring:
       - nacos:redis.yaml
       - nacos:datasource-doudou.yaml
 
+fons4cloud:
+  upload:
+    oss:
+      enabled: true
+      provider: minio
+      secret-id: xxxxxx
+      secret-key: xxxxx
+      bucket: doudou
+      endpoint: xxxxx
+
+
   freemarker:
     template-loader-path:
       - classpath:/template/

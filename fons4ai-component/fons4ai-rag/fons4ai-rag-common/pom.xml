@@ -5,16 +5,20 @@
     <modelVersion>4.0.0</modelVersion>
     <parent>
         <groupId>com.fons.cloud.ai</groupId>
-        <artifactId>fons4ai-component</artifactId>
+        <artifactId>fons4ai-rag</artifactId>
         <version>${revision}</version>
         <relativePath>../pom.xml</relativePath>
     </parent>
 
-    <artifactId>fons4ai-rag</artifactId>
-    <packaging>pom</packaging>
-    <modules>
-        <module>fons4ai-rag-common</module>
-        <module>fons4ai-rag-spring-ai-starter</module>
-    </modules>
+    <artifactId>fons4ai-rag-common</artifactId>
+
+    <dependencies>
+        <dependency>
+            <groupId>com.fons.cloud</groupId>
+            <artifactId>fons4cloud-common-util</artifactId>
+            <version>${revision}</version>
+        </dependency>
+    </dependencies>
+
 
 </project>
