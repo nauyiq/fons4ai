@@ -17,13 +17,13 @@ If none is true, do not apply this skill automatically. Continue with normal Cod
 
 ## Overview
 
-Use this skill after `fons4ai-sdd-requirements` has produced a formal `spec.md` with closed clarification status.
+Use this skill after `fons4ai-sdd-requirements` has produced a formal business-oriented `spec.md`.
 The output is a detailed technical design in `specs/features/<feature-slug>/plan.md`; S2 features may also need `contracts/`, `data-model.md`, or migration notes when the design requires them.
 
 ## Required Context
 
 1. Load `../fons4ai-sdd-requirements/references/sdd-artifact-contract.md`, including its context-loading rules.
-2. Read `specs/features/<feature-slug>/spec.md` completely and confirm the clarification gate is closed.
+2. Read `specs/features/<feature-slug>/spec.md` completely and confirm it is not marked `文档状态：草案-待确认`.
 3. Search first by feature terms, AC/REQ IDs, modules, domain objects, APIs, tables, and error/risk terms. Do not bulk-read all project rules, memory, SQL, specs, or docs by default.
    - Optionally run `../fons4ai-sdd-requirements/scripts/find_relevant_context.py --root <repo-root> <keyword...>` to get candidate truth-source files before reading.
 4. Read `AGENTS.md`, relevant project rules, matching truth-source sections, targeted SQL files, build files, and representative source/test files for affected modules.
@@ -32,11 +32,11 @@ The output is a detailed technical design in `specs/features/<feature-slug>/plan
 
 ## Workflow
 
-1. Confirm the SDD level and clarification status from `spec.md`.
-   - If `spec.md` says `澄清状态：阻塞-等待回答`, `澄清状态：草案-含待确认`, `Clarification Status: blocking`, or `Clarification Status: draft`, stop and route back to `fons4ai-sdd-requirements`.
-   - If a legacy `spec.md` has no clarification gate, do a quick ambiguity scan. If blocking requirement ambiguity remains, stop and ask to run `fons4ai-sdd-requirements` before design.
-   - If repository facts show the level should be `S2`, upgrade it in the design summary and ask the user before editing `spec.md`.
-2. Build a fact base from the repository:
+1. Confirm the specification is ready for design and determine the SDD level.
+   - If `spec.md` says `文档状态：草案-待确认`, `澄清状态：阻塞-等待回答`, `澄清状态：草案-含待确认`, `Clarification Status: blocking`, or `Clarification Status: draft`, stop and route back to `fons4ai-sdd-requirements`.
+   - Perform a quick ambiguity scan even when the formal specification intentionally hides the internal clarification process. If blocking requirement ambiguity remains, stop and ask to run `fons4ai-sdd-requirements` before design.
+   - Determine `S1` or `S2` from the requirement scope and repository facts, then record the classification and reason in `plan.md`.
+2. Build an internal fact base from the repository. Use it for decisions but do not render a repository-fact or knowledge-base-fact inventory in `plan.md`:
    - Existing modules, layers, package conventions, reusable utilities, components, test style, domain objects, application services, and integration boundaries.
    - Current APIs, data objects, domain rules, state transitions, configs, caches, queues, transactions, permissions, dependencies, utility packages, and extension points relevant to the feature.
    - Relevant long-lived architecture and data facts from `.specify/memory/` and targeted `.specify/sql/` files when available.
@@ -52,13 +52,14 @@ The output is a detailed technical design in `specs/features/<feature-slug>/plan
    - Avoid introducing new frameworks, modules, abstractions, or dependencies unless the repository facts justify them.
    - If a new dependency is needed, record rationale, alternatives, impact, and user/design confirmation before implementation.
 4. Write a detailed technical design, not just a lightweight plan:
-   - Describe architecture design, implementation approach, key business-rule and strategy landing, data flow, affected areas, API/contract details, error handling, transaction and consistency, migration and rollback, and verification strategy.
+   - Describe design goals and scope, overall architecture, key business-rule and strategy landing, scenario implementation, data flow, API/contract details, data model and ER design, error handling, transaction and consistency, migration and rollback, and verification strategy.
    - For core business rules, policies, scoring, routing, approval, permission, pricing, status transition, or matching logic, record the technical landing: module, domain/application object, strategy component, data dependency, transaction boundary, extension point, and verification approach.
    - Include Mermaid `sequenceDiagram`, `flowchart`, or `stateDiagram-v2` for important business-rule execution, strategy decisions, or core business flows when facts support it. If facts are partial, write `不适用，原因` or mark uncertain nodes as `待确认`; do not invent actors or systems.
    - Include key rule code sketches for important business rules, validation, status checks, or data transformations. These sketches must be short pseudocode or code-like snippets based on repository facts, existing types, existing utilities, approved dependencies, and DDD-lite domain methods.
    - Do not write final production code in `plan.md`; code sketches explain intent and edge cases for later implementation.
    - Record state transition design with source state, trigger, preconditions, next state, failure handling, and idempotency. Use a table by default; use Mermaid `stateDiagram` only when facts support it.
    - Record data structure changes with fields, types, defaults, indexes, constraints, compatibility, DDL path, migration, and rollback expectations when applicable.
+   - Include Mermaid `erDiagram` when the design adds tables, changes relationships, or coordinates multiple tables. For a single-column or single-index adjustment, keep the structure-change table and write `不适用，原因` for the ER diagram.
    - When an existing `.specify/sql/<database_or_service>/<business_model>.sql` contains the baseline DDL for a table that will be altered, record the required executable change DDL target: use the repository migration directory when established, otherwise `specs/features/<feature-slug>/ddl-changes/<change-id>-<database_or_service>-<business_model>.sql`. Design names the artifact and expected `ALTER TABLE` intent but does not generate the executable SQL before implementation approval.
 5. For S1, use the minimal complete profile: keep all required sections, cover every AC, and keep the design practical but not empty. If there is no state transition, data structure change, API change, migration, rollback, diagram, or rule snippet, write `不适用，原因` in that section instead of fabricating content.
 6. For S2, include the additional governance sections that apply:
@@ -87,4 +88,5 @@ The output is a detailed technical design in `specs/features/<feature-slug>/plan
 - Do not generate `tasks.md`; leave task breakdown to `fons4ai-sdd-tasks`.
 - Do not write business code.
 - `plan.md` code snippets are design sketches only and must not become unreviewed production implementation.
+- Do not expose repository-fact inventories, knowledge-base-fact inventories, or search traces in `plan.md`; render only technical conclusions.
 - End with generated paths, SDD level, key risks, knowledge impact, and suggested next skill.

@@ -17,13 +17,13 @@ If none is true, do not apply this skill automatically. Continue with normal Cod
 
 ## Overview
 
-Use this skill after `fons4ai-sdd-design` has produced `plan.md` from a formal `spec.md` with closed clarification status.
+Use this skill after `fons4ai-sdd-design` has produced `plan.md` from a formal business-oriented `spec.md`.
 The output is a reviewed `tasks.md` for `fons4ai-sdd-implement`. Planning artifacts are not implementation approval; after writing tasks, stop and wait for the user to confirm execution.
 
 ## Required Context
 
 1. Load `../fons4ai-sdd-requirements/references/sdd-artifact-contract.md`, including its context-loading rules.
-2. Read `spec.md`, `plan.md`, and any S2 artifacts in the feature directory. Confirm that the requirements clarification gate is closed before task planning.
+2. Read `spec.md`, `plan.md`, and any S2 artifacts in the feature directory. Confirm that `spec.md` is not marked `文档状态：草案-待确认` before task planning.
 3. Search by AC IDs, task scope, modules, files, domain objects, tables, and business model paths before loading truth sources.
    - Optionally run `../fons4ai-sdd-requirements/scripts/find_relevant_context.py --root <repo-root> <keyword...>` to get candidate truth-source files before reading.
 4. Read only relevant project rules, matching memory sections, and targeted SQL files needed to respect module, data, DDL, and governance boundaries.
@@ -33,8 +33,8 @@ The output is a reviewed `tasks.md` for `fons4ai-sdd-implement`. Planning artifa
 ## Workflow
 
 1. Confirm `spec.md` and `plan.md` exist. Stop if either is missing.
-   - If `spec.md` says `澄清状态：阻塞-等待回答`, `澄清状态：草案-含待确认`, `Clarification Status: blocking`, or `Clarification Status: draft`, stop and route back to `fons4ai-sdd-requirements`.
-   - If a legacy `spec.md` has no clarification gate, run a quick ambiguity scan. If blocking requirement ambiguity remains, stop and ask to close requirements before generating tasks.
+   - If `spec.md` says `文档状态：草案-待确认`, `澄清状态：阻塞-等待回答`, `澄清状态：草案-含待确认`, `Clarification Status: blocking`, or `Clarification Status: draft`, stop and route back to `fons4ai-sdd-requirements`.
+   - Run a quick ambiguity scan before task generation. The formal specification intentionally hides internal clarification details, so artifact existence alone is not evidence that blocking ambiguity is closed.
 2. Extract AC IDs, affected modules/files, design decisions, dependencies, and verification expectations.
 3. Generate tasks in dependency order:
    - Setup or preparation tasks first.

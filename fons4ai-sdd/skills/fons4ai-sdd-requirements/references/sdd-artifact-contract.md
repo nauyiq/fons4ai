@@ -7,8 +7,8 @@ Feature artifacts use `specs/features/`. Bugfix artifacts use `specs/bugfixes/`.
 
 ## Artifact Responsibilities
 
-- `spec.md` is the requirement summary and acceptance document. It records background, requirement points, business rules, functional overview, workflow overview, impact overview, risk overview, AC, non-functional requirements, and candidate data/domain objects. It must not replace technical design.
-- `plan.md` is the detailed technical design. It records repository facts, architecture design, implementation approach, key business-rule and strategy landing, key rule code sketches, state transitions, data structure changes, API/contract details, error handling, transaction and consistency, migration/rollback, AC mapping, and verification strategy. It must not replace executable tasks.
+- `spec.md` is the business-oriented requirement specification. It records business background and goals, scope, roles and scenarios, business workflows, business rules, functional requirements, business-data meaning, business impact, AC, non-functional requirements, risks, assumptions, and open items. It must not expose repository-fact inventories, knowledge-context inventories, modules, classes, tables, columns, DDL paths, MCP details, or technical architecture details.
+- `plan.md` is the technical design specification. It records design goals and scope, architecture, key business-rule and strategy landing, scenario implementation, data flow, DDD-lite decisions, key rule code sketches, state transitions, interface/contract details, data-model and ER design, error handling, transaction and consistency, migration/rollback, AC mapping, a concise knowledge-sync checklist, and verification strategy. It must not expose repository-fact inventories, knowledge-base-fact inventories, or search traces, and it must not replace executable tasks.
 - `tasks.md` is the executable task breakdown. It converts `spec.md` and `plan.md` into task IDs with AC mapping, files, verification, quality checks, and done criteria.
 - Planning artifacts are not implementation approval; implementation still requires the approval gate below.
 
@@ -20,10 +20,9 @@ Requirements and change planning must close blocking ambiguity before formal art
 - `fons4ai-sdd-requirements` must ask the highest-impact requirement question first when blocking ambiguity can change scope, AC, business terms, data meaning, compatibility, security, integration, SDD level, or task breakdown.
 - `fons4ai-sdd-change` must ask the highest-impact change question first when blocking ambiguity can change existing feature semantics, AC changes, naming/ownership, public behavior, data model, DDL source, migration, rollback, risk gates, or affected modules.
 - While a blocking ambiguity exists, requirements and change skills must not write a formal `spec.md`, formal CR, `plan.md`, `tasks.md`, or business code.
-- If the user explicitly asks for a draft before answering, the artifact may be written only as a draft with `澄清状态：草案-含待确认`; it must not be used by design, task, or implementation skills.
-- A formal `spec.md` must include `澄清状态：已关闭` and `## 需求澄清门禁`.
-- A formal CR must include `澄清状态：已关闭` and `## 变更澄清门禁`.
-- Design and task skills must stop if the input `spec.md` or CR is marked `阻塞-等待回答`, `草案-含待确认`, `blocking`, or `draft`.
+- If the user explicitly asks for a draft before answering, the artifact may be written only with `文档状态：草案-待确认`; it must not be used by design, task, or implementation skills.
+- Formal `spec.md` and CR artifacts must not expose clarification-gate tables, clarification status, or internal question logs. Clarification remains an internal pre-generation workflow.
+- Design and task skills must stop if the input `spec.md` or CR is marked `文档状态：草案-待确认`, legacy `阻塞-等待回答`, legacy `草案-含待确认`, `blocking`, or `draft`.
 
 ## Project Knowledge
 
@@ -57,7 +56,7 @@ If a feature changes concrete persistent data models, record `.specify/sql/` imp
 
 When SDD work adds, removes, renames, or changes a concrete persistent data model, table, column, index, constraint, relationship, or database-specific default:
 
-- `spec.md` must record the expected data model or DDL impact when it is known from requirements.
+- `spec.md` records business-data meaning and business impact only. Technical data-model, table, column, and DDL impact belong in `plan.md`.
 - `plan.md` must name each impacted `.specify/sql/<database_or_service>/<business_model>.sql` file and state whether the action is add, update, rename, or no-op.
 - `tasks.md` must include an explicit DDL synchronization task for every impacted SQL file, unless the plan records a user-approved deferral with owner and reason.
 - `fons4ai-sdd-implement` may create or update `.specify/sql/**/*.sql` only when the selected task names the SQL file or when the implementation reveals a necessary schema change and the user approves updating the task/artifact scope.
@@ -116,12 +115,12 @@ Only create optional folders when they are needed.
 ## Detailed Document Requirements
 
 - Generated artifact headings and fixed prose should be Chinese-first. Keep file names, IDs, paths, and machine-readable task labels such as `AC:`, `Files:`, `Verification:`, `Quality:`, and `Done:` in English when compatibility requires it.
-- `spec.md` must include `## 需求概要`, `## 关键业务规则与约束`, `## 功能概览`, and `## 影响面概览`. Legacy English headings are accepted only for existing artifacts.
-- `spec.md` should include workflow and risk sections. S1 may use `不适用，原因`; S2 must provide meaningful workflow, risk, data/domain, compatibility, security, and migration hints when applicable.
-- `plan.md` must include `## 关键业务规则与策略设计`, `## 关键规则代码片段`, `## 状态流转设计`, `## 数据结构变更`, `## API 与契约细节`, `## 事务与一致性`, and `## 验证策略`. Legacy English headings are accepted only for existing artifacts.
+- New `spec.md` artifacts must include `## 背景与目标`, `## 业务范围`, `## 角色与业务场景`, `## 业务流程`, `## 业务规则`, `## 功能需求`, `## 业务数据说明`, `## 业务影响`, `## 验收标准`, `## 非功能要求`, `## 风险、假设与待确认事项`, and `## 版本修订记录`. Legacy headings remain accepted for existing artifacts.
+- New `plan.md` artifacts must include `## 设计目标与范围`, `## 总体架构设计`, `## 核心业务规则与策略落地`, `## 核心业务场景实现`, `## 数据流设计`, `## 领域建模决策`, `## 关键规则代码片段`, `## 状态流转设计`, `## 接口与契约设计`, `## 数据模型与 ER 设计`, `## 事务与一致性`, `## 异常处理与日志`, `## 工具包与依赖决策`, `## 迁移、兼容与回滚`, `## 验证策略`, `## AC 映射`, `## 知识同步清单`, and `## 风险与待确认事项`. Legacy headings remain accepted for existing artifacts.
 - The business-rule and strategy section must map core rules or policies to modules, domain/application objects, data dependencies, extension points, and verification. Use Mermaid sequence, flow, or state diagrams for important business or strategy flows when facts support them.
 - Code sketches in `plan.md` are design snippets or pseudocode for key rules, validation, status checks, and data transformations. They must be based on repository facts and must not be treated as production code.
-- State transition and data structure sections may use `不适用，原因` for S1 when genuinely absent. S2 high-risk sections must be filled with concrete facts or explicit deferrals.
+- Use Mermaid `sequenceDiagram` for core call chains, `flowchart` for complex decisions, `stateDiagram-v2` for state changes, and `erDiagram` for new tables, relationship changes, or multi-table collaboration when facts support them. A single-column or single-index adjustment may mark the ER diagram as `不适用，原因`.
+- State transition and data-model sections may use `不适用，原因` for S1 when genuinely absent. S2 high-risk sections must be filled with concrete facts or explicit deferrals.
 
 ## Implementation Approval Gate
 

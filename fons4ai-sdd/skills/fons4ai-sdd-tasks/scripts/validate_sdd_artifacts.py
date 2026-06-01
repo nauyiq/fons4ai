@@ -20,34 +20,49 @@ EXECUTABLE_DDL_PATH_RE = re.compile(
 S2_RE = re.compile(r"(SDD\s*Level|SDD\s*等级)\s*[:：]\s*`?S2`?", re.IGNORECASE)
 
 APPROVAL_GATE_HEADINGS = ("## 实现确认门禁", "## Implementation Approval Gate")
-CLARIFICATION_GATE_HEADINGS = ("## 需求澄清门禁", "## Requirement Clarification Gate")
-CHANGE_CLARIFICATION_GATE_HEADINGS = ("## 变更澄清门禁", "## Change Clarification Gate")
+DOCUMENT_STATUS_RE = re.compile(r"(文档状态|Document Status)\s*[:：]\s*([^\n\r]+)", re.IGNORECASE)
 CLARIFICATION_STATUS_RE = re.compile(r"(澄清状态|Clarification Status)\s*[:：]\s*([^\n\r]+)", re.IGNORECASE)
-BLOCKING_CLARIFICATION_RE = re.compile(r"阻塞|草案|blocking|draft", re.IGNORECASE)
-CLOSED_CLARIFICATION_RE = re.compile(r"已关闭|closed", re.IGNORECASE)
+BLOCKING_ARTIFACT_RE = re.compile(r"草案-待确认|草案-含待确认|阻塞|blocking|draft", re.IGNORECASE)
 SPEC_REQUIRED_HEADING_GROUPS = (
-    ("需求概要", ("## 需求概要", "## Requirement Summary")),
-    ("关键业务规则与约束", ("## 关键业务规则与约束", "## Business Rules and Constraints")),
-    ("功能概览", ("## 功能概览", "## Functional Overview")),
-    ("影响面概览", ("## 影响面概览", "## Impact Overview")),
+    ("背景与目标", ("## 背景与目标", "## 背景与问题")),
+    ("业务范围", ("## 业务范围", "## 范围")),
+    ("角色与业务场景", ("## 角色与业务场景", "## 用户与场景")),
+    ("业务流程", ("## 业务流程", "## 流程概览")),
+    ("业务规则", ("## 业务规则", "## 关键业务规则与约束")),
+    ("功能需求", ("## 功能需求", "## 需求概要", "## Functional Overview")),
+    ("业务数据说明", ("## 业务数据说明", "## 关键数据或领域对象")),
+    ("业务影响", ("## 业务影响", "## 影响面概览", "## Impact Overview")),
+    ("验收标准", ("## 验收标准", "## Acceptance Criteria")),
+    ("非功能要求", ("## 非功能要求", "## 非功能需求")),
+    ("风险、假设与待确认事项", ("## 风险、假设与待确认事项", "## 风险概览", "## 假设", "## 待确认问题")),
+    ("版本修订记录", ("## 版本修订记录", "## Revision History")),
 )
 PLAN_REQUIRED_HEADING_GROUPS = (
+    ("设计目标与范围", ("## 设计目标与范围", "## 设计摘要")),
+    ("总体架构设计", ("## 总体架构设计", "## 架构设计")),
+    ("核心业务规则与策略落地", ("## 核心业务规则与策略落地", "## 关键业务规则与策略设计")),
+    ("核心业务场景实现", ("## 核心业务场景实现", "### 核心业务方案落地")),
+    ("数据流设计", ("## 数据流设计", "## 数据流")),
+    ("领域建模决策", ("## 领域建模决策",)),
     ("关键规则代码片段", ("## 关键规则代码片段", "## Key Rule Code Sketches")),
     ("状态流转设计", ("## 状态流转设计", "## State Transition Design")),
-    ("数据结构变更", ("## 数据结构变更", "## Data Structure Changes")),
-    ("API 与契约细节", ("## API 与契约细节", "## API and Contract Details")),
+    ("接口与契约设计", ("## 接口与契约设计", "## API 与契约细节", "## API and Contract Details")),
+    ("数据模型与 ER 设计", ("## 数据模型与 ER 设计", "## 数据结构变更", "## Data Structure Changes")),
     ("事务与一致性", ("## 事务与一致性", "## Transaction and Consistency")),
+    ("异常处理与日志", ("## 异常处理与日志", "## 错误与异常处理")),
+    ("工具包与依赖决策", ("## 工具包与依赖决策",)),
+    ("迁移、兼容与回滚", ("## 迁移、兼容与回滚", "## 迁移与回滚细节")),
     ("验证策略", ("## 验证策略", "## Verification Strategy")),
+    ("AC 映射", ("## AC 映射",)),
+    ("知识同步清单", ("## 知识同步清单", "## 知识同步影响", "## Knowledge Impact")),
+    ("风险与待确认事项", ("## 风险与待确认事项", "## 风险与回滚", "## Risk and Rollback")),
 )
-PLAN_MODERN_HEADING_GROUPS = (
-    ("关键业务规则与策略设计", ("## 关键业务规则与策略设计",)),
-)
-KNOWLEDGE_IMPACT_HEADINGS = ("## 知识同步影响", "## Knowledge Impact")
-RISK_ROLLBACK_HEADINGS = ("## 风险与回滚", "## Risk and Rollback")
+KNOWLEDGE_IMPACT_HEADINGS = ("## 知识同步清单", "## 知识同步影响", "## Knowledge Impact")
+RISK_ROLLBACK_HEADINGS = ("## 风险与待确认事项", "## 风险与回滚", "## Risk and Rollback")
 S2_QUALITY_GATE_HEADINGS = ("## S2 质量门禁", "## S2 Quality Gates")
 CHANGE_REQUIRED_HEADING_GROUPS = (
     ("影响分析", ("## 影响分析", "## Impact Analysis")),
-    ("知识同步影响", ("### 知识同步影响", "### Knowledge Impact")),
+    ("知识同步清单", ("### 知识同步清单", "### 知识同步影响", "### Knowledge Impact")),
     ("回归与回滚", ("## 回归与回滚", "## Regression and Rollback")),
     ("实现确认门禁", APPROVAL_GATE_HEADINGS),
     ("增量任务", ("## 增量任务", "## Incremental Tasks")),
@@ -147,24 +162,12 @@ def validate_req_ac_mapping(spec_text: str) -> list[str]:
     return errors
 
 
-def validate_clarification_gate(
-    text: str,
-    artifact_name: str,
-    gate_headings: tuple[str, ...],
-) -> list[str]:
+def validate_artifact_readiness(text: str, artifact_name: str) -> list[str]:
     errors: list[str] = []
-    if not has_any_heading(text, gate_headings):
-        errors.append(f"{artifact_name} is missing clarification gate section")
-
-    statuses = [match.group(2).strip() for match in CLARIFICATION_STATUS_RE.finditer(text)]
-    if not statuses:
-        errors.append(f"{artifact_name} is missing clarification status")
-        return errors
-
-    if any(BLOCKING_CLARIFICATION_RE.search(status) for status in statuses):
-        errors.append(f"{artifact_name} clarification gate is not closed")
-    if not any(CLOSED_CLARIFICATION_RE.search(status) for status in statuses):
-        errors.append(f"{artifact_name} clarification status must be closed before design, task, or implementation planning")
+    statuses = [match.group(2).strip() for match in DOCUMENT_STATUS_RE.finditer(text)]
+    legacy_statuses = [match.group(2).strip() for match in CLARIFICATION_STATUS_RE.finditer(text)]
+    if any(BLOCKING_ARTIFACT_RE.search(status) for status in statuses + legacy_statuses):
+        errors.append(f"{artifact_name} is a draft or has unresolved clarification and cannot enter downstream planning")
     return errors
 
 
@@ -228,24 +231,9 @@ def validate(feature_dir: Path, strict: bool = False) -> tuple[list[str], list[s
         errors.append("spec.md contains no AC-### acceptance criteria IDs")
 
     errors.extend(validate_required_heading_groups(spec_text, SPEC_REQUIRED_HEADING_GROUPS, "spec.md"))
-    clarification_errors = validate_clarification_gate(spec_text, "spec.md", CLARIFICATION_GATE_HEADINGS)
-    if strict:
-        errors.extend(clarification_errors)
-    else:
-        warnings.extend(
-            f"{message}; legacy-compatible mode allows this, but close requirements clarification before new design/tasks"
-            for message in clarification_errors
-        )
+    errors.extend(validate_artifact_readiness(spec_text, "spec.md"))
     errors.extend(validate_req_ac_mapping(spec_text))
     errors.extend(validate_required_heading_groups(plan_text, PLAN_REQUIRED_HEADING_GROUPS, "plan.md"))
-    modern_plan_errors = validate_required_heading_groups(plan_text, PLAN_MODERN_HEADING_GROUPS, "plan.md")
-    if strict:
-        errors.extend(modern_plan_errors)
-    else:
-        warnings.extend(
-            f"{message}; legacy-compatible mode allows this, but update plan.md before new implementation"
-            for message in modern_plan_errors
-        )
 
     for ac_id in ac_ids:
         if ac_id not in plan_text:
@@ -288,7 +276,7 @@ def validate(feature_dir: Path, strict: bool = False) -> tuple[list[str], list[s
     if S2_RE.search(all_text):
         if not has_any_heading(plan_text, RISK_ROLLBACK_HEADINGS):
             errors.append("S2 plan.md is missing risk and rollback section")
-        for display_name, headings in PLAN_REQUIRED_HEADING_GROUPS + PLAN_MODERN_HEADING_GROUPS:
+        for display_name, headings in PLAN_REQUIRED_HEADING_GROUPS:
             if has_any_heading(plan_text, headings) and not has_section_content(plan_text, headings):
                 errors.append(f"S2 plan.md section '{display_name}' has no content")
         has_s2_quality_gate = has_any_heading(tasks_text, S2_QUALITY_GATE_HEADINGS)
@@ -321,7 +309,7 @@ def validate_change_file(change_file: Path) -> list[str]:
 
     text = read(change_file)
     errors.extend(validate_required_heading_groups(text, CHANGE_REQUIRED_HEADING_GROUPS, str(change_file)))
-    errors.extend(validate_clarification_gate(text, str(change_file), CHANGE_CLARIFICATION_GATE_HEADINGS))
+    errors.extend(validate_artifact_readiness(text, str(change_file)))
 
     if not AC_RE.search(text):
         errors.append(f"{change_file} contains no AC-### mapping")

@@ -36,8 +36,8 @@ It must not write business code; implementation remains the responsibility of `f
 1. Confirm the existing feature and change intent. If multiple feature directories match, ask the user to choose one.
 2. Run the change clarification gate before assigning a final CR ID or modifying artifacts.
    - If a blocking ambiguity exists, stop and ask exactly one highest-impact clarification question. Do not create `CR-xxx.md`, update `spec.md`, update `plan.md`, or append tasks in the same turn.
-   - If the user explicitly asks for a draft before answering, create only a draft CR with `澄清状态：草案-含待确认`, mark assumptions as `待确认`, and do not add executable implementation tasks.
-   - If all blocking ambiguities are closed, record `澄清状态：已关闭` in the CR and continue.
+   - If the user explicitly asks for a draft before answering, create only a draft CR with `文档状态：草案-待确认`, mark assumptions as `待确认`, and do not add executable implementation tasks.
+   - If all blocking ambiguities are closed, create a formal CR without exposing the internal clarification checklist, clarification status, or question log.
 3. Determine the next CR ID by scanning `changes/CR-*.md`.
 4. Classify the change as `S1` or `S2`:
    - S1 for local behavior adjustments or small extensions.
@@ -81,13 +81,13 @@ Rules:
 3. Treat answers such as `按推荐`, `方案 A`, or a precise short answer as accepted clarification.
 4. Do not treat `使用 SDD`, `继续`, `先生成`, `看一下`, or artifact existence as clarification closure.
 5. Only write a formal CR when blocking ambiguities are closed, or when the user explicitly asks for a draft with assumptions.
-6. A draft CR with unresolved blocking ambiguity must not contain executable implementation tasks and must not be handed to `fons4ai-sdd-implement`.
+6. A draft CR with unresolved blocking ambiguity must use `文档状态：草案-待确认`, must not contain executable implementation tasks, and must not be handed to `fons4ai-sdd-implement`.
 
 ## Output Rules
 
 - Do not rewrite the feature from scratch unless more than 70% of the feature is impacted; in that case recommend a new feature directory.
 - If the change clarification gate is blocked, output only the blocking reason, the single clarification question, recommended options when available, and what will be generated after the answer. Do not write formal artifacts.
-- Formal CR files must include `澄清状态：已关闭` and `## 变更澄清门禁`. Draft CRs are allowed only after explicit user request and must include `澄清状态：草案-含待确认`.
+- Formal CR files must not expose clarification-gate tables, clarification status, or question logs. Draft CRs are allowed only after explicit user request and must include `文档状态：草案-待确认`.
 - Generated CR headings and fixed prose must be Chinese-first. Keep file names, IDs, paths, and machine-readable task labels `AC:`, `Files:`, `Verification:`, `Quality:`, and `Done:` unchanged.
 - Do not write business code.
 - Do not delete existing AC, tasks, or docs without explicit user confirmation.

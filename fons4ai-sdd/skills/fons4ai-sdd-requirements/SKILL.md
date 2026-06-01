@@ -17,7 +17,7 @@ If none is true, do not apply this skill automatically. Continue with normal Cod
 
 ## Overview
 
-Use this skill to turn a feature idea into the first SDD artifact: a detailed requirement summary in `specs/features/<feature-slug>/spec.md`.
+Use this skill to turn a feature idea into the first SDD artifact: a business-oriented requirement specification in `specs/features/<feature-slug>/spec.md`.
 This skill must clarify blocking requirement ambiguity before writing a formal `spec.md`; `use SDD` alone is not permission to guess requirement semantics.
 Feature artifacts are written under `specs/features/`; `.specify/memory/` and `.specify/sql/` are read as long-lived project context when present.
 
@@ -37,16 +37,17 @@ Feature artifacts are written under `specs/features/`; `.specify/memory/` and `.
 2. Classify the feature:
    - Use `S1` by default for small or normal feature work.
    - Use `S2` for database migrations, public API changes, security/permission changes, cache/MQ/transaction boundaries, cross-core-module work, compatibility risk, or high rollback cost.
-   - Record the level and reason in `spec.md`.
+   - Keep the level and reason as workflow context for the design handoff. Do not expose SDD classification in the business-oriented `spec.md`.
 3. Run the clarification gate before writing a formal `spec.md`.
    - If a blocking ambiguity exists, stop and ask exactly one highest-impact clarification question. Do not create or update `spec.md` in the same turn.
-   - If the user explicitly asks for a draft before answering, create only a draft `spec.md` with `澄清状态：草案-含待确认`, mark assumptions as `待确认`, and do not recommend design or task generation.
-   - If all blocking ambiguities are closed, record `澄清状态：已关闭` in `spec.md` and continue.
+   - If the user explicitly asks for a draft before answering, create only a draft `spec.md` with `文档状态：草案-待确认`, mark assumptions as `待确认`, and do not recommend design or task generation.
+   - If all blocking ambiguities are closed, create a formal business-oriented `spec.md` without exposing the internal clarification checklist, clarification status, or question log.
 4. Build the requirement summary before writing AC:
    - Use `REQ-001`, `REQ-002`, ... for requirement points and business capabilities.
-   - Record priority, source, and related AC for every requirement.
-   - Include business rules, functional overview, workflow overview, impact overview, and risk overview.
+   - Record priority, business scenario, and related AC for every requirement.
+   - Include background and goals, business scope, roles and scenarios, business workflow, business rules, business data description, business impact, risks, and acceptance criteria.
    - Keep `spec.md` focused on requirements, behavior, business rules, workflows, impacts, and acceptance. Do not move detailed technical design into `spec.md`.
+   - Use business terminology. Do not expose modules, classes, tables, columns, DDL paths, MCP details, or technical architecture facts in `spec.md`.
 5. Write acceptance criteria before technical design:
    - Use `AC-001`, `AC-002`, ... IDs.
    - Use Given-When-Then.
@@ -57,10 +58,10 @@ Feature artifacts are written under `specs/features/`; `.specify/memory/` and `.
    - Include in-scope items.
    - Exclude out-of-scope items.
    - Record assumptions and unresolved questions.
-7. For S1, use the minimal complete profile: keep details concise but cover requirement summary, key business rules, functional overview, impact overview, REQ/AC mapping, and AC. Use `不适用，原因` where workflow, risk, diagram, or data impact is genuinely absent.
-8. For S2, include workflow overview, risk overview, data/domain objects, non-functional requirements, compatibility, security, and migration hints in enough detail for design work.
-9. Generate Mermaid sequence or state diagrams only when repository/user facts support the participants and flow. Do not invent systems, tables, APIs, or actors to fill the template.
-10. Record knowledge impact when the feature appears to add or change long-lived business, technical, data, or governance facts. If it may add or change persistent data models, record expected `.specify/sql/` impact explicitly. Do not update truth sources such as `.specify/memory/`, `.specify/sql/`, `.specify/rules/`, or `docs/` from this skill.
+7. For S1, use the minimal complete profile: keep details concise but cover business goals, scope, scenarios, workflow, rules, business data, business impact, REQ/AC mapping, and AC. Use `不适用，原因` where workflow, risk, diagram, or data impact is genuinely absent.
+8. For S2, include business workflow, risks, business data, non-functional requirements, compatibility, security, and migration implications in business language and enough detail for design work.
+9. Generate Mermaid business flowcharts only when repository/user facts support the participants and flow. Do not invent systems, tables, APIs, or actors to fill the template.
+10. Identify knowledge and persistent-data impact internally for the design handoff and completion summary. Do not expose truth-source paths, `.specify/sql/` paths, MCP details, table names, or column names in `spec.md`, and do not update truth sources from this skill.
 11. For S2, create `checklists/requirements.md` only when it adds real governance value. Checklist items must test requirement quality, not implementation behavior.
 
 ## Clarification Gate
@@ -82,7 +83,7 @@ Rules:
 3. Treat answers such as `按推荐`, `方案 A`, or a clear short answer as accepted clarification.
 4. Do not treat `使用 SDD`, `继续`, `先生成`, `看一下`, or similar ambiguous messages as clarification closure.
 5. Only continue to formal `spec.md` when blocking ambiguities are closed, or when the user explicitly says to create a draft with assumptions.
-6. A draft with unresolved blocking ambiguity must not be used as input for `fons4ai-sdd-design` or `fons4ai-sdd-tasks` until the gate is closed.
+6. A draft with unresolved blocking ambiguity must use `文档状态：草案-待确认` and must not be used as input for `fons4ai-sdd-design` or `fons4ai-sdd-tasks` until the gate is closed.
 
 ## Structured Clarification
 
@@ -113,20 +114,17 @@ Use this process to migrate the useful `speckit-clarify` behavior into the `spec
 
 After each accepted answer:
 
-1. Ensure `spec.md` has `## 澄清记录`; create `### 会话 YYYY-MM-DD` for the current date if missing.
-2. Append one bullet: `- Q: <question> -> A: <final answer>`.
-3. Immediately update the most relevant section:
+1. Keep the accepted answer in the active conversation context. Do not expose the internal question log in formal artifacts.
+2. Update the most relevant business section only when maintaining an explicitly requested draft or updating an existing specification:
    - Functional ambiguity -> `功能需求` or `验收标准`.
-   - Actor or UX distinction -> `用户与场景`.
-   - Data shape -> `关键数据或领域对象`.
-   - Non-functional constraint -> `非功能需求`.
-   - Failure or boundary behavior -> `验收标准` or `范围`.
+   - Actor or UX distinction -> `角色与业务场景`.
+   - Business data meaning -> `业务数据说明`.
+   - Non-functional constraint -> `非功能要求`.
+   - Failure or boundary behavior -> `验收标准` or `业务范围`.
    - Terminology conflict -> normalize the term across the spec.
-4. Replace contradictory or obsolete text instead of duplicating it.
-5. Save `spec.md` after each answer to reduce context-loss risk.
-6. Validate after each write:
-   - One clarification bullet per accepted answer.
-   - No more than 5 accepted questions in the session.
+3. Replace contradictory or obsolete text instead of duplicating it.
+4. Do not create a formal `spec.md` until blocking ambiguities are closed. If an explicit draft exists, keep `文档状态：草案-待确认` until the user resolves the gaps.
+5. Validate after each draft update:
    - No unresolved placeholders the new answer was meant to resolve.
    - No contradictory alternatives remain.
    - Terminology is consistent across touched sections.
@@ -135,7 +133,7 @@ After each accepted answer:
 
 - Create or update only `specs/features/<feature-slug>/spec.md` and, for S2 when needed, `specs/features/<feature-slug>/checklists/requirements.md`.
 - If the clarification gate is blocked, output only the blocking reason, the single clarification question, recommended options when available, and what will be generated after the answer. Do not write formal artifacts.
-- Formal `spec.md` must include `澄清状态：已关闭` and `## 需求澄清门禁`. Draft specs are allowed only after explicit user request and must include `澄清状态：草案-含待确认`.
+- Formal `spec.md` must not expose clarification-gate tables, clarification status, question logs, repository-fact inventories, or knowledge-context inventories. Draft specs are allowed only after explicit user request and must include `文档状态：草案-待确认`.
 - Generated artifact headings and fixed prose must be Chinese-first. Keep file names, IDs, paths, and technical markers such as `REQ-001` and `AC-001` unchanged.
 - Do not generate `plan.md` or `tasks.md`; leave that to `fons4ai-sdd-design` and `fons4ai-sdd-tasks`.
 - Do not write business code.
