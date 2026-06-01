@@ -12,11 +12,12 @@
 
     <artifactId>fons4ai-agent-common</artifactId>
 
-    <properties>
-        <maven.compiler.source>21</maven.compiler.source>
-        <maven.compiler.target>21</maven.compiler.target>
-        <project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
-    </properties>
-
+    <dependencies>
+        <dependency>
+            <groupId>com.fons.cloud</groupId>
+            <artifactId>fons4cloud-common-cache</artifactId>
+            <version>${revision}</version>
+        </dependency>
+    </dependencies>
 
 </project>
