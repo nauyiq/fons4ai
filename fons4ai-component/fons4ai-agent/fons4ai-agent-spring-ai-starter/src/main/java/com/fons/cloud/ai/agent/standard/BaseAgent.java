@@ -1,13 +1,20 @@
 package com.fons.cloud.ai.agent.standard;
 
+import cn.hutool.core.lang.Assert;
+import com.alibaba.fastjson2.JSON;
 import com.fons.cloud.ai.agent.common.constants.AgentResultCode;
 import com.fons.cloud.ai.agent.common.constants.AgentType;
+import com.fons.cloud.ai.agent.common.request.AgentChatRequest;
 import com.fons.cloud.ai.agent.core.AgentTaskManager;
+import com.fons.cloud.ai.agent.service.AiAgent;
 import com.fons.cloud.common.base.exception.BusinessRuntimeException;
+import com.fons.cloud.common.result.R;
 import jakarta.annotation.Resource;
+import jakarta.validation.constraints.NotNull;
 import lombok.Getter;
 import lombok.extern.slf4j.Slf4j;
 import org.apache.commons.collections4.CollectionUtils;
+import org.apache.commons.lang3.StringUtils;
 import org.springframework.ai.chat.memory.ChatMemory;
 import org.springframework.ai.chat.memory.MessageWindowChatMemory;
 import org.springframework.ai.chat.messages.AssistantMessage;
@@ -16,11 +23,9 @@ import org.springframework.ai.chat.messages.SystemMessage;
 import org.springframework.ai.chat.messages.UserMessage;
 import org.springframework.ai.chat.model.ChatModel;
 import reactor.core.publisher.Flux;
+import reactor.core.publisher.Sinks;
 
-import java.util.ArrayList;
-import java.util.Comparator;
-import java.util.List;
-import java.util.Set;
+import java.util.*;
 
 /**
  * 基础智能体
@@ -31,7 +36,7 @@ import java.util.Set;
  */
 @Slf4j
 @Getter
-public abstract class BaseAgent {
+public abstract class BaseAgent implements AiAgent {
 
     /**
      * 智能体名称
@@ -51,6 +56,7 @@ public abstract class BaseAgent {
 
     // 会话记忆
     protected ChatMemory chatMemory;
+    // 最大会话记忆消息数
     protected int maxMemoryMessages;
 
     // 是否启用推荐问题功能
@@ -80,6 +86,28 @@ public abstract class BaseAgent {
         this.agentType = agentType;
         this.chatModel = chatModel;
         initChatMemory();
+    }
+
+    @Override
+    public Flux<String> stream(@NotNull AgentChatRequest request) {
+        log.info("开始处理流式请求, request:{}", JSON.toJSONString(request));
+        if (StringUtils.isNotBlank(request.getConversationId()) && agentTaskManager.hasRunningTask(request.getConversationId())) {
+            // 存在任务在执行 返回错误消息
+            return Flux.error(BusinessRuntimeException.of(AgentResultCode.CONVERSATION_BUSY));
+        }
+
+        // 消息列表, 使用Collections.synchronizedList 保证线程安全
+        List<Message> messages = Collections.synchronizedList(new ArrayList<>());
+
+        // 创建一个单播流（只能有一个订阅者）的响应式流发布者， 用于向客户端推送响应
+        Sinks.Many<String> sink = Sinks.many().unicast().onBackpressureBuffer();
+        // 注册任务到管理器
+        R<AgentTaskManager.TaskInfo> registered = agentTaskManager.registerTask(request.getConversationId(), sink, this.agentType);
+        if (!registered.isSuccess()) {
+            return Flux.error(BusinessRuntimeException.of(registered.getCode(), registered.getMessage()));
+        }
+
+        return null;
     }
 
     /**

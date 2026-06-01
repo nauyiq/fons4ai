@@ -1,7 +1,9 @@
 package com.fons.cloud.ai.agent.core;
 
 import com.alibaba.fastjson2.JSONObject;
+import com.fons.cloud.ai.agent.common.constants.AgentResultCode;
 import com.fons.cloud.ai.agent.common.constants.AgentType;
+import com.fons.cloud.common.result.R;
 import lombok.Getter;
 import lombok.Setter;
 import lombok.extern.slf4j.Slf4j;
@@ -82,6 +84,56 @@ public class AgentTaskManager implements InitializingBean, DisposableBean {
         this.stopTopic = redissonClient.getTopic(STOP_TOPIC_NAME);
         log.info("AgentTaskManager 初始化, instanceId: {}", instanceId);
     }
+
+    /**
+     * 检查会话是否有任务在执行
+     * @param conversationId 会话ID
+     * @return
+     */
+    public boolean hasRunningTask(String conversationId) {
+        // 先查询本地是否有任务执行
+        if (taskMap.containsKey(conversationId)) {
+            return true;
+        }
+        // 检查 Redis（其他实例可能持有）
+        RBucket<String> bucket = getTaskBucket(conversationId);
+        return bucket.isExists();
+    }
+
+    /**
+     * 注册任务
+     * @param conversationId 会话ID
+     * @param sink           响应式流发布者
+     * @param agentType      agent类型
+     * @return
+     */
+    public R<TaskInfo> registerTask(String conversationId, Sinks.Many<String> sink, AgentType agentType) {
+        try {
+            // 1.查询本地是否存在
+            if (this.taskMap.containsKey(conversationId)) {
+                log.warn("会话{}已在当前实例中存在执行的任务, 拒绝注册新任务", conversationId);
+                return R.failed(AgentResultCode.CONVERSATION_BUSY);
+            }
+
+            // 2. 尝试在redis中注册
+            RBucket<String> bucket = getTaskBucket(conversationId);
+            boolean result = bucket.setIfAbsent(instanceId, Duration.ofMinutes(TASK_TTL_MINUTES));
+            if (!result) {
+                log.warn("会话{}已在实例{}中存在执行的任务, 拒绝注册新任务", conversationId, bucket.get());
+                return R.failed(AgentResultCode.CONVERSATION_BUSY);
+            }
+
+            // 3. 添加到本地缓存
+            TaskInfo taskInfo = new TaskInfo(sink, agentType);
+            taskMap.put(conversationId, taskInfo);
+            log.info("注册任务成功, conversationId={}, instanceId={}", conversationId, instanceId);
+            return R.success(taskInfo);
+        } catch (Exception e) {
+            log.error("【Agent任务管理器】注册任务失败, conversationId:{}, agentType:{}", conversationId, agentType, e);
+            return R.failed(AgentResultCode.FAILED_EXECUTE_REGISTER_AGENTS_TASK);
+        }
+    }
+
 
     @Override
     public void afterPropertiesSet() throws Exception {
