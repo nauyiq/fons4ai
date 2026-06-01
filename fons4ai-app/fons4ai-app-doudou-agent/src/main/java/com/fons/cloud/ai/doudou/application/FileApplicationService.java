@@ -33,5 +33,11 @@ public interface FileApplicationService {
      */
     R<FileParsedVO> parseFile(ParseFileRequest request);
 
-
+    /**
+     * 删除文件
+     * @param userId
+     * @param fileId
+     * @return
+     */
+    R<Void> deleteFile(String userId, String fileId);
 }

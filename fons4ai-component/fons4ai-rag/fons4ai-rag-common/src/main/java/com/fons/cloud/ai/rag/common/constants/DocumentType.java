@@ -15,6 +15,8 @@ public enum DocumentType {
 
     DOC("doc,docx"),
 
+    IMAGE("png,jpg,jpeg"),
+
     ;
 
     private final String supportTypes;

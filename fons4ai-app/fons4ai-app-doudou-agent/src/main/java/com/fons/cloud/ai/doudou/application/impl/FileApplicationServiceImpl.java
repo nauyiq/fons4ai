@@ -13,6 +13,7 @@ import com.fons.cloud.ai.doudou.domain.entity.AiFileInfo;
 import com.fons.cloud.ai.doudou.domain.service.AiFileInfoDomainService;
 import com.fons.cloud.ai.doudou.infrastructure.converter.AgentConverter;
 import com.fons.cloud.ai.rag.document.reader.DocumentReaderFacade;
+import com.fons.cloud.ai.rag.document.splitter.OverlapParagraphTextSplitter;
 import com.fons.cloud.ai.rag.embed.EmbeddingService;
 import com.fons.cloud.common.base.exception.BusinessRuntimeException;
 import com.fons.cloud.common.result.R;
@@ -162,7 +163,6 @@ public class FileApplicationServiceImpl implements FileApplicationService {
         List<Document> documents = documentReaderFacade.read(documentReaderRequest);
         log.info("文件解析结束, documents size: {}", documents.size());
 
-
         // 3. 提取文档内容
         StringBuilder extractedTextBuilder = new StringBuilder();
         for (Document document : documents) {
@@ -171,8 +171,17 @@ public class FileApplicationServiceImpl implements FileApplicationService {
         String extractedText = extractedTextBuilder.toString().trim();
 
         if (request.isEmbedding()) {
-            // 4. 向量化处理
-            embeddingService.embedAndStore(documents);
+            // 4. 切分文档
+            OverlapParagraphTextSplitter splitter = new OverlapParagraphTextSplitter(request.getChunkSize(), request.getOverlap());
+            List<Document> chunks = splitter.apply(documents);
+            log.info("文档切分结束, fileId:{}, 切分数量:{}", request.getFileId(), chunks.size());
+            for (int i = 0; i < chunks.size(); i++) {
+                Document chunk = chunks.get(i);
+                request.getMetadata().forEach((key, value) -> chunk.getMetadata().put(key, value));
+                chunk.getMetadata().put("chunkId", i);
+            }
+            // 5. 向量化处理
+            embeddingService.embedAndStore(chunks);
         }
 
         // 5. 构建返回结果
@@ -182,5 +191,18 @@ public class FileApplicationServiceImpl implements FileApplicationService {
                 .build();
 
         return R.ok(fileParsedVO);
+    }
+
+    @Override
+    public R<Void> deleteFile(String userId, String fileId) {
+        AiFileInfo fileInfo = fileInfoDomainService.getByFileId(fileId, userId);
+        if (fileInfo == null) {
+            return R.failed(DouDouAgentResultCode.NOT_FOUND_AI_FILE_INFO);
+        }
+        // 从oss删除文件
+        ossStoreService.delete(OssObjectRequest.builder().objectKey(fileInfo.getAccessPath()).build());
+        // 删除数据库中的数据
+        fileInfoDomainService.removeById(fileInfo);
+        return R.ok();
     }
 }
