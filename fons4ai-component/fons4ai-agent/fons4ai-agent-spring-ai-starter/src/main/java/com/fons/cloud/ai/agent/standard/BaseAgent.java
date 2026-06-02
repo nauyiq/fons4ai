@@ -1,6 +1,5 @@
 package com.fons.cloud.ai.agent.standard;
 
-import cn.hutool.core.lang.Assert;
 import com.alibaba.fastjson2.JSON;
 import com.fons.cloud.ai.agent.common.constants.AgentResultCode;
 import com.fons.cloud.ai.agent.common.constants.AgentType;
@@ -14,7 +13,8 @@ import jakarta.validation.constraints.NotNull;
 import lombok.Getter;
 import lombok.extern.slf4j.Slf4j;
 import org.apache.commons.collections4.CollectionUtils;
-import org.apache.commons.lang3.StringUtils;
+import org.apache.commons.lang3.time.StopWatch;
+import org.aspectj.apache.bcel.generic.RET;
 import org.springframework.ai.chat.memory.ChatMemory;
 import org.springframework.ai.chat.memory.MessageWindowChatMemory;
 import org.springframework.ai.chat.messages.AssistantMessage;
@@ -30,18 +30,14 @@ import java.util.*;
 /**
  * 基础智能体
  * <pre>
- *     提供智能体的通用功能
+ *     1. 提供智能体的通用功能
+ *     2. 一次会话就要创建一次实例，方便数据隔离
  * </pre>
  * @author hongqy
  */
 @Slf4j
 @Getter
 public abstract class BaseAgent implements AiAgent {
-
-    /**
-     * 智能体名称
-     */
-    protected final String name;
 
     /**
      * 智能体类型
@@ -53,77 +49,160 @@ public abstract class BaseAgent implements AiAgent {
      */
     protected final ChatModel chatModel;
 
+    /**
+     * 任务管理器
+     */
+    protected final AgentTaskManager agentTaskManager;
 
-    // 会话记忆
+
+    /**
+     * 会话记忆
+     */
     protected ChatMemory chatMemory;
-    // 最大会话记忆消息数
+
+    /**
+     * 最大会话记忆消息数
+     */
     protected int maxMemoryMessages;
 
-    // 是否启用推荐问题功能
+    /**
+     * 是否启用推荐问题功能
+     */
     protected boolean enableRecommendations = true;
-    // 开始时间 用于计时
-    protected long startTime;
-    // 首次响应时间
+
+    /**
+     * 计时器
+     */
+    protected StopWatch stopWatch;
+
+    /**
+     * 首次响应时间
+     */
     protected long firstResponseTime;
-    // 使用的工具列表
+
+    /**
+     * 使用的工具列表
+     */
     protected Set<String> usedTools;
-    // 当前消息ID
+
+    /**
+     * 当前消息ID
+     */
     protected String currentMessageId;
-    // 当前会话ID
+
+    /**
+     * 当前会话ID
+     */
     protected String currentConversationId;
-    // 当前问题
+
+    /**
+     * 当前agent持有的响应式流发布者
+     */
+    protected Sinks.Many<String> sink;
+
+    /**
+     * 当前问题
+     */
     protected String currentQuestion;
-    // 当前推荐答案
+    /**
+     * 当前推荐答案
+     */
     protected String currentRecommendations;
 
-    // 任务管理器
-    @Resource
-    protected AgentTaskManager agentTaskManager;
+    /**
+     * 当前会话的思考过程
+     */
+    protected StringBuilder thinkingBuffer = new StringBuilder();
 
 
-    protected BaseAgent(String name, AgentType agentType, ChatModel chatModel) {
-        this.name = name;
+
+    /**
+     * 构造方法
+     * @param agentType    智能体类型
+     * @param chatModel    LLM对话能力
+     */
+    protected BaseAgent(AgentType agentType, ChatModel chatModel, AgentTaskManager agentTaskManager) {
         this.agentType = agentType;
         this.chatModel = chatModel;
-        initChatMemory();
+        this.agentTaskManager = agentTaskManager;
     }
 
     @Override
     public Flux<String> stream(@NotNull AgentChatRequest request) {
         log.info("开始处理流式请求, request:{}", JSON.toJSONString(request));
-        if (StringUtils.isNotBlank(request.getConversationId()) && agentTaskManager.hasRunningTask(request.getConversationId())) {
+        String conversationId = request.getConversationId();
+        String question = request.getQuestion();
+        if (agentTaskManager.hasRunningTask(conversationId)) {
             // 存在任务在执行 返回错误消息
             return Flux.error(BusinessRuntimeException.of(AgentResultCode.CONVERSATION_BUSY));
         }
 
-        // 消息列表, 使用Collections.synchronizedList 保证线程安全
-        List<Message> messages = Collections.synchronizedList(new ArrayList<>());
+        // 初始化会话信息
+        initAndStartWatch();
+        clearUsedTools();
+        currentConversationId = conversationId;
+        currentQuestion = question;
+        if (useChatMemory()) {
+            chatMemory.add(currentConversationId, new UserMessage(question));
+        }
 
         // 创建一个单播流（只能有一个订阅者）的响应式流发布者， 用于向客户端推送响应
-        Sinks.Many<String> sink = Sinks.many().unicast().onBackpressureBuffer();
+        sink = Sinks.many().unicast().onBackpressureBuffer();
         // 注册任务到管理器
-        R<AgentTaskManager.TaskInfo> registered = agentTaskManager.registerTask(request.getConversationId(), sink, this.agentType);
+        R<AgentTaskManager.TaskInfo> registered = agentTaskManager.registerTask(conversationId, sink, this.agentType);
         if (!registered.isSuccess()) {
             return Flux.error(BusinessRuntimeException.of(registered.getCode(), registered.getMessage()));
         }
 
-        return null;
+        // 由子类实现流式输出的逻辑
+        return streamExecute();
     }
 
     /**
      * 子类必须实现的执行方法， 请求大模型并流式响应
-     * @param conversationId 会话ID
-     * @param question       用户问题
      * @return 流式输出
      */
-    public abstract Flux<String> execute(String conversationId, String question);
+    public abstract Flux<String> streamExecute();
+
+    /**
+     * 创建用户提示词
+     * @return
+     */
+    protected Message createUserMessage() {
+        return new UserMessage("<question>" + currentQuestion + "</question>");
+    }
+
+    /**
+     * 清除工具记录
+     */
+    protected void clearUsedTools() {
+        if (usedTools != null) {
+            usedTools.clear();
+        }
+    }
+
+    /**
+     * 初始化并且启动计时器
+     */
+    protected void initAndStartWatch() {
+        stopWatch = StopWatch.createStarted();
+        firstResponseTime = 0;
+    }
 
     /**
      * 初始化会话记忆
      */
-    private void initChatMemory() {
+    protected void initChatMemory() {
         int maxMemoryMessages = this.maxMemoryMessages <= 0 ? 20 : this.maxMemoryMessages;
         chatMemory = MessageWindowChatMemory.builder().maxMessages(maxMemoryMessages).build();
+    }
+
+    /**
+     * 是否使用会话记忆
+     * @return
+     */
+    protected boolean useChatMemory() {
+        return currentConversationId != null && chatMemory != null;
     }
 
     /**
@@ -158,12 +237,16 @@ public abstract class BaseAgent implements AiAgent {
      * @return
      */
     protected List<Message> loadHistoryMessages(String conversationId, boolean skipSystem, boolean addMsgLabel) {
+        if (!useChatMemory()) {
+            return Collections.synchronizedList(new ArrayList<>());
+        }
         List<Message> messages = chatMemory.get(conversationId);
         if (CollectionUtils.isEmpty(messages)) {
             log.info("没有发现会话历史消息：{}", conversationId);
-            return List.of();
+            return messages;
         }
-        List<Message> results = new ArrayList<>();
+        // 消息列表, 使用Collections.synchronizedList 保证线程安全
+        List<Message> results = Collections.synchronizedList(new ArrayList<>());
         if (addMsgLabel) {
             results.add(new UserMessage("conversation history："));
         }

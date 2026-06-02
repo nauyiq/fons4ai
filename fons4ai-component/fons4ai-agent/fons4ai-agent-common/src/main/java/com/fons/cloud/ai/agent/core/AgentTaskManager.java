@@ -7,6 +7,7 @@ import com.fons.cloud.common.result.R;
 import lombok.Getter;
 import lombok.Setter;
 import lombok.extern.slf4j.Slf4j;
+import org.apache.commons.lang3.StringUtils;
 import org.redisson.api.RBucket;
 import org.redisson.api.RTopic;
 import org.redisson.api.RedissonClient;
@@ -91,6 +92,10 @@ public class AgentTaskManager implements InitializingBean, DisposableBean {
      * @return
      */
     public boolean hasRunningTask(String conversationId) {
+        if (StringUtils.isBlank(conversationId)) {
+            return false;
+        }
+
         // 先查询本地是否有任务执行
         if (taskMap.containsKey(conversationId)) {
             return true;

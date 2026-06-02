@@ -22,7 +22,8 @@ public class AgentChatRequest extends BaseRequest {
     /**
      * 消息/提示词/问题
      */
-    private String message;
+    private String question;
+
 
 
 }

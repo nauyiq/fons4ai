@@ -8,6 +8,7 @@ import reactor.core.publisher.Flux;
  */
 public interface AiAgent {
 
+
     /**
      * 流式输出
      * @param request
