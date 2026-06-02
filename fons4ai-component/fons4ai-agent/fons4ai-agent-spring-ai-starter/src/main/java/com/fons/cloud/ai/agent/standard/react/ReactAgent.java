@@ -1,20 +1,27 @@
-package com.fons.cloud.ai.agent.standard.deepresearch;
+package com.fons.cloud.ai.agent.standard.react;
 
-import com.fons.cloud.ai.agent.common.constants.AgentPrompts;
 import com.fons.cloud.ai.agent.common.constants.AgentType;
+import com.fons.cloud.ai.agent.common.constants.RoundMode;
 import com.fons.cloud.ai.agent.core.AgentTaskManager;
+import com.fons.cloud.ai.agent.dto.RoundState;
+import com.fons.cloud.ai.agent.prompt.AgentSystemPrompt;
+import com.fons.cloud.ai.agent.prompt.ReactAgentSystemPromptBuilder;
 import com.fons.cloud.ai.agent.standard.BaseAgent;
+import com.fons.cloud.common.result.R;
+import lombok.Getter;
+import lombok.Setter;
 import lombok.extern.slf4j.Slf4j;
 import org.apache.commons.collections4.CollectionUtils;
-import org.apache.commons.lang3.StringUtils;
 import org.springframework.ai.chat.client.ChatClient;
 import org.springframework.ai.chat.client.advisor.api.Advisor;
+import org.springframework.ai.chat.messages.AssistantMessage;
 import org.springframework.ai.chat.messages.Message;
 import org.springframework.ai.chat.messages.SystemMessage;
 import org.springframework.ai.chat.model.ChatModel;
 import org.springframework.ai.model.tool.ToolCallingChatOptions;
 import org.springframework.ai.tool.ToolCallback;
 import reactor.core.publisher.Flux;
+import reactor.core.publisher.Sinks;
 
 import java.util.ArrayList;
 import java.util.Collections;
@@ -40,11 +47,6 @@ public class ReactAgent extends BaseAgent {
     private final List<ToolCallback> tools;
 
     /**
-     * 系统提示词
-     */
-    private String systemPrompt;
-
-    /**
      * 最大推理轮数 默认5
      */
     private int maxRounds;
@@ -63,7 +65,6 @@ public class ReactAgent extends BaseAgent {
         super(AgentType.REACT, chatModel, agentTaskManager);
         this.tools = tools;
     }
-
 
     private void init(boolean initChatMemory) {
         log.info("开始初始化ReactAgent...");
@@ -101,25 +102,62 @@ public class ReactAgent extends BaseAgent {
         AtomicLong roundCounter = new AtomicLong(0);
         // 是否发送最终结果标记位
         AtomicBoolean hasSentFinalResult = new AtomicBoolean(false);
-
-
+        // 跨轮次执行上下文
+        ReactExecutionContext reactExecutionContext = new ReactExecutionContext();
+        // 执行轮次
+        scheduleRound(messages, sink, roundCounter, hasSentFinalResult, reactExecutionContext);
 
 
         return null;
     }
 
+    /**
+     * 开始执行轮次
+     * @param messages              消息列表
+     * @param sink                  消息发布者
+     * @param roundCounter          当前轮次执行次数
+     * @param hasSentFinalResult    是否发送最终结果标记位
+     * @param reactExecutionContext 跨轮次执行上下文
+     */
+    private void scheduleRound(List<Message> messages, Sinks.Many<String> sink, AtomicLong roundCounter, AtomicBoolean hasSentFinalResult, ReactExecutionContext reactExecutionContext) {
+        // 轮次+1
+        roundCounter.incrementAndGet();
+        // 初始化轮次执行状态
+        RoundState roundState = new RoundState();
 
 
-    private SystemMessage createSystemMessage() {
-        String systemPrompt = StringUtils.isNotBlank(this.systemPrompt)
-                ? AgentPrompts.REACT_AGENT_PROMPTS + "\n\n" + this.systemPrompt : AgentPrompts.REACT_AGENT_PROMPTS;
-        return new SystemMessage(systemPrompt);
+
+
     }
+
+    /**
+     * 创建系统提示词， 默认使用react通用系统提示词
+     * @return
+     */
+    private SystemMessage createSystemMessage() {
+        if (systemPrompt == null) {
+            log.info("使用react默认系统提示词");
+            systemPrompt = ReactAgentSystemPromptBuilder.build();
+        }
+        return new SystemMessage(systemPrompt.getPrompt());
+    }
+
+
 
     public static Builder builder(List<ToolCallback> tools, ChatModel chatModel, AgentTaskManager agentTaskManager) {
         return new Builder(tools, chatModel, agentTaskManager);
     }
 
+
+    /**
+     * 跨轮次执行上下文。子类可以扩展该类型以保存领域状态。
+     */
+    public static class ReactExecutionContext {
+        // 最终答案缓冲区
+        private final StringBuilder finalAnswerBuffer = new StringBuilder();
+        // 思考过程缓冲区
+        private final StringBuilder thinkingBuffer = new StringBuilder();
+    }
 
     public static class Builder {
         private final List<ToolCallback> tools;
@@ -127,7 +165,7 @@ public class ReactAgent extends BaseAgent {
         private final AgentTaskManager agentTaskManager;
 
         private List<Advisor> advisors;
-        private String systemPrompt;
+        private AgentSystemPrompt systemPrompt;
         private int maxRounds = 5;
         private boolean useChatMemory;
         private int maxMemoryMessages;
@@ -143,7 +181,7 @@ public class ReactAgent extends BaseAgent {
             return this;
         }
 
-        public Builder systemPrompt(String systemPrompt) {
+        public Builder systemPrompt(AgentSystemPrompt systemPrompt) {
             this.systemPrompt = systemPrompt;
             return this;
         }
@@ -169,7 +207,6 @@ public class ReactAgent extends BaseAgent {
             reactAgent.advisors = this.advisors;
             reactAgent.maxRounds = this.maxRounds;
             reactAgent.maxMemoryMessages = this.maxMemoryMessages;
-
             // 初始化
             reactAgent.init(this.useChatMemory);
             return reactAgent;

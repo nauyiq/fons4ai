@@ -5,6 +5,7 @@ import com.fons.cloud.ai.agent.common.constants.AgentResultCode;
 import com.fons.cloud.ai.agent.common.constants.AgentType;
 import com.fons.cloud.ai.agent.common.request.AgentChatRequest;
 import com.fons.cloud.ai.agent.core.AgentTaskManager;
+import com.fons.cloud.ai.agent.prompt.AgentSystemPrompt;
 import com.fons.cloud.ai.agent.service.AiAgent;
 import com.fons.cloud.common.base.exception.BusinessRuntimeException;
 import com.fons.cloud.common.result.R;
@@ -50,15 +51,20 @@ public abstract class BaseAgent implements AiAgent {
     protected final ChatModel chatModel;
 
     /**
+     * 系统提示词
+     */
+    protected AgentSystemPrompt systemPrompt;
+
+    /**
      * 任务管理器
      */
     protected final AgentTaskManager agentTaskManager;
-
 
     /**
      * 会话记忆
      */
     protected ChatMemory chatMemory;
+
 
     /**
      * 最大会话记忆消息数

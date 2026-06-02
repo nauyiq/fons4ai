@@ -1,7 +1,7 @@
 package com.fons.cloud.ai.agent.prompt;
 
-import lombok.Getter;
-import lombok.Setter;
+import com.fons.cloud.ai.agent.common.constants.AgentPrompts;
+import lombok.*;
 
 /**
  * 智能体系统提示词
@@ -17,6 +17,9 @@ import lombok.Setter;
  */
 @Getter
 @Setter
+@Builder
+@NoArgsConstructor
+@AllArgsConstructor
 public class AgentSystemPrompt {
 
     /**
@@ -44,16 +47,18 @@ public class AgentSystemPrompt {
      */
     private String mandatoryRequirements;
 
-
+    public String getPrompt() {
+        return this.toString();
+    }
 
     @Override
     public String toString() {
         return roleDefinition + "\n\n" +
-                getSystemTimePrompt() + "\n\n" +
-                REACT_TOOL_CALLING_RULES + "\n\n" +
-                REACT_FINAL_ANSWER_RULES + "\n\n" +
-                OUTPUT_SPECIFICATIONS + "\n\n" +
-                REACT_MANDATORY_REQUIREMENTS;
+                AgentPrompts.SYSTEM_TIME_PROMPT + "\n\n" +
+                toolCallingRules + "\n\n" +
+                finalAnswerRules + "\n\n" +
+                outputSpecifications + "\n\n" +
+                mandatoryRequirements;
     }
 
 
