@@ -1,15 +1,14 @@
 package com.fons.cloud.ai.agent.standard.react;
 
+import com.fons.cloud.ai.agent.chat.ChatResponseParseResult;
 import com.fons.cloud.ai.agent.common.constants.AgentType;
 import com.fons.cloud.ai.agent.common.constants.RoundMode;
+import com.fons.cloud.ai.agent.common.response.ChunkResult;
 import com.fons.cloud.ai.agent.core.AgentTaskManager;
-import com.fons.cloud.ai.agent.dto.RoundState;
+import com.fons.cloud.ai.agent.chat.RoundState;
 import com.fons.cloud.ai.agent.prompt.AgentSystemPrompt;
 import com.fons.cloud.ai.agent.prompt.ReactAgentSystemPromptBuilder;
 import com.fons.cloud.ai.agent.standard.BaseAgent;
-import com.fons.cloud.common.result.R;
-import lombok.Getter;
-import lombok.Setter;
 import lombok.extern.slf4j.Slf4j;
 import org.apache.commons.collections4.CollectionUtils;
 import org.apache.commons.lang3.StringUtils;
@@ -122,9 +121,9 @@ public class ReactAgent extends BaseAgent {
      * @param sink                  消息发布者
      * @param roundCounter          当前轮次执行次数
      * @param hasSentFinalResult    是否发送最终结果标记位
-     * @param reactExecutionContext 跨轮次执行上下文
+     * @param executionContext 跨轮次执行上下文
      */
-    private void scheduleRound(List<Message> messages, Sinks.Many<String> sink, AtomicLong roundCounter, AtomicBoolean hasSentFinalResult, ReactExecutionContext reactExecutionContext) {
+    private void scheduleRound(List<Message> messages, Sinks.Many<String> sink, AtomicLong roundCounter, AtomicBoolean hasSentFinalResult, ReactExecutionContext executionContext) {
         // 轮次+1
         roundCounter.incrementAndGet();
         // 初始化轮次执行状态
@@ -136,7 +135,9 @@ public class ReactAgent extends BaseAgent {
                 .chatResponse()
                 .publishOn(Schedulers.boundedElastic())
                 // 处理数据块
-                .doOnNext(chunk -> processChunk(chunk, sink, roundState));
+                .doOnNext(chunk -> processChunk(chunk, sink, roundState))
+                // 处理轮次完成
+                .doOnComplete(() -> finishRound(messages, sink, roundState, roundCounter, hasSentFinalResult, executionContext));
 
 
     }
@@ -164,21 +165,79 @@ public class ReactAgent extends BaseAgent {
             return;
         }
 
-        // 输出的文本
-        String text = result.getOutput().getText();
-        if (StringUtils.isBlank(text)) {
-            return;
+        // 解析内容
+        ChatResponseParseResult parseResult = ChatResponseParseResult.parseResult(chunk, roundState.isInThink());
+        roundState.setInThink(parseResult.isInThink());
+        List<ChunkResult> chunks = parseResult.getChunks();
+        for (ChunkResult chunkResult : chunks) {
+            String text = chunkResult.getText();
+            String reasoning = chunkResult.getReasoning();
+            if (StringUtils.isNotBlank(text)) {
+                // 发送正文内容, 并且缓冲正文结果
+                sink.tryEmitNext(createTextResponse(text));
+                roundState.getTextBuffer().append(text);
+            }
+            if (StringUtils.isNotBlank(reasoning)) {
+                // 发送思考过程内容, 并且缓冲思考过程结果
+                sink.tryEmitNext(createThinkingResponse(reasoning));
+            }
         }
+    }
 
-        // 解析思考过程内容, 如果是思考模型则会存在思考内容
-        String reasoning = result.getOutput() instanceof DeepSeekAssistantMessage ? ((DeepSeekAssistantMessage) result.getOutput()).getReasoningContent()
-                : (String) result.getMetadata().get("reasoningContent");
-        if (StringUtils.isNotBlank(reasoning)) {
-            // 发送思考文本
-//            sink.tryEmitNext()
+    /**
+     * 处理轮次完成
+     * @param messages              消息列表
+     * @param sink                  消息发射器
+     * @param roundState            轮次执行状态
+     * @param roundCounter          第几轮次
+     * @param hasSentFinalResult    是否发送最终结果标记位
+     * @param executionContext      跨轮次执行上下文
+     */
+    private void finishRound(List<Message> messages, Sinks.Many<String> sink, RoundState roundState, AtomicLong roundCounter, AtomicBoolean hasSentFinalResult, ReactExecutionContext executionContext) {
+        if (roundState.getMode() != RoundMode.TOOL_CALL) {
+            // 非工具调用时则结束轮次
+            log.info("会话[{}]执行最后轮次处理, 最后轮次输出类型为{}, 轮次:{}", currentConversationId, roundState.getMode(), roundCounter);
+            // 设置结束标记
+            hasSentFinalResult.set(true);
+            // 发送最后的响应, 包括拓展输出的搜索内容或者生成推荐答案
+            emitFinalResponses(sink, roundState.getTextBuffer().toString(), executionContext);
+            // 结束轮次
+            sink.tryEmitComplete();
+        } else {
+            // 消息列表添加工具调用
+            messages.add(AssistantMessage.builder().toolCalls(roundState.getToolCalls()).build());
+            // 判断是否达到最大轮次 如果是的话强制输出答案
+            if (roundCounter.get() >= maxRounds) {
+                log.info("会话[{}]达到最大轮次{}，强制输出答案", currentConversationId, maxRounds);
+                forceFinalStream(messages, sink, hasSentFinalResult, executionContext);
+            } else {
+                // 调用工具
+
+            }
+
+        }
+    }
+
+    private void forceFinalStream(List<Message> messages, Sinks.Many<String> sink, AtomicBoolean hasSentFinalResult, ReactExecutionContext executionContext) {
+        // TODO
+    }
+
+    /**
+     * 发送最后的响应, 包括拓展输出的搜索内容或者生成推荐答案 如果没有拓展则不需要处理任何内容
+     * @param sink      消息发射器
+     * @param string    响应内容
+     * @param context   跨轮次执行上下文
+     */
+    private void emitFinalResponses(Sinks.Many<String> sink, String string, ReactExecutionContext context) {
+        // TODO
+
+
+        if (enableRecommendations) {
+            // 启用了推荐答案 则要根据大模型输出的内容再次输出推荐答案
         }
 
     }
+
 
     /**
      * 创建系统提示词， 默认使用react通用系统提示词

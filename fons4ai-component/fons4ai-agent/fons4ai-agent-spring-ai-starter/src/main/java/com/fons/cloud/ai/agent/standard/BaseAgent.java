@@ -4,6 +4,7 @@ import com.alibaba.fastjson2.JSON;
 import com.fons.cloud.ai.agent.common.constants.AgentResultCode;
 import com.fons.cloud.ai.agent.common.constants.AgentType;
 import com.fons.cloud.ai.agent.common.request.AgentChatRequest;
+import com.fons.cloud.ai.agent.common.response.AgentResponse;
 import com.fons.cloud.ai.agent.core.AgentTaskManager;
 import com.fons.cloud.ai.agent.prompt.AgentSystemPrompt;
 import com.fons.cloud.ai.agent.service.AiAgent;
@@ -64,7 +65,6 @@ public abstract class BaseAgent implements AiAgent {
      * 会话记忆
      */
     protected ChatMemory chatMemory;
-
 
     /**
      * 最大会话记忆消息数
@@ -263,6 +263,37 @@ public abstract class BaseAgent implements AiAgent {
             results.add(message);
         }
         return results;
+    }
+
+
+    /**
+     * 创建text类型响应
+     *
+     * @param content 内容
+     * @return JSON格式的响应字符串
+     */
+    protected String createTextResponse(String content) {
+        return AgentResponse.text(content).toJson();
+    }
+
+    /**
+     * 创建thinking类型响应
+     *
+     * @param content 内容
+     * @return JSON格式的响应字符串
+     */
+    protected String createThinkingResponse(String content) {
+        return AgentResponse.thinking(content).toJson();
+    }
+
+    /**
+     * 创建reference类型响应
+     *
+     * @param content 内容（JSON数组字符串，count会自动计算）
+     * @return JSON格式的响应字符串
+     */
+    protected String createReferenceResponse(String content) {
+        return AgentResponse.reference(content).toJson();
     }
 
 

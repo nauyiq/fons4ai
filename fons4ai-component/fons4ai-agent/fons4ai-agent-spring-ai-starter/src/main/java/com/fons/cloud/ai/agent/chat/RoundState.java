@@ -1,4 +1,4 @@
-package com.fons.cloud.ai.agent.dto;
+package com.fons.cloud.ai.agent.chat;
 
 import com.fons.cloud.ai.agent.common.constants.RoundMode;
 import lombok.Getter;
