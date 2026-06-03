@@ -12,16 +12,21 @@ import lombok.Getter;
 import lombok.Setter;
 import lombok.extern.slf4j.Slf4j;
 import org.apache.commons.collections4.CollectionUtils;
+import org.apache.commons.lang3.StringUtils;
 import org.springframework.ai.chat.client.ChatClient;
 import org.springframework.ai.chat.client.advisor.api.Advisor;
 import org.springframework.ai.chat.messages.AssistantMessage;
 import org.springframework.ai.chat.messages.Message;
 import org.springframework.ai.chat.messages.SystemMessage;
 import org.springframework.ai.chat.model.ChatModel;
+import org.springframework.ai.chat.model.ChatResponse;
+import org.springframework.ai.chat.model.Generation;
+import org.springframework.ai.deepseek.DeepSeekAssistantMessage;
 import org.springframework.ai.model.tool.ToolCallingChatOptions;
 import org.springframework.ai.tool.ToolCallback;
 import reactor.core.publisher.Flux;
 import reactor.core.publisher.Sinks;
+import reactor.core.scheduler.Schedulers;
 
 import java.util.ArrayList;
 import java.util.Collections;
@@ -125,8 +130,53 @@ public class ReactAgent extends BaseAgent {
         // 初始化轮次执行状态
         RoundState roundState = new RoundState();
 
+        this.chatClient.prompt()
+                .messages(messages)
+                .stream()
+                .chatResponse()
+                .publishOn(Schedulers.boundedElastic())
+                // 处理数据块
+                .doOnNext(chunk -> processChunk(chunk, sink, roundState));
 
 
+    }
+
+
+    /**
+     * 处理流式输出的数据块
+     * @param chunk      响应数据块
+     * @param sink       消息发布者
+     * @param roundState 当前轮次执行状态
+     */
+    @SuppressWarnings("ConstantConditions")
+    private void processChunk(ChatResponse chunk, Sinks.Many<String> sink, RoundState roundState) {
+        if (chunk == null || chunk.getResult() == null || chunk.getResult().getOutput() == null) {
+            return;
+        }
+
+        Generation result = chunk.getResult();
+        // 输出的工具调用列表
+        List<AssistantMessage.ToolCall> toolCalls = result.getOutput().getToolCalls();
+        if (CollectionUtils.isNotEmpty(toolCalls)) {
+            // 存在工具调用 则把状态设置为工具调用并且合并工具调用
+            roundState.setMode(RoundMode.TOOL_CALL);
+            roundState.mergeToolCalls(toolCalls);
+            return;
+        }
+
+        // 输出的文本
+        String text = result.getOutput().getText();
+        if (StringUtils.isBlank(text)) {
+            return;
+        }
+
+        // 解析思考过程内容, 如果是思考模型则会存在思考内容
+        String reasoning = result.getOutput() instanceof DeepSeekAssistantMessage ? ((DeepSeekAssistantMessage) result.getOutput()).getReasoningContent()
+                : (String) result.getMetadata().get("reasoningContent");
+        if (StringUtils.isNotBlank(reasoning)) {
+            // 发送思考文本
+//            sink.tryEmitNext()
+        }
 
     }
 
