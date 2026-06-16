@@ -1,4 +1,4 @@
-package com.fons.cloud.ai.agent.utils;
+package com.fons.cloud.ai.agent.infrastructure.utils;
 
 import java.util.ArrayList;
 import java.util.List;

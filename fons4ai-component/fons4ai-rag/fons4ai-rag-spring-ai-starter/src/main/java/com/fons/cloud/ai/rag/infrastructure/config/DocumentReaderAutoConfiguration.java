@@ -1,4 +1,4 @@
-package com.fons.cloud.ai.rag.config;
+package com.fons.cloud.ai.rag.infrastructure.config;
 
 import com.fons.cloud.ai.rag.document.reader.DocumentReaderStrategy;
 import com.fons.cloud.ai.rag.document.reader.support.*;

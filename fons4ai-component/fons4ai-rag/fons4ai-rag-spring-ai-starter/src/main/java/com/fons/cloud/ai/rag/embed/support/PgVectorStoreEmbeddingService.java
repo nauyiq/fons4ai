@@ -4,7 +4,7 @@ import cn.hutool.core.lang.Assert;
 import com.alibaba.fastjson2.JSON;
 import com.fons.cloud.ai.rag.common.constants.RagResultCode;
 import com.fons.cloud.ai.rag.common.request.RagRetrieveRequest;
-import com.fons.cloud.ai.rag.config.VectorConfigProperties;
+import com.fons.cloud.ai.rag.infrastructure.config.VectorConfigProperties;
 import com.fons.cloud.ai.rag.embed.EmbeddingService;
 import com.fons.cloud.common.base.exception.BusinessRuntimeException;
 import jakarta.annotation.PostConstruct;

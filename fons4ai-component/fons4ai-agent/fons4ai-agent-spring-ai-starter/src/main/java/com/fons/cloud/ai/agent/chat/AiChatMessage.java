@@ -1,4 +1,4 @@
-package com.fons.cloud.ai.agent.standard;
+package com.fons.cloud.ai.agent.chat;
 
 import lombok.*;
 import org.springframework.ai.chat.messages.MessageType;

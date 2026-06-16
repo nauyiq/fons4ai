@@ -1,4 +1,4 @@
-package com.fons.cloud.ai.rag.config;
+package com.fons.cloud.ai.rag.infrastructure.config;
 
 import com.fons.cloud.ai.rag.common.constants.VectorStoreType;
 import lombok.*;

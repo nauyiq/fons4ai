@@ -1,6 +1,7 @@
 package com.fons.cloud.ai.agent.chat;
 
 import com.fons.cloud.ai.agent.common.constants.RoundMode;
+import com.fons.cloud.ai.agent.common.response.SearchResult;
 import lombok.Getter;
 import lombok.Setter;
 import org.apache.commons.collections4.CollectionUtils;
@@ -33,6 +34,11 @@ public class RoundState {
      * 本轮轮次执行的工具列表
      */
     private List<AssistantMessage.ToolCall> toolCalls = Collections.synchronizedList(new ArrayList<>());
+
+    /**
+     *
+     */
+    private List<SearchResult> searchResults = new ArrayList<>();
 
     /**
      * ThinkTagParser 的 inThink 状态，跨 chunk 追踪 <think/> 标签

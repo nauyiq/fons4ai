@@ -1,7 +1,7 @@
 package com.fons.cloud.ai.rag.embed.support;
 
 import cn.hutool.core.lang.Assert;
-import com.fons.cloud.ai.rag.config.VectorConfigProperties;
+import com.fons.cloud.ai.rag.infrastructure.config.VectorConfigProperties;
 import com.fons.cloud.common.base.exception.SystemIntervalException;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;

@@ -139,6 +139,54 @@ public class AgentTaskManager implements InitializingBean, DisposableBean {
         }
     }
 
+    /**
+     * 停止任务
+     * 先检查本地是否有该任务：
+     * - 本地有：直接停止
+     * - 本地没有：通过 Redis Pub/Sub 广播，让持有该任务的实例执行停止
+     */
+    public boolean stopTask(String conversationId) {
+        // 1. 先尝试本地停止（快速路径）
+        TaskInfo localTask = taskMap.get(conversationId);
+        if (localTask != null) {
+            log.info("本地停止任务: conversationId={}, instanceId={}", conversationId, instanceId);
+            doStopTask(conversationId, localTask);
+            return true;
+        }
+
+        // 2. 先检查 Redis 中是否存在该任务，不存在则无需广播
+        RBucket<String> bucket = getTaskBucket(conversationId);
+        if (!bucket.isExists()) {
+            return false;
+        }
+
+        // 3. 持有者是本实例，说明已在处理中，无需广播
+        String holder = bucket.get();
+        if (instanceId.equals(holder)) {
+            log.debug("任务持有者是本实例，跳过广播: conversationId={}", conversationId);
+            return false;
+        }
+
+        // 4. 本地没有但 Redis 有，且持有者不是本实例，Pub/Sub 广播停止请求
+        long receivers = stopTopic.publish(conversationId);
+        log.info("发布停止广播: conversationId={}, 订阅者数量={}", conversationId, receivers);
+        return true;
+    }
+
+
+    /**
+     * 设置任务的Disposable
+     *
+     * @param conversationId 会话ID
+     * @param disposable     Disposable对象
+     */
+    public void setDisposable(String conversationId, Disposable disposable) {
+        TaskInfo taskInfo = taskMap.get(conversationId);
+        if (taskInfo != null) {
+            taskInfo.setDisposable(disposable);
+        }
+    }
+
 
     @Override
     public void afterPropertiesSet() throws Exception {

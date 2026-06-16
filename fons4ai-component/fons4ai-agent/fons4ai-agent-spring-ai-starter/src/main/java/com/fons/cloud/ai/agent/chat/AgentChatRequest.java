@@ -1,7 +1,9 @@
-package com.fons.cloud.ai.agent.common.request;
+package com.fons.cloud.ai.agent.chat;
 
 import com.fons.cloud.common.request.BaseRequest;
 import lombok.*;
+
+import java.util.List;
 
 /**
  * @author hongqy
@@ -24,6 +26,9 @@ public class AgentChatRequest extends BaseRequest {
      */
     private String question;
 
-
+    /**
+     * 历史消息列表
+     */
+    private List<AiChatMessage> historyMessages;
 
 }

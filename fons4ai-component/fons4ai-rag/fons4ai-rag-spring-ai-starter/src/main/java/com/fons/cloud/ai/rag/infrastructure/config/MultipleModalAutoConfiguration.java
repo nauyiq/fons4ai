@@ -1,5 +1,6 @@
-package com.fons.cloud.ai.rag.config;
+package com.fons.cloud.ai.rag.infrastructure.config;
 
+import com.fons.cloud.ai.rag.config.MultipleModalConfigProperties;
 import com.fons.cloud.ai.rag.infrastructure.multiplemodal.MultipleModalChatModel;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnMissingBean;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;

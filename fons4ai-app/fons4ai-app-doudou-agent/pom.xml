@@ -33,7 +33,6 @@
             <version>${revision}</version>
         </dependency>
 
-
         <dependency>
             <groupId>com.fons.cloud</groupId>
             <artifactId>fons4cloud-common-web</artifactId>
@@ -50,12 +49,6 @@
             <groupId>com.fons.cloud.ai</groupId>
             <artifactId>fons4ai-agent-spring-ai-starter</artifactId>
             <version>${revision}</version>
-            <exclusions>
-                <exclusion>
-                    <artifactId>mcp</artifactId>
-                    <groupId>io.modelcontextprotocol.sdk</groupId>
-                </exclusion>
-            </exclusions>
         </dependency>
 
         <dependency>

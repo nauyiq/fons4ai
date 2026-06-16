@@ -1,4 +1,4 @@
-package com.fons.cloud.ai.agent.standard;
+package com.fons.cloud.ai.agent.standard.deepresearch;
 
 import cn.hutool.core.lang.Assert;
 import com.fons.cloud.common.base.exception.SystemIntervalException;
@@ -34,7 +34,6 @@ import java.util.concurrent.atomic.AtomicLong;
  *      Observation（观察）：接收工具返回的结果
  * </pre>
  * @author hongqy
- * @date 2026/3/20
  */
 @Slf4j
 public class SimpleReActAgent {

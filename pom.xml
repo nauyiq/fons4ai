@@ -73,6 +73,13 @@
                 <version>${spring.ai.version}</version>
             </dependency>
 
+            <!-- spring-ai mcp -->
+            <dependency>
+                <groupId>org.springframework.ai</groupId>
+                <artifactId>spring-ai-starter-mcp-client</artifactId>
+                <version>${spring.ai.version}</version>
+            </dependency>
+
             <!-- LangChain4j -->
             <dependency>
                 <groupId>dev.langchain4j</groupId>

@@ -12,6 +12,8 @@ public enum AgentType {
 
     REACT("react"),
 
+    WEB_SEARCH("websearch"),
+
     ;
 
     private final String type;
