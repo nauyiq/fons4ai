@@ -33,7 +33,7 @@ public class WebSearchReactAgent extends ReactAgent {
      */
     @Override
     protected void beforeToolCall(Sinks.Many<String> sink, AssistantMessage.ToolCall toolCall, ReactExecutionContext context) {
-        if (toolCall.name())
+//        if (toolCall.name())
     }
 
 
