@@ -1,4 +1,4 @@
 interface:
   display_name: "Fons4AI Project Knowledge Base Init"
-  short_description: "Fons4AI knowledge init with confirmed DDL scope and source-free SQL artifacts."
-  default_prompt: "Use $fons4ai-project-knowledge-base-init when Fons4AI routing is enabled or explicitly requested to initialize architecture memory and SQL knowledge; ask for a database choice when multiple MCP scopes match, and never persist MCP/tool/source metadata in generated SQL files."
+  short_description: "Fons4AI layered memory initialization without generating SQL files."
+  default_prompt: "Use $fons4ai-project-knowledge-base-init when Fons4AI routing is enabled or explicitly requested to initialize .specify/memory layered project knowledge; use MCP DDL or existing SQL files only as context references, and do not create, copy, import, or update SQL files."

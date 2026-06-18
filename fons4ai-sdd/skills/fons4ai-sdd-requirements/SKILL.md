@@ -1,140 +1,142 @@
----
+﻿---
 name: fons4ai-sdd-requirements
-description: "Fons4AI gated SDD requirements workflow. Auto-trigger only when an in-scope AGENTS.md contains '<!-- fons4ai-skill-routing: enabled -->'; otherwise use only when the user explicitly names this skill or asks for the Fons4AI/SDD workflow."
+description: "Fons4AI 受控的 SDD 需求说明书生成技能。只有当作用域内 AGENTS.md 包含 '<!-- fons4ai-skill-routing: enabled -->' 时才允许自动触发；否则仅在用户明确指定该技能，或明确要求使用 Fons4AI/SDD 工作流时使用。用于先澄清需求，再生成 spec/features/<yyyymmdd>/<功能中文名>-需求说明书.md。"
 ---
 
-# Fons4AI SDD Requirements
+# Fons4AI SDD 需求说明书
 
-## Activation Gate
+## 角色说明
 
-Before using this skill, verify at least one condition is true:
+你是资深业务分析师兼需求架构师，负责把用户的初始想法转化为清晰、可验收、可交付的业务需求说明书。
 
-1. The user explicitly names this skill, such as `$fons4ai-sdd-requirements`.
-2. The user explicitly asks to use Fons4AI, SDD, or the Fons4AI workflow.
-3. The active repository has an in-scope `AGENTS.md` containing `<!-- fons4ai-skill-routing: enabled -->`.
+你的目标不是直接设计技术方案，也不是马上拆任务或写代码，而是先确认需求语义，再沉淀第一份 SDD 产物：
 
-If none is true, do not apply this skill automatically. Continue with normal Codex behavior or ask whether the user wants to enable the Fons4AI workflow.
+`spec/features/<yyyymmdd>/<功能中文名>-需求说明书.md`
 
-## Overview
+工作时遵守以下原则：
 
-Use this skill to turn a feature idea into the first SDD artifact: a business-oriented requirement specification in `specs/features/<feature-slug>/spec.md`.
-This skill must clarify blocking requirement ambiguity before writing a formal `spec.md`; `use SDD` alone is not permission to guess requirement semantics.
-Feature artifacts are written under `specs/features/`; `.specify/memory/` and `.specify/sql/` are read as long-lived project context when present.
+- 先理解业务问题，再输出正式文档。
+- 优先使用用户能理解的业务语言，少用技术术语。
+- 需求说明书主要表达需求澄清结论、需求列表、业务规则、业务流程、影响和验收标准。
+- 数据内容只写业务口径，不写表名、字段名、DDL、MCP、模块、类名或技术架构。
+- 详细技术方案、数据模型、接口、事务、迁移、回滚等内容交给 `fons4ai-sdd-design`。
 
-## Required Context
+必要时读取以下资源：
 
-1. Read `AGENTS.md` and load the SDD contract from `references/sdd-artifact-contract.md`, including its context-loading rules.
-2. Locate context before drafting by searching feature names, business terms, module names, table/model names, API names, and related `REQ-###`/`AC-###` IDs. Do not bulk-read all of `.specify/memory/`, `.specify/sql/`, `.specify/rules/`, or `specs/` by default.
-   - Optionally run `scripts/find_relevant_context.py --root <repo-root> <keyword...>` to get candidate truth-source files before reading.
-3. Read only relevant project rules, matching truth-source sections, related SQL files, existing SDD artifacts, and source files when the feature touches existing behavior.
-4. Use `assets/templates/spec-template.md` as the output structure.
-5. If a target feature directory or `spec.md` already exists, read it first and ask the user before replacing or materially rewriting it.
-6. Prefer facts from `.specify/memory/business-architecture.md` for business domains, roles, processes, business objects, and durable business rules. Prefer `.specify/memory/data-architecture.md` and targeted `.specify/sql/**/*.sql` files for confirmed data model and DDL facts. If absent, continue from repository and user facts.
+- `AGENTS.md`
+- `references/sdd-artifact-contract.md`
+- `assets/templates/spec-template.md`
+- `.specify/memory/index.md`
+- 相关领域文档、知识卡片、规则文件、SQL 知识文件和既有 SDD 产物
 
-## Workflow
+读取上下文时必须先定位再读取，不得默认全量读取 `.specify/memory/`、`.specify/sql/`、`.specify/rules/` 或 `specs/`。
 
-1. Derive or confirm `<feature-slug>` in lowercase hyphen-case. Prefer short action-noun names such as `loan-approval-rule`.
-2. Classify the feature:
-   - Use `S1` by default for small or normal feature work.
-   - Use `S2` for database migrations, public API changes, security/permission changes, cache/MQ/transaction boundaries, cross-core-module work, compatibility risk, or high rollback cost.
-   - Keep the level and reason as workflow context for the design handoff. Do not expose SDD classification in the business-oriented `spec.md`.
-3. Run the clarification gate before writing a formal `spec.md`.
-   - If a blocking ambiguity exists, stop and ask exactly one highest-impact clarification question. Do not create or update `spec.md` in the same turn.
-   - If the user explicitly asks for a draft before answering, create only a draft `spec.md` with `文档状态：草案-待确认`, mark assumptions as `待确认`, and do not recommend design or task generation.
-   - If all blocking ambiguities are closed, create a formal business-oriented `spec.md` without exposing the internal clarification checklist, clarification status, or question log.
-4. Build the requirement summary before writing AC:
-   - Use `REQ-001`, `REQ-002`, ... for requirement points and business capabilities.
-   - Record priority, business scenario, and related AC for every requirement.
-   - Include background and goals, business scope, roles and scenarios, business workflow, business rules, business data description, business impact, risks, and acceptance criteria.
-   - Keep `spec.md` focused on requirements, behavior, business rules, workflows, impacts, and acceptance. Do not move detailed technical design into `spec.md`.
-   - Use business terminology. Do not expose modules, classes, tables, columns, DDL paths, MCP details, or technical architecture facts in `spec.md`.
-5. Write acceptance criteria before technical design:
-   - Use `AC-001`, `AC-002`, ... IDs.
-   - Use Given-When-Then.
-   - Cover normal flow, boundary cases, and failure cases.
-   - Keep AC observable from user, API, or system behavior; avoid implementation details.
-   - Link each AC to one or more `REQ-###` IDs through the requirement summary table or AC text.
-6. Define scope clearly:
-   - Include in-scope items.
-   - Exclude out-of-scope items.
-   - Record assumptions and unresolved questions.
-7. For S1, use the minimal complete profile: keep details concise but cover business goals, scope, scenarios, workflow, rules, business data, business impact, REQ/AC mapping, and AC. Use `不适用，原因` where workflow, risk, diagram, or data impact is genuinely absent.
-8. For S2, include business workflow, risks, business data, non-functional requirements, compatibility, security, and migration implications in business language and enough detail for design work.
-9. Generate Mermaid business flowcharts only when repository/user facts support the participants and flow. Do not invent systems, tables, APIs, or actors to fill the template.
-10. Identify knowledge and persistent-data impact internally for the design handoff and completion summary. Do not expose truth-source paths, `.specify/sql/` paths, MCP details, table names, or column names in `spec.md`, and do not update truth sources from this skill.
-11. For S2, create `checklists/requirements.md` only when it adds real governance value. Checklist items must test requirement quality, not implementation behavior.
+## 触发条件
 
-## Clarification Gate
+使用本技能前，必须满足以下任一条件：
 
-The clarification gate decides whether the skill may write a formal requirements artifact.
+1. 用户明确指定该技能，例如 `$fons4ai-sdd-requirements`。
+2. 用户明确要求使用 Fons4AI、SDD 或 Fons4AI 工作流。
+3. 当前仓库作用域内存在 `AGENTS.md`，且包含 `<!-- fons4ai-skill-routing: enabled -->`。
 
-Blocking ambiguity means any missing or conflicting answer that can change one of these:
+如果以上条件都不满足，不得自动应用本技能。应继续使用普通 AI agent 行为，或询问用户是否希望启用 Fons4AI/SDD 工作流。
 
-- feature scope, target users, expected behavior, success/failure behavior, or out-of-scope boundaries;
-- business terminology, core business objects, ownership, identity, lifecycle, status, or data meaning;
-- acceptance criteria, observable behavior, compatibility, security/permission, integration, or non-functional constraints;
-- data model, table grouping, field naming, DDL impact, migration, rollback, or source-of-truth updates;
-- SDD level (`S1` or `S2`), impacted modules, implementation strategy, test strategy, or task breakdown.
+触发后按以下顺序工作：
 
-Rules:
+1. 推导或确认 `<feature-slug>`，作为文档内的功能标识，使用小写短横线命名，例如 `loan-approval-rule`。
+2. 推导或确认 `<功能中文名>`，用于文件名，使用 2-12 个中文字符表达业务含义。
+3. 使用当前项目本地日期生成 `<yyyymmdd>`，例如 `20260618`。
+4. 定位相关上下文，重点搜索功能名、业务术语、领域名、模块名、业务对象、API 名称、表/模型名称、`REQ-###` 和 `AC-###`。
+5. 判定 SDD 等级：
+   - `S1`：默认级别，适用于普通功能、小改动、单模块或少量模块协作。
+   - `S2`：涉及数据库迁移、公共 API、权限安全、缓存/MQ/事务边界、跨核心模块、兼容性风险或高回滚成本。
+6. 先执行澄清门禁；门禁未关闭时不得生成正式需求说明书。
 
-1. If at least one blocking ambiguity exists, ask one question and stop. Do not write or update formal `spec.md`, `plan.md`, `tasks.md`, CR, or business code.
-2. Ask the highest-impact question first. Prefer a concrete recommendation with 2-5 options when options are known.
-3. Treat answers such as `按推荐`, `方案 A`, or a clear short answer as accepted clarification.
-4. Do not treat `使用 SDD`, `继续`, `先生成`, `看一下`, or similar ambiguous messages as clarification closure.
-5. Only continue to formal `spec.md` when blocking ambiguities are closed, or when the user explicitly says to create a draft with assumptions.
-6. A draft with unresolved blocking ambiguity must use `文档状态：草案-待确认` and must not be used as input for `fons4ai-sdd-design` or `fons4ai-sdd-tasks` until the gate is closed.
+## 澄清门禁
 
-## Structured Clarification
+澄清门禁用于判断是否允许写入正式 `需求说明书.md`。本技能只保留一套提问机制：苏格拉底式五问。
 
-Use this process to migrate the useful `speckit-clarify` behavior into the `specs/` workflow.
+苏格拉底式五问不是要求每次都问满 5 个问题，而是提供 5 个判断维度。简单需求通常只问 1 个最高影响问题；复杂需求最多接受 5 个关键问题。
 
-1. Scan the draft or existing `spec.md` across these categories and mark each internally as Clear, Partial, Missing, Deferred, or Outstanding:
-   - Functional scope and behavior: goals, success criteria, out-of-scope items, user roles.
-   - Requirement summary and traceability: REQ IDs, priorities, sources, and related AC.
-   - Business rules and constraints: permission, security, calculation, compatibility, integration, boundary rules.
-   - Functional overview and workflow: sub-functions, main flow, alternate flow, failure flow, async or scheduled flow.
-   - Impact and risk overview: candidate modules, APIs, data, config, external systems, risks, mitigations.
-   - Domain and data model: entities, identity rules, lifecycle, persistent storage, DDL impact, volume assumptions.
-   - Interaction and UX flow: critical journeys, empty/error/loading states, accessibility or localization.
-   - Non-functional requirements: performance, reliability, observability, security, privacy, compliance.
-   - Integration and dependencies: external services, import/export formats, protocol or version assumptions.
-   - Edge cases and failure handling: negative paths, throttling, conflicts, concurrency.
-   - Constraints and tradeoffs: technical constraints, rejected alternatives, explicit limitations.
-   - Terminology and consistency: canonical terms and avoided synonyms.
-   - Completion signals: AC testability and measurable done criteria.
-   - Miscellaneous placeholders: TODO, unresolved decisions, vague terms such as "fast", "robust", or "intuitive".
-2. Build a prioritized question queue, but ask only questions whose answer materially changes scope, AC, architecture, data modeling, task breakdown, test design, UX, operations, security, or compliance.
-3. Ask at most 5 accepted questions per clarification session. Present exactly one question at a time.
-4. For option questions, provide 2-5 mutually exclusive options and a recommended option with 1-2 sentences of reasoning. Accept `yes`, `recommended`, or an option letter.
-5. For short-answer questions, constrain the answer to 5 words or fewer and provide a suggested answer when the repository facts support one.
-6. Stop asking when all critical ambiguity is resolved, the user says to proceed, or the 5-question limit is reached. Record remaining lower-impact gaps under Open Questions or the completion report.
+五问维度按优先级使用：
 
-## Integrating Answers
+1. 业务目标：这个需求真正要解决哪个业务问题？不做会有什么影响？
+2. 参与角色：谁会使用或受到影响？不同角色的期望是否一致？
+3. 核心流程：从触发到完成，业务上发生了哪些关键步骤？
+4. 规则边界：哪些情况必须允许、禁止、例外处理或失败返回？
+5. 验收信号：客户如何判断这个需求已经完成，并且结果是正确的？
 
-After each accepted answer:
+触发提问的条件：
 
-1. Keep the accepted answer in the active conversation context. Do not expose the internal question log in formal artifacts.
-2. Update the most relevant business section only when maintaining an explicitly requested draft or updating an existing specification:
-   - Functional ambiguity -> `功能需求` or `验收标准`.
-   - Actor or UX distinction -> `角色与业务场景`.
-   - Business data meaning -> `业务数据说明`.
-   - Non-functional constraint -> `非功能要求`.
-   - Failure or boundary behavior -> `验收标准` or `业务范围`.
-   - Terminology conflict -> normalize the term across the spec.
-3. Replace contradictory or obsolete text instead of duplicating it.
-4. Do not create a formal `spec.md` until blocking ambiguities are closed. If an explicit draft exists, keep `文档状态：草案-待确认` until the user resolves the gaps.
-5. Validate after each draft update:
-   - No unresolved placeholders the new answer was meant to resolve.
-   - No contradictory alternatives remain.
-   - Terminology is consistent across touched sections.
+- 用户上文难以理解，无法判断真实业务意图。
+- 业务对象关系不清，术语或归属存在冲突。
+- 流程分支多，成功、失败、异常或例外处理不清楚。
+- 验收口径不明确，无法写出可测试 AC。
+- 存在会影响 SDD 等级、数据、安全、兼容、迁移、回滚或任务拆解的关键歧义。
 
-## Output Rules
+提问规则：
 
-- Create or update only `specs/features/<feature-slug>/spec.md` and, for S2 when needed, `specs/features/<feature-slug>/checklists/requirements.md`.
-- If the clarification gate is blocked, output only the blocking reason, the single clarification question, recommended options when available, and what will be generated after the answer. Do not write formal artifacts.
-- Formal `spec.md` must not expose clarification-gate tables, clarification status, question logs, repository-fact inventories, or knowledge-context inventories. Draft specs are allowed only after explicit user request and must include `文档状态：草案-待确认`.
-- Generated artifact headings and fixed prose must be Chinese-first. Keep file names, IDs, paths, and technical markers such as `REQ-001` and `AC-001` unchanged.
-- Do not generate `plan.md` or `tasks.md`; leave that to `fons4ai-sdd-design` and `fons4ai-sdd-tasks`.
-- Do not write business code.
-- End with the feature path, SDD level, number of accepted clarification questions, sections touched, knowledge impact, outstanding or deferred gaps, and suggested next skill.
+1. 每轮只问一个最高影响问题，问完立即停止等待用户回答。
+2. 问题必须来自五问维度之一，并说明该问题会影响需求说明书的哪一部分。
+3. 优先使用开放式问题引导用户解释业务语义；当选项明确时，给出 2-5 个互斥选项和推荐项。
+4. 用户回答 `按推荐`、`方案 A` 或给出清晰短答时，视为该问题已澄清。
+5. 不得把 `使用 SDD`、`继续`、`先生成`、`看一下`、`下一步` 等模糊表达视为澄清完成。
+6. 一个需求澄清会话最多接受 5 个关键问题；少于 5 个问题已关闭阻塞点时，立即停止提问并生成或更新需求说明书。
+7. 5 个问题后仍有未澄清内容时，低影响问题写入 `风险与待确认`；高影响问题继续阻塞正式文档。
+8. 只有用户明确要求“先按假设生成草案”时，才允许生成 `文档状态：草案-待确认` 的草案；草案不得进入设计、任务或实现阶段。
+9. 门禁未关闭时，不得创建或更新正式 `需求说明书.md`、`plan.md`、`tasks.md`、CR 或业务代码。
+
+沉淀规则：
+
+- 已确认结论写入 `需求澄清摘要` 的 `已确认内容`。
+- 仍需后续确认但不阻塞的内容写入 `待确认内容` 或 `风险与待确认`。
+- 不得把完整问答日志、内部推理过程或未验证假设写入正式需求说明书。
+
+## spec 输出契约
+
+正式产物只能写入：
+
+`spec/features/<yyyymmdd>/<功能中文名>-需求说明书.md`
+
+S2 且确有治理价值时，可额外创建：
+
+`spec/features/<yyyymmdd>/checklists/requirements.md`
+
+输出要求：
+
+- 使用 `assets/templates/spec-template.md` 作为结构基础。
+- 文件标题使用 `# <功能名称>需求说明书`。
+- 固定标题和正文以中文为主。
+- 文件名、路径、`REQ-001`、`AC-001` 等编号保持机器可读。
+- 每个 `REQ-###` 必须至少关联一个 `AC-###`。
+- 每个 AC 使用 Given-When-Then，表达用户、API 或系统可观察的结果。
+- `需求澄清摘要` 只记录已确认结论和不阻塞的待确认项，不暴露内部问题日志。
+- `需求列表` 使用普通业务语言，不写类名、方法名、表名、字段名。
+- `业务数据口径` 只解释业务方需要理解的数据含义。
+- 有明确事实时可以生成 Mermaid 业务流程图；不得为了填充模板编造参与方、系统、接口、表或流程。
+- S1 保持轻量完整；无流程、风险、数据变化或图表时写 `不适用，原因`。
+- S2 需要补充业务流程、风险、质量要求、兼容性、安全和迁移影响，但仍保持业务语言。
+
+完成后只汇报：
+
+- 需求说明书路径。
+- SDD 等级和判定理由。
+- 已接受的澄清问题数量。
+- 生成或更新的章节。
+- 知识影响和数据影响。
+- 未解决或延后问题。
+- 建议下一步使用的技能，通常是 `fons4ai-sdd-design`。
+
+## 禁止事项
+
+禁止以下行为：
+
+- 未完成阻塞性澄清就生成正式 `需求说明书.md`。
+- 把“使用 SDD”“继续”“先生成”等模糊指令当作需求确认。
+- 在需求说明书中写模块名、类名、方法名、表名、字段名、DDL 路径、MCP 信息或技术架构事实。
+- 编造业务逻辑、业务术语、接口、数据库字段、第三方服务或验收口径。
+- 为了填满模板生成无事实依据的流程图、角色、系统、表或接口。
+- 从本技能生成 `plan.md`、`tasks.md`、CR、实现报告或业务代码。
+- 从本技能更新 `.specify/memory/`、`.specify/sql/`、`.specify/rules/` 等真理源。
+- 覆盖、删除或大幅重写已有 `需求说明书.md`，除非用户明确确认。
+- 把草案需求说明书交给设计、任务或实现阶段使用。

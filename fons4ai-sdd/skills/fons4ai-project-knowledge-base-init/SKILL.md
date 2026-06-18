@@ -1,6 +1,6 @@
 ---
 name: fons4ai-project-knowledge-base-init
-description: "Fons4AI gated generic project knowledge-base initialization workflow. Auto-trigger only when an in-scope AGENTS.md enables the Fons4AI routing marker; otherwise use only when the user explicitly names this skill or asks for the Fons4AI workflow. Use to initialize architecture memory documents and database-scoped SQL knowledge from database MCP DDL or repository SQL files."
+description: "Fons4AI gated project knowledge-base initialization workflow. Auto-trigger only when an in-scope AGENTS.md enables the Fons4AI routing marker; otherwise use only when the user explicitly names this skill or asks for the Fons4AI workflow. Use to initialize layered project knowledge: .specify/memory/index.md, concise project-level architecture documents, domain-level architecture documents, and knowledge cards. SQL/DDL facts may be referenced from database MCP or existing repository SQL files, but this skill must not create SQL files."
 ---
 
 # Fons4AI Project Knowledge Base Init
@@ -13,98 +13,131 @@ Before using this skill, verify at least one condition is true:
 2. The user explicitly asks to use Fons4AI, SDD, or the Fons4AI workflow.
 3. The active repository has an in-scope `AGENTS.md` containing `<!-- fons4ai-skill-routing: enabled -->`.
 
-If none is true, do not apply this skill automatically. Continue with normal Codex behavior or ask whether the user wants to enable the Fons4AI workflow.
+If none is true, do not apply this skill automatically. Continue with normal AI-agent behavior or ask whether the user wants to enable the Fons4AI workflow.
+
+## Role
+
+You are a senior system architect and knowledge architect. Your responsibility is to extract verifiable long-lived knowledge from the codebase, project documents, database facts, and user-provided context, then organize it into a layered project knowledge base.
+
+Your goal is not to merely generate documents. You must identify business domains, core scenarios, technical implementation facts, data relationships, and reusable knowledge cards so future AI agents can load precise context and perform SDD, bugfix, and knowledge-summary work based on verified facts.
 
 ## Overview
 
-Use this skill to initialize a generic project knowledge base from repository facts, database MCP facts, existing SQL files, and user-provided context.
-The default document output location is `.specify/memory/`; SQL knowledge files live under `.specify/sql/`.
-DDL source evidence is used while working but is not persisted in generated SQL knowledge files.
+Use this skill to initialize a layered project knowledge base from repository facts, database MCP facts, existing SQL files, and user-provided context.
+Database MCP results and existing repository SQL files are context sources only. This skill must not create, import, copy, or update `.specify/sql/**/*.sql` files.
+The default knowledge entrypoint is `.specify/memory/index.md`.
 
-Default output files:
+Default output shape:
 
-- `.specify/memory/business-architecture.md`
-- `.specify/memory/technical-architecture.md`
-- `.specify/memory/data-architecture.md`
-- `.specify/sql/<database_or_service>/<business_model>.sql` for each discovered or user-specified persistent business model group. If the database/service is unknown, use `.specify/sql/pending/<business_model>.sql` until confirmed.
+```text
+.specify/memory/
+  index.md
+  业务架构.md
+  技术架构.md
+  数据架构.md
+  domains/
+    <domain-slug>/
+      业务架构.md
+      技术架构.md
+      数据架构.md
+      cards/
+        KC-BIZ-001-<slug>.md
+        KC-TECH-001-<slug>.md
+        KC-DATA-001-<slug>.md
+```
 
-Read the matching template before drafting each document:
+Project-level architecture documents are concise navigation documents. Domain-level documents carry detailed business, technical, and data knowledge. Knowledge cards are fact-level context units for targeted retrieval.
 
-- `references/business-architecture-template.md`
-- `references/technical-architecture-template.md`
-- `references/data-architecture-template.md`
+Read templates as needed:
+
+- `references/memory-index-template.md`
+- `references/project-business-architecture-template.md`
+- `references/project-technical-architecture-template.md`
+- `references/project-data-architecture-template.md`
+- `references/domain-business-architecture-template.md`
+- `references/domain-technical-architecture-template.md`
+- `references/domain-data-architecture-template.md`
+- `references/knowledge-card-template.md`
 
 ## Workflow
 
 1. Inspect available facts before writing.
    - Build a file inventory with `rg --files`, then inspect project guidance, existing knowledge, build files, module names, database config, repository SQL files, migration directories, API contracts, representative source files, and user-provided context.
-   - Check whether local database MCP tools are configured for the target database. When available, treat MCP query results as the preferred DDL source.
+   - Check whether local database MCP tools are configured for the target database. When available, use MCP query results only as transient DDL context for data architecture documentation; do not save query results as SQL files.
    - If multiple database MCP tools or candidate databases exist and explicit user input, project configuration, or ownership facts do not identify one target unambiguously, ask the user which MCP tool and database scope to use before retrieving DDL.
    - Do not query multiple candidate databases and merge DDL speculatively.
-   - Do not load every discovered file into context. Read indexes, headings, and representative files first; expand only around confirmed domains, modules, integrations, and persistent models.
+   - Do not load every discovered file into context. Read indexes, headings, and representative files first; expand only around confirmed business domains, modules, integrations, and persistent models.
    - Prefer observed project facts over generic assumptions. Concrete business names must come from the current repository or explicit user facts, not from this skill.
 
 2. Handle existing target files conservatively.
-   - If any target document or SQL file already exists, read it first.
-   - Explain whether the work should merge, replace, or append.
-   - Ask for confirmation before replacing existing target documents or SQL files unless the user already requested a rebuild.
-   - Preserve unrelated `.specify/memory` and `.specify/sql` files; do not delete or rename files without explicit confirmation.
+   - If `.specify/memory/index.md`, project-level documents, domain documents, cards, or related SQL files already exist, read them before planning changes.
+   - Explain whether the work should merge, replace, append, or upgrade legacy three-document memory.
+   - Ask for confirmation before replacing existing target documents unless the user already requested a rebuild.
+   - Preserve unrelated `.specify/memory` and `.specify/sql` files. Do not create, delete, rename, copy, import, or collapse SQL files in this workflow.
 
-3. Build a scenario ledger before writing memory documents.
-   - Identify core business scenarios and high-value capabilities from actual code, docs, specs, APIs, jobs, messages, controllers, services, and data models.
-   - Do not hardcode any domain names as mandatory scenarios. Terms such as loan, repayment, payment, refund, order, settlement, approval, cancellation, and reconciliation are examples only.
-   - For each scenario, capture trigger, participants, goal, rules, decision points, exception paths, state/data changes, outputs, source evidence, and evidence status.
-   - If facts are partial, keep the scenario and mark uncertain fields as `待确认`; do not collapse important scenarios into one-line summaries.
+3. Identify business domains before writing.
+   - Identify domains from actual business language in code, docs, specs, APIs, jobs, messages, controllers, services, data models, and user-provided context.
+   - Use domain slugs such as `order`, `payment`, `inventory`, or project-specific equivalents. Do not split domains mechanically by table, Controller, Service, package, or module name.
+   - If a larger business line is needed, represent it through the index and domain path convention chosen by the project; do not invent a mandatory hierarchy.
+   - If a domain is uncertain, keep it in `index.md` as `待确认` instead of forcing a wrong directory.
 
-4. Generate architecture documents.
-   - Use `business-architecture-template.md` for goals, scope, stakeholders, capabilities, scenario ledger, rule orchestration, business objects, collaboration boundaries, and open questions.
-   - Use `technical-architecture-template.md` as the landing document for the business scenario ledger. Every actual core scenario from business architecture must have a technical landing row covering entrypoint, orchestration service, domain/strategy object, data access, integrations, transaction boundary, exception path, and verification.
-   - Technical diagrams must be scenario-specific. Include Mermaid `sequenceDiagram`, `flowchart`, or `stateDiagram-v2` when the repository gives enough participants/events. If facts are partial, keep the landing table and mark unknown nodes as `待确认`.
-   - Use `data-architecture-template.md` for data goals, domains, objects, relationships, SQL file index, data flows, lifecycle, quality, and risks.
+4. Build a scenario and evidence ledger.
+   - For each domain, capture core scenarios, trigger, participants, goal, rules, decision points, exception paths, state/data changes, outputs, source evidence, and evidence status.
+   - Use scenario IDs scoped by domain when possible, such as `BS-ORDER-001`. Keep legacy `BS-001` only for old documents.
+   - Do not collapse important scenarios into one-line summaries. If facts are partial, keep the scenario and mark uncertain fields as `待确认`.
 
-5. Generate SQL knowledge files only from real DDL sources.
-   - Preferred source: a user-confirmed or unambiguous configured database MCP service. Use the available read-only database MCP tool to query schemas and real table DDL, for example MySQL `information_schema.tables` plus `SHOW CREATE TABLE <schema>.<table>`. Save the returned DDL into `.specify/sql/<database_or_service>/<business_model>.sql` with the SQL File Contract header.
-   - Secondary source: existing repository SQL DDL files, such as migration scripts, schema files, `*.sql` init scripts, or checked-in database DDL. Import them with `scripts/import_sql_knowledge_file.py --source <source.sql> --sql-root .specify/sql --database <database_or_service> --business-model <business_model> --repo-root .`.
+5. Generate layered memory documents.
+   - Create `.specify/memory/index.md` first with domain index, capability index, cross-domain collaboration, card index, and SQL/DDL reference index.
+   - Create concise project-level documents:
+     - `业务架构.md`: business lines/domains, global business rules, cross-domain business processes.
+     - `技术架构.md`: system modules, public technical patterns, cross-domain calls, global non-functional constraints.
+     - `数据架构.md`: data domains, cross-domain data relationships, SQL/DDL reference index, data governance.
+   - For every confirmed or useful domain, create domain-level documents:
+     - `domains/<domain>/业务架构.md`: domain responsibility, core objects, scenarios, rule orchestration, states, exceptions.
+     - `domains/<domain>/技术架构.md`: scenario landing, application orchestration, domain objects, interfaces, transactions, exceptions, tests.
+     - `domains/<domain>/数据架构.md`: domain data objects, relationships, SQL/DDL references, data flow, consistency.
+   - Create knowledge cards under `domains/<domain>/cards/` for fact-level items that future agents should retrieve directly.
+   - Update `index.md` after creating or changing domain documents, cards, or SQL/DDL references.
+
+6. Record SQL/DDL references without generating SQL files.
+   - Preferred source: a user-confirmed or unambiguous configured database MCP service. Use read-only database MCP queries to understand real table DDL, then summarize confirmed data facts in data architecture documents and cards.
+   - Secondary source: existing repository SQL DDL files, such as migration scripts, schema files, `*.sql` init scripts, or checked-in database DDL. Reference the existing file path when it is useful, but do not copy, import, normalize, or rewrite it into `.specify/sql/`.
    - Do not generate SQL DDL from Java entities, Mapper interfaces, ORM annotations, DTOs, repository method names, query method names, or inferred Java field types. These code facts may help locate candidate business models or table names, but they are not DDL evidence.
-   - `scripts/generate_sql_knowledge.py` is deprecated and must not be used for new knowledge-base initialization because it inferred DDL from code metadata.
-   - If neither MCP DDL nor repository SQL DDL is available, do not fabricate `CREATE TABLE` content. Record the missing DDL source in `.specify/memory/data-architecture.md` as `待确认`, ask the user to configure a database MCP service or provide SQL files, and create a `.specify/sql/pending/<business_model>.sql` placeholder only when the user explicitly requests a placeholder.
-   - Keep SQL `COMMENT` clauses as returned by the database or existing SQL source unless they contain secrets or corrupted text. Do not inject Java field names, Java types, evidence paths, raw JavaDoc, HTML, `@link`, `@return`, mojibake, or long metadata into SQL `COMMENT`.
-   - Generated SQL files must not contain MCP/Tool names, MCP query text, repository source paths, `Source`, `Migration Script`, or `DDL Evidence` headers. Use source evidence transiently for validation, not as SQL file content.
+   - Do not use any helper script, manual copy, or generated content to import or create SQL files in this workflow.
+   - If neither MCP DDL nor repository SQL DDL is available, do not fabricate `CREATE TABLE` content and do not create `.specify/sql/pending/<business_model>.sql`. Record the missing DDL source in the relevant domain data document and project data overview as `待确认`, then ask the user to configure a database MCP service or provide SQL files.
+   - Generated Markdown documents and cards must not disclose MCP/Tool names, MCP query text, repository source paths, `Source`, `Migration Script`, or `DDL Evidence` headers. Use source evidence transiently for validation, not as final knowledge content.
 
-6. Preserve evidence quality.
+7. Preserve evidence quality.
    - Write Markdown documents in Chinese unless the user explicitly requests another language.
-   - Separate `已确认`, `推断`, and `待确认`.
+   - Separate `已确认`, `推断`, `待确认`, and `已废弃`.
    - Do not invent business rules, technology choices, schemas, integrations, metrics, or ownership.
-   - Keep KISS, but do not over-compress critical scenarios, rule orchestration, state changes, exception paths, and data interactions.
+   - Keep project-level documents concise. Put domain details in domain documents and fact-level retrieval units in knowledge cards.
 
-7. Validate before finishing.
-   - Do not run `scripts/validate_sql_knowledge.py` merely because SQL knowledge files were generated, copied, imported, or updated. Use it only when the user explicitly requests SQL artifact validation or when diagnosing malformed existing SQL knowledge files.
+8. Validate before finishing.
    - Run `scripts/validate_memory_knowledge.py --memory-root .specify/memory` after memory documents are generated or updated.
-   - Confirm Markdown headings, tables, Mermaid blocks, scenario-to-technical mapping, and absence of mojibake. Apply SQL artifact validation only when it is explicitly in scope under the preceding rule.
-   - Report created or updated paths, DDL acquisition status, main `待确认` items, and any validation that was explicitly performed. Do not disclose MCP tool identifiers or SQL-file source paths in generated SQL content.
+   - Confirm `index.md`, domain directories, domain three-doc sets, card metadata, scenario-to-technical mapping, SQL references, Markdown fences, and absence of mojibake.
+   - Report created or updated Markdown paths, domains discovered, card counts, DDL reference status, main `待确认` items, and validation results. Do not report generated SQL paths because this workflow does not create SQL files.
 
-## SQL File Contract
+## Knowledge Card Contract
 
-Each generated SQL file should use this structure:
+Each card must include these header fields:
 
-```sql
--- Database/Service: <database_or_service>
--- Business Model: <business_model>
--- Tables: <table_1>, <table_2>
--- Status: <已确认 | 推断 | 待确认>
--- Last Generated: YYYY-MM-DD
-
-CREATE TABLE `<table_name>` (
-  `<column_name>` <type> NULL COMMENT '<clean business meaning>'
-);
+```md
+> 知识编号：KC-BIZ-001
+> 知识类型：业务场景 | 业务规则 | 状态流转 | 技术流程 | 接口契约 | 数据模型 | 治理规则
+> 所属领域：<domain-slug>
+> 状态：已确认 | 推断 | 待确认 | 已废弃
+> 来源：<spec/report/code/user/docs>
+> 关联场景：<BS-xxx | 无>
+> 关联对象：<业务对象/模块/API/表 | 无>
+> 关联代码/接口/SQL：<path or identifier | 无>
+> 更新日期：YYYY-MM-DD
 ```
 
-If no reliable business meaning is available for a column, omit the column `COMMENT` instead of filling it with evidence metadata.
-Do not include source paths, MCP/tool identifiers, query text, or evidence headers anywhere in generated SQL files.
-
-Use one SQL file per database-scoped business model. Multiple strongly related tables may share one file only when they belong to the same database/service and cohesive business model. Cross-database or cross-service tables must remain separate.
+Use cards for knowledge that future work should retrieve directly: core scenarios, durable business rules, important state transitions, domain technical flows, API contracts, data models, and governance rules.
 
 ## Output Contract
 
-When no path is specified, create the default knowledge base under `.specify/memory/` and SQL knowledge files under `.specify/sql/`.
-Do not create extra index files, README files, or example outputs unless the user explicitly asks.
+When no path is specified, create the default knowledge base under `.specify/memory/`.
+Do not create, import, copy, or update SQL files in `.specify/sql/` as part of this skill.
+Do not create extra README files or example outputs unless the user explicitly asks.

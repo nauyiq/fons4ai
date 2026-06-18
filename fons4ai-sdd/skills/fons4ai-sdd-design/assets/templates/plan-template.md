@@ -1,8 +1,8 @@
-# <功能名称>技术设计说明书
+﻿# <功能名称>技术设计说明书
 
 > 功能标识：`<feature-slug>`
 > SDD 等级：`S1|S2`
-> 来源需求：`specs/features/<feature-slug>/spec.md`
+> 来源需求：`spec/features/<yyyymmdd>/<功能中文名>-需求说明书.md`
 > 文档状态：初稿
 > 创建日期：YYYY-MM-DD
 > 更新日期：YYYY-MM-DD
@@ -116,7 +116,7 @@
 - 缺少 DDL 证据处理：不适用 | 配置 MCP | 提供 SQL 文件 | 用户明确同意 pending 占位；不得从实体/ORM/Mapper 推断生成 `CREATE TABLE`
 - DDL 同步时机：同一实现任务 | 独立任务 | 暂缓，说明负责人和原因
 - 是否为存量表结构变更：否 | 是，原始 DDL 已存在 | 是，但原始 DDL 待确认
-- 执行型变更 DDL：不适用 | 项目迁移目录中的 `<path>.sql` | `specs/features/<feature-slug>/ddl-changes/<INIT|CR-xxx>-<database_or_service>-<business_model>.sql`
+- 执行型变更 DDL：不适用 | 项目迁移目录中的 `<path>.sql` | `spec/features/<yyyymmdd>/ddl-changes/<INIT|CR-xxx>-<database_or_service>-<business_model>.sql`
 - 变更语句设计：不适用 | `ALTER TABLE` 增加/修改/删除字段、索引、约束或默认值的设计说明
 - 生成时机：规划阶段仅记录路径和意图；用户确认实现后生成可执行 SQL
 
@@ -171,9 +171,11 @@
 
 ## 知识同步清单
 
-- 业务架构：无 | `<truth-source-path>`，动作：新增/更新
-- 技术架构：无 | `<truth-source-path>`，动作：新增/更新
-- 数据架构：无 | `.specify/memory/data-architecture.md`，动作：新增/更新
+- 项目级索引：无 | `.specify/memory/index.md`，动作：新增/更新
+- 领域业务架构：无 | `.specify/memory/domains/<domain-slug>/业务架构.md`，动作：新增/更新
+- 领域技术架构：无 | `.specify/memory/domains/<domain-slug>/技术架构.md`，动作：新增/更新
+- 领域数据架构：无 | `.specify/memory/domains/<domain-slug>/数据架构.md`，动作：新增/更新
+- 知识卡片：无 | `.specify/memory/domains/<domain-slug>/cards/<KC-xxx>-<slug>.md`，动作：新增/更新/废弃
 - 其他真理源：无 | `<truth-source-path>`，动作：新增/更新
 - SQL DDL 当前结构快照：无 | `.specify/sql/<database_or_service>/<business_model>.sql`，动作：新增/更新/重命名
 - 执行型变更 DDL：无 | `<migration-path>.sql` | `ddl-changes/<change-id>-<database_or_service>-<business_model>.sql`

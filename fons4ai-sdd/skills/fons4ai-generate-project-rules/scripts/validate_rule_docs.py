@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Validate Fons4AI project rule documents."""
+"""Validate Fons4AI agent running rule document."""
 
 from __future__ import annotations
 
@@ -8,52 +8,60 @@ import sys
 from pathlib import Path
 
 
-REQUIRED_FILES = (
-    "code-style-rule.md",
-    "project-structure-rule.md",
-    "features-rule.md",
-    "testing-rule.md",
-    "data-ddl-rule.md",
-)
+REQUIRED_FILE = "agent运行规则.md"
+OPTIONAL_CODE_RULE_FILE = "代码编写规范.md"
 
 REQUIRED_HEADINGS = (
-    "## 项目事实",
-    "## 强制规则",
-    "## 推荐规则",
+    "# Agent运行规则",
+    "## 项目适用范围",
+    "## 核心原则",
+    "## MCP使用规则",
+    "## 输出要求",
     "## 禁止事项",
-    "## 例外机制",
-    "## 待确认约定",
-    "## 验收检查",
+    "## 信息不足时的处理",
 )
 
-REQUIRED_FRONTMATTER_LINES = (
-    "> 适用范围：",
-    "> 生成依据：",
-    "> 规则状态：",
+REQUIRED_TERMS = (
+    "修改代码前必须先理解需求",
+    "优先复用已有代码",
+    "优先遵循项目规范",
+    "不允许修改与当前需求无关",
+    "不允许引入新的技术框架",
+    "不允许删除核心业务逻辑",
+    "不允许修改数据库结构",
+    "MCP",
+    "只读",
+    "猜测业务逻辑",
+    "编造接口",
+    "编造数据库字段",
+    "编造第三方 API",
+    "信息不足",
 )
 
-LEGACY_THREE_FILE_MARKERS = (
-    "三件套",
-    "exactly three",
-    "只生成 3",
-    "仅生成 3",
-    "默认只生成 3",
-    "code-style-rule.md、project-structure-rule.md、features-rule.md",
+CODE_RULE_HEADINGS = (
+    "# 代码编写规范",
+    "## 基本原则",
+    "## 工具类与复用",
+    "## 代码风格",
+    "## DDD-lite 编码约束",
+    "## API 接口设计",
+    "## 异常与日志",
+    "## 数据访问与事务",
+    "## 测试与验证",
+    "## 禁止事项",
 )
 
-CODE_STYLE_REQUIRED_TERMS = (
-    ("工具包", "utility package usage"),
-    ("依赖", "dependency gate"),
-    ("可读性", "readability rule"),
-)
-
-CODE_STYLE_COMPLEXITY_TERMS = ("复杂度", "重复代码")
-
-DDD_LITE_REQUIRED_TERMS = (
+CODE_RULE_TERMS = (
+    "工具类",
+    "已有代码",
+    "代码风格",
+    "API 接口设计",
     "DDD-lite",
-    "充血模型",
-    "领域行为",
-    "应用层",
+    "异常",
+    "日志",
+    "数据访问",
+    "事务",
+    "测试",
 )
 
 
@@ -64,80 +72,72 @@ def read_text(path: Path) -> str:
         return path.read_text()
 
 
-def validate_file(path: Path) -> list[str]:
+def validate_rule_file(path: Path) -> list[str]:
     errors: list[str] = []
     text = read_text(path)
 
-    for line in REQUIRED_FRONTMATTER_LINES:
-        if line not in text:
-            errors.append(f"{path.name} missing header line: {line}")
-
     for heading in REQUIRED_HEADINGS:
         if heading not in text:
-            errors.append(f"{path.name} missing section: {heading}")
+            errors.append(f"{path.name} missing heading: {heading}")
 
-    lower_text = text.lower()
-    for marker in LEGACY_THREE_FILE_MARKERS:
-        if marker.lower() in lower_text:
-            errors.append(f"{path.name} contains legacy three-file marker: {marker}")
+    for term in REQUIRED_TERMS:
+        if term not in text:
+            errors.append(f"{path.name} missing required rule term: {term}")
 
-    if len(text.strip()) < 600:
-        errors.append(f"{path.name} is too short for architect-grade rules")
+    if len(text.strip()) < 500:
+        errors.append(f"{path.name} is too short for a useful agent rule")
+
+    return errors
+
+
+def validate_code_rule_file(path: Path) -> list[str]:
+    errors: list[str] = []
+    text = read_text(path)
+
+    for heading in CODE_RULE_HEADINGS:
+        if heading not in text:
+            errors.append(f"{path.name} missing heading: {heading}")
+
+    for term in CODE_RULE_TERMS:
+        if term not in text:
+            errors.append(f"{path.name} missing required coding term: {term}")
+
+    forbidden_knowledge_sections = ("## 项目技术栈", "## 项目事实", "## 模块结构")
+    for heading in forbidden_knowledge_sections:
+        if heading in text:
+            errors.append(f"{path.name} must not duplicate knowledge-base section: {heading}")
+
+    if len(text.strip()) < 800:
+        errors.append(f"{path.name} is too short for a useful coding rule")
 
     return errors
 
 
 def validate_rules_dir(rules_dir: Path) -> list[str]:
     errors: list[str] = []
+    rule_path = rules_dir / REQUIRED_FILE
 
-    for file_name in REQUIRED_FILES:
-        path = rules_dir / file_name
-        if not path.exists():
-            errors.append(f"Missing required rule file: {path}")
-            continue
-        errors.extend(validate_file(path))
+    if not rule_path.exists():
+        errors.append(f"Missing required rule file: {rule_path}")
+        return errors
 
-    data_rule = rules_dir / "data-ddl-rule.md"
-    if data_rule.exists():
-        data_text = read_text(data_rule)
-        if ".specify/sql/<database_or_service>/<business_model>.sql" not in data_text:
-            errors.append("data-ddl-rule.md missing database-scoped DDL path rule")
-        if ".specify/sql/pending/<business_model>.sql" not in data_text:
-            errors.append("data-ddl-rule.md missing pending DDL path rule for unknown database/service")
-        if "跨库" not in data_text and "不同数据库" not in data_text:
-            errors.append("data-ddl-rule.md missing cross-database split rule")
-        if "没有迁移脚本" not in data_text and "无迁移脚本" not in data_text:
-            errors.append("data-ddl-rule.md missing no-migration-script SQL generation rule")
-        if "推断" not in data_text or "待确认" not in data_text:
-            errors.append("data-ddl-rule.md missing inferred/pending evidence state rule")
-        if "执行型变更 DDL" not in data_text or "ALTER TABLE" not in data_text:
-            errors.append("data-ddl-rule.md missing executable DDL requirement for existing-table structural changes")
-        if "ddl-changes/" not in data_text:
-            errors.append("data-ddl-rule.md missing fallback executable DDL artifact path")
+    errors.extend(validate_rule_file(rule_path))
 
-    code_style_rule = rules_dir / "code-style-rule.md"
-    if code_style_rule.exists():
-        code_text = read_text(code_style_rule)
-        for term, label in CODE_STYLE_REQUIRED_TERMS:
-            if term not in code_text:
-                errors.append(f"code-style-rule.md missing {label}: {term}")
-        if not any(term in code_text for term in CODE_STYLE_COMPLEXITY_TERMS):
-            errors.append("code-style-rule.md missing complexity or duplicate-code rule")
+    code_rule_path = rules_dir / OPTIONAL_CODE_RULE_FILE
+    if code_rule_path.exists():
+        errors.extend(validate_code_rule_file(code_rule_path))
 
-    ddd_text = "\n".join(
-        read_text(rules_dir / file_name)
-        for file_name in ("code-style-rule.md", "project-structure-rule.md", "features-rule.md")
-        if (rules_dir / file_name).exists()
-    )
-    for term in DDD_LITE_REQUIRED_TERMS:
-        if term not in ddd_text:
-            errors.append(f"rule documents missing DDD-lite term: {term}")
+    for extra_path in sorted(rules_dir.glob("*.md")):
+        if extra_path.name not in (REQUIRED_FILE, OPTIONAL_CODE_RULE_FILE):
+            errors.append(
+                f"Unexpected extra rule file: {extra_path}. Allowed outputs are {REQUIRED_FILE} and {OPTIONAL_CODE_RULE_FILE}."
+            )
 
     return errors
 
 
 def main() -> int:
-    parser = argparse.ArgumentParser(description="Validate Fons4AI project rule documents")
+    parser = argparse.ArgumentParser(description="Validate Fons4AI agent running rule document")
     parser.add_argument("--rules-dir", default=".specify/rules", help="Directory containing generated rule markdown files")
     args = parser.parse_args()
 
@@ -152,7 +152,7 @@ def main() -> int:
             print(f"ERROR: {error}", file=sys.stderr)
         return 1
 
-    print(f"OK: {rules_dir} rule documents are valid")
+    print(f"OK: {rules_dir / REQUIRED_FILE} is valid")
     return 0
 
 

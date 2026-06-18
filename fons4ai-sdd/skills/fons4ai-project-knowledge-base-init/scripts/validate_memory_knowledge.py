@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Validate Fons4AI memory knowledge documents."""
+"""Validate Fons4AI layered memory knowledge documents."""
 
 from __future__ import annotations
 
@@ -9,58 +9,167 @@ import sys
 from pathlib import Path
 
 
-BAD_TEXT_PATTERNS = tuple(s.encode("utf-8").decode("unicode_escape") for s in (r"\ufffd", r"\u9225", r"\u9239", r"\u93ba\u3126", r"\u5bf0\u5477", r"\u5bb8\u8336", r"\u93c2\u56e8", r"\u740c\u3126"))
-REQUIRED_FILES = ("business-architecture.md", "technical-architecture.md", "data-architecture.md")
+BAD_TEXT_PATTERNS = tuple(
+    s.encode("utf-8").decode("unicode_escape")
+    for s in (r"\ufffd", r"\u9225", r"\u9239", r"\u93ba\u3126", r"\u5bf0\u5477", r"\u5bb8\u8336", r"\u93c2\u56e8", r"\u740c\u3126")
+)
+PROJECT_FILES = ("index.md", "业务架构.md", "技术架构.md", "数据架构.md")
+DOMAIN_FILES = ("业务架构.md", "技术架构.md", "数据架构.md")
+CARD_REQUIRED_FIELDS = ("知识编号", "知识类型", "所属领域", "状态", "来源", "更新日期")
+CARD_ALLOWED_TYPES = {"业务场景", "业务规则", "状态流转", "技术流程", "接口契约", "数据模型", "治理规则"}
+CARD_ALLOWED_STATUS = {"已确认", "推断", "待确认", "已废弃"}
+SQL_PATH_RE = re.compile(r"\.specify/sql/[A-Za-z0-9_./-]+\.sql")
+DOMAIN_PATH_RE = re.compile(r"(?:\.specify/memory/)?domains/([A-Za-z0-9_-]+)(?:/|$)")
+SCENARIO_RE = re.compile(r"\bBS-(?:[A-Z0-9]+-)?\d{3}\b")
+HEADER_FIELD_RE = re.compile(r"^>\s*([^：:]+)\s*[：:]\s*(.+?)\s*$", re.MULTILINE)
 
 
 def read(path: Path) -> str:
     return path.read_text(encoding="utf-8-sig")
 
 
-def scenario_ids(business: str) -> set[str]:
-    ids = set(re.findall(r"\|\s*(BS-\d+)\s*\|", business))
-    return ids
+def repo_root_for(memory_root: Path) -> Path:
+    resolved = memory_root.resolve()
+    if resolved.name == "memory" and resolved.parent.name == ".specify":
+        return resolved.parent.parent
+    return resolved.parent
+
+
+def check_markdown(path: Path, text: str, errors: list[str]) -> None:
+    if not text.lstrip().startswith("# "):
+        errors.append(f"{path} must start with a level-1 title")
+    if text.count("```") % 2 != 0:
+        errors.append(f"{path} has unbalanced Markdown fences")
+    for pattern in BAD_TEXT_PATTERNS:
+        if pattern in text:
+            errors.append(f"{path} contains mojibake pattern: {pattern}")
+
+
+def read_required(path: Path, errors: list[str]) -> str:
+    if not path.exists():
+        errors.append(f"{path} does not exist")
+        return ""
+    try:
+        text = read(path)
+    except UnicodeDecodeError as exc:
+        errors.append(f"{path} is not valid UTF-8: {exc}")
+        return ""
+    check_markdown(path, text, errors)
+    return text
+
+
+def referenced_domains(index_text: str) -> set[str]:
+    return {match.group(1) for match in DOMAIN_PATH_RE.finditer(index_text)}
+
+
+def scenario_ids(text: str) -> set[str]:
+    return set(SCENARIO_RE.findall(text))
+
+
+def card_fields(text: str) -> dict[str, str]:
+    return {match.group(1).strip(): match.group(2).strip() for match in HEADER_FIELD_RE.finditer(text)}
+
+
+def resolve_repo_path(repo_root: Path, path_text: str) -> Path:
+    clean = path_text.strip("`").replace("\\", "/")
+    if clean.startswith(".specify/"):
+        return repo_root / clean
+    return repo_root / clean
+
+
+def validate_sql_refs(path: Path, text: str, repo_root: Path, errors: list[str]) -> None:
+    for sql_ref in sorted(set(SQL_PATH_RE.findall(text))):
+        if resolve_repo_path(repo_root, sql_ref).exists():
+            continue
+        if "待确认" not in text:
+            errors.append(f"{path} references missing SQL file without pending marker: {sql_ref}")
+
+
+def validate_card(path: Path, expected_domain: str, repo_root: Path) -> list[str]:
+    errors: list[str] = []
+    text = read_required(path, errors)
+    if not text:
+        return errors
+    fields = card_fields(text)
+    for field in CARD_REQUIRED_FIELDS:
+        if not fields.get(field):
+            errors.append(f"{path} card is missing header field '{field}'")
+    knowledge_type = fields.get("知识类型", "").split("|", 1)[0].strip()
+    if knowledge_type and knowledge_type not in CARD_ALLOWED_TYPES:
+        errors.append(f"{path} has unsupported 知识类型: {knowledge_type}")
+    status = fields.get("状态", "").split("|", 1)[0].strip()
+    if status and status not in CARD_ALLOWED_STATUS:
+        errors.append(f"{path} has unsupported 状态: {status}")
+    domain = fields.get("所属领域", "")
+    if domain and domain != expected_domain:
+        errors.append(f"{path} 所属领域 must be '{expected_domain}', got '{domain}'")
+    validate_sql_refs(path, text, repo_root, errors)
+    return errors
+
+
+def validate_domain(domain_dir: Path, repo_root: Path) -> list[str]:
+    errors: list[str] = []
+    docs: dict[str, str] = {}
+    for file_name in DOMAIN_FILES:
+        text = read_required(domain_dir / file_name, errors)
+        if text:
+            docs[file_name] = text
+
+    business = docs.get("业务架构.md", "")
+    technical = docs.get("技术架构.md", "")
+    if business and technical:
+        ids = scenario_ids(business)
+        missing = sorted(sid for sid in ids if sid not in technical)
+        if missing:
+            errors.append(f"{domain_dir} technical architecture missing business scenario id(s): {', '.join(missing)}")
+
+    for file_name, text in docs.items():
+        validate_sql_refs(domain_dir / file_name, text, repo_root, errors)
+
+    cards_dir = domain_dir / "cards"
+    if cards_dir.exists():
+        for card in sorted(cards_dir.rglob("*.md")):
+            errors.extend(validate_card(card, domain_dir.name, repo_root))
+    return errors
 
 
 def validate(memory_root: Path) -> list[str]:
     errors: list[str] = []
+    repo_root = repo_root_for(memory_root)
     docs: dict[str, str] = {}
-    for name in REQUIRED_FILES:
-        path = memory_root / name
-        if not path.exists():
-            errors.append(f"{path} does not exist")
-            continue
-        try:
-            text = read(path)
-        except UnicodeDecodeError as exc:
-            errors.append(f"{path} is not valid UTF-8: {exc}")
-            continue
-        docs[name] = text
-        if not text.lstrip().startswith("# "):
-            errors.append(f"{path} must start with a level-1 title")
-        if text.count("```") % 2 != 0:
-            errors.append(f"{path} has unbalanced Markdown fences")
-        if not re.search(r"知识来源|变更记录|生成依据", text):
-            errors.append(f"{path} must include source/change-record semantics")
-        for pattern in BAD_TEXT_PATTERNS:
-            if pattern in text:
-                errors.append(f"{path} contains mojibake pattern: {pattern}")
+    for name in PROJECT_FILES:
+        text = read_required(memory_root / name, errors)
+        if text:
+            docs[name] = text
 
-    business = docs.get("business-architecture.md", "")
-    technical = docs.get("technical-architecture.md", "")
-    if business and technical:
-        ids = scenario_ids(business)
-        if ids and not re.search(r"技术落地|场景.*技术|业务场景到技术", technical):
-            errors.append("technical architecture must include scenario-to-technical landing semantics")
-        missing = sorted(sid for sid in ids if sid not in technical)
-        if missing:
-            errors.append("technical architecture missing business scenario id(s): " + ", ".join(missing))
+    index_text = docs.get("index.md", "")
+    domains = referenced_domains(index_text)
+    domains_dir = memory_root / "domains"
+    validated_domains: set[str] = set()
+    for domain in sorted(domains):
+        domain_dir = domains_dir / domain
+        if not domain_dir.exists():
+            errors.append(f"index.md references missing domain directory: {domain_dir}")
+            continue
+        errors.extend(validate_domain(domain_dir, repo_root))
+        validated_domains.add(domain)
+
+    if domains_dir.exists():
+        for domain_dir in sorted(path for path in domains_dir.iterdir() if path.is_dir()):
+            if domain_dir.name in validated_domains:
+                continue
+            if domain_dir.name not in domains:
+                errors.append(f"{domain_dir} exists but is not referenced by index.md")
+            errors.extend(validate_domain(domain_dir, repo_root))
+
+    for name, text in docs.items():
+        validate_sql_refs(memory_root / name, text, repo_root, errors)
 
     return errors
 
 
 def main() -> int:
-    parser = argparse.ArgumentParser(description="Validate Fons4AI memory knowledge documents")
+    parser = argparse.ArgumentParser(description="Validate Fons4AI layered memory knowledge documents")
     parser.add_argument("--memory-root", default=".specify/memory")
     args = parser.parse_args()
     errors = validate(Path(args.memory_root).resolve())
@@ -68,7 +177,7 @@ def main() -> int:
         for error in errors:
             print(f"ERROR: {error}", file=sys.stderr)
         return 1
-    print("OK: validated memory knowledge documents")
+    print("OK: validated layered memory knowledge documents")
     return 0
 
 

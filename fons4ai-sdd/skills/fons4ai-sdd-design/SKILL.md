@@ -1,4 +1,4 @@
----
+﻿---
 name: fons4ai-sdd-design
 description: "Fons4AI gated SDD technical-design workflow. Auto-trigger only when an in-scope AGENTS.md contains '<!-- fons4ai-skill-routing: enabled -->'; otherwise use only when the user explicitly names this skill or asks for the Fons4AI/SDD workflow."
 ---
@@ -17,29 +17,29 @@ If none is true, do not apply this skill automatically. Continue with normal Cod
 
 ## Overview
 
-Use this skill after `fons4ai-sdd-requirements` has produced a formal business-oriented `spec.md`.
-The output is a detailed technical design in `specs/features/<feature-slug>/plan.md`; S2 features may also need `contracts/`, `data-model.md`, or migration notes when the design requires them.
+Use this skill after `fons4ai-sdd-requirements` has produced a formal business-oriented `需求说明书.md`.
+The output is a detailed technical design in `spec/features/<yyyymmdd>/plan.md`; S2 features may also need `contracts/`, `data-model.md`, or migration notes when the design requires them.
 
 ## Required Context
 
 1. Load `../fons4ai-sdd-requirements/references/sdd-artifact-contract.md`, including its context-loading rules.
-2. Read `specs/features/<feature-slug>/spec.md` completely and confirm it is not marked `文档状态：草案-待确认`.
-3. Search first by feature terms, AC/REQ IDs, modules, domain objects, APIs, tables, and error/risk terms. Do not bulk-read all project rules, memory, SQL, specs, or docs by default.
+2. Read `spec/features/<yyyymmdd>/<功能中文名>-需求说明书.md` completely and confirm it is not marked `文档状态：草案-待确认`.
+3. Search first by feature terms, AC/REQ IDs, domains, modules, domain objects, APIs, tables, and error/risk terms. Do not bulk-read all project rules, memory, SQL, specs, or docs by default.
    - Optionally run `../fons4ai-sdd-requirements/scripts/find_relevant_context.py --root <repo-root> <keyword...>` to get candidate truth-source files before reading.
-4. Read `AGENTS.md`, relevant project rules, matching truth-source sections, targeted SQL files, build files, and representative source/test files for affected modules.
+4. Read `AGENTS.md`, relevant project rules, matching knowledge cards/domain documents, targeted SQL files, build files, and representative source/test files for affected modules. Read project-level memory overviews only for cross-domain, S2, or global-constraint decisions.
 5. Use `assets/templates/plan-template.md`.
 6. If `plan.md` already exists, read it and ask before replacing or materially rewriting it.
 
 ## Workflow
 
 1. Confirm the specification is ready for design and determine the SDD level.
-   - If `spec.md` says `文档状态：草案-待确认`, `澄清状态：阻塞-等待回答`, `澄清状态：草案-含待确认`, `Clarification Status: blocking`, or `Clarification Status: draft`, stop and route back to `fons4ai-sdd-requirements`.
+   - If `需求说明书.md` says `文档状态：草案-待确认`, `澄清状态：阻塞-等待回答`, `澄清状态：草案-含待确认`, `Clarification Status: blocking`, or `Clarification Status: draft`, stop and route back to `fons4ai-sdd-requirements`.
    - Perform a quick ambiguity scan even when the formal specification intentionally hides the internal clarification process. If blocking requirement ambiguity remains, stop and ask to run `fons4ai-sdd-requirements` before design.
    - Determine `S1` or `S2` from the requirement scope and repository facts, then record the classification and reason in `plan.md`.
 2. Build an internal fact base from the repository. Use it for decisions but do not render a repository-fact or knowledge-base-fact inventory in `plan.md`:
    - Existing modules, layers, package conventions, reusable utilities, components, test style, domain objects, application services, and integration boundaries.
    - Current APIs, data objects, domain rules, state transitions, configs, caches, queues, transactions, permissions, dependencies, utility packages, and extension points relevant to the feature.
-   - Relevant long-lived architecture and data facts from `.specify/memory/` and targeted `.specify/sql/` files when available.
+   - Relevant long-lived architecture and data facts from `.specify/memory/index.md`, matching domain cards/documents, and targeted `.specify/sql/` files when available.
    - Any conflict between truth-source and code facts; mark likely stale knowledge explicitly instead of silently overriding it.
 3. Design the simplest implementation that satisfies all AC.
    - Prefer existing helpers and patterns.
@@ -60,7 +60,7 @@ The output is a detailed technical design in `specs/features/<feature-slug>/plan
    - Record state transition design with source state, trigger, preconditions, next state, failure handling, and idempotency. Use a table by default; use Mermaid `stateDiagram` only when facts support it.
    - Record data structure changes with fields, types, defaults, indexes, constraints, compatibility, DDL path, migration, and rollback expectations when applicable.
    - Include Mermaid `erDiagram` when the design adds tables, changes relationships, or coordinates multiple tables. For a single-column or single-index adjustment, keep the structure-change table and write `不适用，原因` for the ER diagram.
-   - When an existing `.specify/sql/<database_or_service>/<business_model>.sql` contains the baseline DDL for a table that will be altered, record the required executable change DDL target: use the repository migration directory when established, otherwise `specs/features/<feature-slug>/ddl-changes/<change-id>-<database_or_service>-<business_model>.sql`. Design names the artifact and expected `ALTER TABLE` intent but does not generate the executable SQL before implementation approval.
+   - When an existing `.specify/sql/<database_or_service>/<business_model>.sql` contains the baseline DDL for a table that will be altered, record the required executable change DDL target: use the repository migration directory when established, otherwise `spec/features/<yyyymmdd>/ddl-changes/<change-id>-<database_or_service>-<business_model>.sql`. Design names the artifact and expected `ALTER TABLE` intent but does not generate the executable SQL before implementation approval.
 5. For S1, use the minimal complete profile: keep all required sections, cover every AC, and keep the design practical but not empty. If there is no state transition, data structure change, API change, migration, rollback, diagram, or rule snippet, write `不适用，原因` in that section instead of fabricating content.
 6. For S2, include the additional governance sections that apply:
    - Compatibility and migration impact.
@@ -82,7 +82,7 @@ The output is a detailed technical design in `specs/features/<feature-slug>/plan
 
 ## Output Rules
 
-- Create or update `specs/features/<feature-slug>/plan.md`.
+- Create or update `spec/features/<yyyymmdd>/plan.md`.
 - Generated artifact headings and fixed prose must be Chinese-first. Keep file names, IDs, paths, code identifiers, and technical terms such as `API`, `DDL`, `REQ-001`, and `AC-001` unchanged when needed.
 - Create extra S2 artifacts only when they prevent concrete implementation mistakes.
 - Do not generate `tasks.md`; leave task breakdown to `fons4ai-sdd-tasks`.

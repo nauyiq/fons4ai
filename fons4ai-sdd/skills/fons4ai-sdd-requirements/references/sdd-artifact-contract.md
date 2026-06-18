@@ -1,15 +1,15 @@
-# Fons4AI SDD Artifact Contract
+﻿# Fons4AI SDD Artifact Contract
 
 ## Scope
 
 This contract defines the shared SDD artifact rules for all `fons4ai-sdd-*` skills.
-Feature artifacts use `specs/features/`. Bugfix artifacts use `specs/bugfixes/`. The default project truth sources are `.specify/memory/` and `.specify/sql/`, but projects may declare additional truth sources. Do not require branch hooks or GitHub issue conversion.
+Feature artifacts use `spec/features/<yyyymmdd>/`. Bugfix artifacts use `specs/bugfixes/`. The default project truth sources are `.specify/memory/` and `.specify/sql/`, but projects may declare additional truth sources. Do not require branch hooks or GitHub issue conversion.
 
 ## Artifact Responsibilities
 
-- `spec.md` is the business-oriented requirement specification. It records business background and goals, scope, roles and scenarios, business workflows, business rules, functional requirements, business-data meaning, business impact, AC, non-functional requirements, risks, assumptions, and open items. It must not expose repository-fact inventories, knowledge-context inventories, modules, classes, tables, columns, DDL paths, MCP details, or technical architecture details.
+- `需求说明书.md` is the business-oriented requirement specification. It records a concise clarification summary, business background and goals, scope, roles and scenarios, requirement list, business rules, simple workflows when useful, lightweight business-data meaning, impact, AC, quality requirements, risks, assumptions, and open items. It should use plain business language and avoid unnecessary professional or technical terminology. It must not expose repository-fact inventories, knowledge-context inventories, modules, classes, tables, columns, DDL paths, MCP details, or technical architecture details.
 - `plan.md` is the technical design specification. It records design goals and scope, architecture, key business-rule and strategy landing, scenario implementation, data flow, DDD-lite decisions, key rule code sketches, state transitions, interface/contract details, data-model and ER design, error handling, transaction and consistency, migration/rollback, AC mapping, a concise knowledge-sync checklist, and verification strategy. It must not expose repository-fact inventories, knowledge-base-fact inventories, or search traces, and it must not replace executable tasks.
-- `tasks.md` is the executable task breakdown. It converts `spec.md` and `plan.md` into task IDs with AC mapping, files, verification, quality checks, and done criteria.
+- `tasks.md` is the executable task breakdown. It converts `需求说明书.md` and `plan.md` into task IDs with AC mapping, files, verification, quality checks, and done criteria.
 - Planning artifacts are not implementation approval; implementation still requires the approval gate below.
 
 ## Clarification Approval Gate
@@ -19,18 +19,19 @@ Requirements and change planning must close blocking ambiguity before formal art
 - `使用 SDD`, `继续`, `先生成`, `看一下`, existing artifact files, or a partially inferred plan are not clarification approval.
 - `fons4ai-sdd-requirements` must ask the highest-impact requirement question first when blocking ambiguity can change scope, AC, business terms, data meaning, compatibility, security, integration, SDD level, or task breakdown.
 - `fons4ai-sdd-change` must ask the highest-impact change question first when blocking ambiguity can change existing feature semantics, AC changes, naming/ownership, public behavior, data model, DDL source, migration, rollback, risk gates, or affected modules.
-- While a blocking ambiguity exists, requirements and change skills must not write a formal `spec.md`, formal CR, `plan.md`, `tasks.md`, or business code.
+- While a blocking ambiguity exists, requirements and change skills must not write a formal `需求说明书.md`, formal CR, `plan.md`, `tasks.md`, or business code.
 - If the user explicitly asks for a draft before answering, the artifact may be written only with `文档状态：草案-待确认`; it must not be used by design, task, or implementation skills.
-- Formal `spec.md` and CR artifacts must not expose clarification-gate tables, clarification status, or internal question logs. Clarification remains an internal pre-generation workflow.
-- Design and task skills must stop if the input `spec.md` or CR is marked `文档状态：草案-待确认`, legacy `阻塞-等待回答`, legacy `草案-含待确认`, `blocking`, or `draft`.
+- Formal `需求说明书.md` and CR artifacts must not expose clarification-gate tables, clarification status, or internal question logs. Clarification remains an internal pre-generation workflow.
+- Design and task skills must stop if the input `需求说明书.md` or CR is marked `文档状态：草案-待确认`, `阻塞-等待回答`, `草案-含待确认`, `blocking`, or `draft`.
 
 ## Project Knowledge
 
 Use `.specify/memory/`, `.specify/sql/`, and `.specify/rules/` as default long-lived project fact sources when they exist. Also respect other project-declared truth sources such as `docs/`, API documents, product documents, custom rule directories, or external knowledge bases.
 
-- `business-architecture.md` stores business domains, roles, processes, objects, and rules.
-- `technical-architecture.md` stores module boundaries, layers, integrations, technical constraints, and non-functional decisions.
-- `data-architecture.md` stores data domains, core objects, relationships, quality rules, metrics, and data flows.
+- `.specify/memory/index.md` is the default memory entrypoint when present.
+- Project-level `业务架构.md`, `技术架构.md`, and `数据架构.md` are concise global overview documents.
+- Domain-level documents live under `.specify/memory/domains/<domain-slug>/` and carry detailed business, technical, and data knowledge for one domain.
+- Knowledge cards live under `.specify/memory/domains/<domain-slug>/cards/` and store fact-level retrievable knowledge: business scenarios, rules, state transitions, technical flows, interface contracts, data models, and governance rules.
 - `.specify/sql/**/*.sql` stores one DDL SQL file per database-scoped business model. A file may contain multiple strongly related tables only when they belong to the same database/service and cohesive business model.
 - SQL knowledge should come from real DDL evidence: configured database MCP query results or existing repository SQL DDL files. Entities, ORM metadata, Mapper interfaces, repository methods, and Java field types may locate candidate models, but must not be used to generate `CREATE TABLE`.
 - If multiple database MCP tools or multiple plausible databases are available, ask the user to select the MCP tool/database scope before retrieving DDL unless explicit user input or repository facts identify one unambiguously.
@@ -38,31 +39,32 @@ Use `.specify/memory/`, `.specify/sql/`, and `.specify/rules/` as default long-l
 - `.specify/rules/` may contain project rules: `code-style-rule.md`, `project-structure-rule.md`, `features-rule.md`, `testing-rule.md`, and `data-ddl-rule.md`.
 - `constitution.md`, when present, is governance context and must not be rewritten by SDD feature skills.
 
-Feature artifacts under `specs/features/` can cite or be constrained by truth-source facts, but should not silently update knowledge sources. If a feature changes long-lived business, technical, data, governance, or other source-of-truth facts, record a knowledge impact and route the synchronization through an explicit documentation update.
-If a feature changes concrete persistent data models, record `.specify/sql/` impact as well as `data-architecture.md` impact.
+Feature artifacts under `spec/features/<yyyymmdd>/` can cite or be constrained by truth-source facts, but should not silently update knowledge sources. If a feature changes long-lived business, technical, data, governance, or other source-of-truth facts, record a knowledge impact and route the synchronization through an explicit documentation update that updates affected domain documents, knowledge cards, and `.specify/memory/index.md`.
+If a feature changes concrete persistent data models, record `.specify/sql/` impact as well as the affected domain `数据架构.md` and project data index impact.
 
 ## Context Loading
 
 - Do not bulk-load all of `.specify/memory/`, `.specify/sql/`, `.specify/rules/`, `specs/`, or `docs/` by default.
 - First read `AGENTS.md`, the active SDD artifacts, and the directly affected source/test/config files.
-- Use `rg --files` and `rg -n` with feature names, module names, business objects, table names, API names, error text, `REQ-###`, and `AC-###` to locate relevant knowledge sections before reading.
-- Optionally use `scripts/find_relevant_context.py --root <repo-root> <keyword...>` from this skill to get a first-pass candidate list for memory, rules, SQL, specs, and docs. Treat its output as navigation help, not as verified evidence.
-- For S1, read only relevant rules, matching truth-source sections, related SQL files, and affected code paths.
-- For S2, expand context around the impacted domain, module, contract, security, transaction, or data model, but still avoid unrelated full-document loading.
-- For `.specify/sql/`, prefer `data-architecture.md` index plus targeted path search. Read only the database/service and business-model SQL files involved in the work; use `.specify/sql/pending/` when ownership is unknown.
+- If `.specify/memory/index.md` exists, read it before reading project-level memory documents.
+- Use `rg --files` and `rg -n` with feature names, domain names, module names, business objects, table names, API names, error text, `REQ-###`, and `AC-###` to locate relevant cards, domain documents, SQL, rules, and specs before reading.
+- Optionally use `scripts/find_relevant_context.py --root <repo-root> <keyword...>` from this skill to get a first-pass candidate list for index, cards, domain memory, SQL, rules, specs, and docs. Treat its output as navigation help, not as verified evidence.
+- For S1, read only relevant rules, knowledge cards, domain documents, related SQL files, and affected code paths.
+- For S2, expand context around the impacted domain, module, contract, security, transaction, or data model, but still avoid unrelated full-document loading. Cross-domain work may require project-level overview sections.
+- For `.specify/sql/`, prefer `index.md`, domain `数据架构.md`, and targeted path search. Read only the database/service and business-model SQL files involved in the work; use `.specify/sql/pending/` when ownership is unknown.
 - Full scans are appropriate for knowledge-base initialization, rule generation, explicit audits, or broad refactors, but should still start with a file inventory and evidence matrix.
 
 ## Data Model DDL Sync
 
 When SDD work adds, removes, renames, or changes a concrete persistent data model, table, column, index, constraint, relationship, or database-specific default:
 
-- `spec.md` records business-data meaning and business impact only. Technical data-model, table, column, and DDL impact belong in `plan.md`.
+- `需求说明书.md` records only the business meaning and user-facing impact of data. Keep this section lightweight. Technical data-model, table, column, and DDL impact belong in `plan.md`.
 - `plan.md` must name each impacted `.specify/sql/<database_or_service>/<business_model>.sql` file and state whether the action is add, update, rename, or no-op.
 - `tasks.md` must include an explicit DDL synchronization task for every impacted SQL file, unless the plan records a user-approved deferral with owner and reason.
 - `fons4ai-sdd-implement` may create or update `.specify/sql/**/*.sql` only when the selected task names the SQL file or when the implementation reveals a necessary schema change and the user approves updating the task/artifact scope.
 - Generated SQL knowledge files are documentation artifacts, not migration scripts. Keep migration scripts in the repository's normal migration location when the project has one.
 - When an approved implementation changes columns, indexes, constraints, defaults, or relationships of an existing table and the corresponding `.specify/sql/<database_or_service>/<business_model>.sql` already contains confirmed baseline DDL, the plan and tasks must require an executable change DDL script containing the needed `ALTER TABLE` or equivalent statements.
-- Prefer the repository's established migration-script location for executable change DDL. If no migration location is established, use `specs/features/<feature-slug>/ddl-changes/<change-id>-<database_or_service>-<business_model>.sql`, where `<change-id>` is `INIT` for initial feature work or `CR-xxx` for an incremental change.
+- Prefer the repository's established migration-script location for executable change DDL. If no migration location is established, use `spec/features/<yyyymmdd>/ddl-changes/<change-id>-<database_or_service>-<business_model>.sql`, where `<change-id>` is `INIT` for initial feature work or `CR-xxx` for an incremental change.
 - Executable change DDL is generated only during approved implementation, not during requirements, design, task planning, or change planning. It records the operation to execute; `.specify/sql/**/*.sql` separately records the resulting current structure. Like other generated SQL artifacts, it must not contain MCP/Tool identifiers, query text, or source-path/provenance metadata.
 - If no repository SQL file exists, query the configured database MCP service for actual DDL. If no MCP DDL and no repository SQL DDL are available, mark SQL evidence as `待确认` and ask for MCP configuration or SQL files instead of fabricating table structure.
 - Use `.specify/sql/pending/<business_model>.sql` only when ownership is unknown or the user explicitly requests a pending placeholder.
@@ -81,8 +83,8 @@ When SDD work adds, removes, renames, or changes a concrete persistent data mode
 Use this feature layout:
 
 ```text
-specs/features/<feature-slug>/
-  spec.md
+spec/features/<yyyymmdd>/
+  <功能中文名>-需求说明书.md
   plan.md
   tasks.md
   checklists/
@@ -96,7 +98,8 @@ Only create optional folders when they are needed.
 
 ## Naming
 
-- `<feature-slug>` must be lowercase hyphen-case, short, and action-noun oriented.
+- `<yyyymmdd>` is the artifact creation date in local project time, for example `20260618`.
+- `<功能中文名>` should be concise Chinese, normally 2-12 characters, derived from the feature name or confirmed with the user when ambiguous. The requirement file name must be `<功能中文名>-需求说明书.md`.
 - Requirement IDs use `REQ-001`, `REQ-002`, ...
 - AC IDs use `AC-001`, `AC-002`, ...
 - Task IDs use `T001`, `T002`, ...
@@ -104,8 +107,8 @@ Only create optional folders when they are needed.
 
 ## Traceability
 
-- Every `REQ-###` in `spec.md` must map to at least one `AC-###` through the requirement summary table or AC text.
-- Every AC in `spec.md` must be covered by at least one design decision in `plan.md`.
+- Every `REQ-###` in `需求说明书.md` must map to at least one `AC-###` through the requirement summary table or AC text.
+- Every AC in `需求说明书.md` must be covered by at least one design decision in `plan.md`.
 - `plan.md` should preserve REQ context in AC mapping when it materially affects implementation.
 - Every implementation task in `tasks.md` must include `AC:`, `Files:`, `Verification:`, `Quality:`, and `Done:`.
 - Every task should map to at least one AC ID. If a task is pure setup, use the nearest AC it enables and explain that relationship in `Done:`.
@@ -115,8 +118,8 @@ Only create optional folders when they are needed.
 ## Detailed Document Requirements
 
 - Generated artifact headings and fixed prose should be Chinese-first. Keep file names, IDs, paths, and machine-readable task labels such as `AC:`, `Files:`, `Verification:`, `Quality:`, and `Done:` in English when compatibility requires it.
-- New `spec.md` artifacts must include `## 背景与目标`, `## 业务范围`, `## 角色与业务场景`, `## 业务流程`, `## 业务规则`, `## 功能需求`, `## 业务数据说明`, `## 业务影响`, `## 验收标准`, `## 非功能要求`, `## 风险、假设与待确认事项`, and `## 版本修订记录`. Legacy headings remain accepted for existing artifacts.
-- New `plan.md` artifacts must include `## 设计目标与范围`, `## 总体架构设计`, `## 核心业务规则与策略落地`, `## 核心业务场景实现`, `## 数据流设计`, `## 领域建模决策`, `## 关键规则代码片段`, `## 状态流转设计`, `## 接口与契约设计`, `## 数据模型与 ER 设计`, `## 事务与一致性`, `## 异常处理与日志`, `## 工具包与依赖决策`, `## 迁移、兼容与回滚`, `## 验证策略`, `## AC 映射`, `## 知识同步清单`, and `## 风险与待确认事项`. Legacy headings remain accepted for existing artifacts.
+- New `需求说明书.md` artifacts should use the simplified requirement-spec structure: `## 一句话说明`, `## 需求澄清摘要`, `## 背景与目标`, `## 需求范围`, `## 角色与场景`, `## 需求列表`, `## 业务规则`, `## 业务流程`, `## 业务数据口径`, `## 影响说明`, `## 验收标准`, `## 质量要求`, `## 风险与待确认`, and `## 版本修订记录`.
+- New `plan.md` artifacts must include `## 设计目标与范围`, `## 总体架构设计`, `## 核心业务规则与策略落地`, `## 核心业务场景实现`, `## 数据流设计`, `## 领域建模决策`, `## 关键规则代码片段`, `## 状态流转设计`, `## 接口与契约设计`, `## 数据模型与 ER 设计`, `## 事务与一致性`, `## 异常处理与日志`, `## 工具包与依赖决策`, `## 迁移、兼容与回滚`, `## 验证策略`, `## AC 映射`, `## 知识同步清单`, and `## 风险与待确认事项`.
 - The business-rule and strategy section must map core rules or policies to modules, domain/application objects, data dependencies, extension points, and verification. Use Mermaid sequence, flow, or state diagrams for important business or strategy flows when facts support them.
 - Code sketches in `plan.md` are design snippets or pseudocode for key rules, validation, status checks, and data transformations. They must be based on repository facts and must not be treated as production code.
 - Use Mermaid `sequenceDiagram` for core call chains, `flowchart` for complex decisions, `stateDiagram-v2` for state changes, and `erDiagram` for new tables, relationship changes, or multi-table collaboration when facts support them. A single-column or single-index adjustment may mark the ER diagram as `不适用，原因`.
@@ -124,8 +127,8 @@ Only create optional folders when they are needed.
 
 ## Implementation Approval Gate
 
-- Planning artifacts are not implementation approval: `spec.md`, `plan.md`, `tasks.md`, and CR files define scope and tasks but do not authorize business-code implementation.
-- `tasks.md` and each CR with incremental tasks must contain `## 实现确认门禁`. Legacy `## Implementation Approval Gate` is accepted only for existing artifacts.
+- Planning artifacts are not implementation approval: `需求说明书.md`, `plan.md`, `tasks.md`, and CR files define scope and tasks but do not authorize business-code implementation.
+- `tasks.md` and each CR with incremental tasks must contain `## 实现确认门禁`.
 - Requirements, design, task, and change skills must stop after writing planning artifacts and must not invoke implementation.
 - Implementation approval must come from the user's latest message.
 - `fons4ai-sdd-implement` must record approval evidence in the implementation report, quoting or summarizing the latest user message that authorized execution. If that evidence cannot be identified, implementation must stop.

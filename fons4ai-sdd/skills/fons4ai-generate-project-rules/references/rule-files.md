@@ -1,215 +1,92 @@
-# Architect-Grade Rule Files Reference
+# Agent 运行规则参考
 
-Use this reference when creating or updating project-level Markdown rule files.
-The goal is to generate rules that a senior architect would accept: grounded in facts, explicit about boundaries, and useful during later implementation.
+使用本参考创建或更新 `.specify/rules/agent运行规则.md`。
 
-## Default File Set
+该规则文件是项目级 AI agent 执行约束，不是详细架构文档，也不是完整开发手册。它应在 100 行左右保持可读，优先写必须遵守的行为边界。
 
-Generate these files by default:
+## 默认文件
 
-- `.specify/rules/code-style-rule.md`
-- `.specify/rules/project-structure-rule.md`
-- `.specify/rules/features-rule.md`
-- `.specify/rules/testing-rule.md`
-- `.specify/rules/data-ddl-rule.md`
+默认只生成：
 
-Do not generate an index file, `AGENTS.md`, `.cursorrules`, or Cursor-specific rules unless the user explicitly asks.
+- `.specify/rules/agent运行规则.md`
 
-## Modes and Evidence Depth
+当用户要求生成代码编写规范、代码风格约束、API 设计约束或编码质量规则时，额外生成：
 
-Use Existing Project Mode when the repository already contains build files, source files, tests, or established rules. Rules must cite observed conventions or truth-source facts.
+- `.specify/rules/代码编写规范.md`
 
-Use New Project Mode when the repository is empty or the user wants rules before implementation. Rules must distinguish:
+不要再生成旧的多文件规则集。
 
-- `已确认规则`: decisions directly stated by the user or visible in scaffold files.
-- `默认建议`: conservative conventions chosen to make future implementation consistent.
-- `待补充约定`: decisions that require future code, architecture, or team preference.
+如果旧规则文件已存在，可以把它们作为历史输入读取，但不得自动更新、删除或重建。
 
-Before drafting, build a compact evidence matrix:
+## 信息来源
 
-| Rule file | Evidence source | Confirmed facts | Defaults | Open questions |
-| --- | --- | --- | --- | --- |
-| code-style-rule.md |  |  |  |  |
+按需读取：
 
-Required evidence sources to inspect when present:
+- `AGENTS.md`
+- `.specify/memory/index.md`
+- 命中的领域文档和知识卡片
+- 已有 `.specify/rules/agent运行规则.md`
+- 已有 `.specify/rules/代码编写规范.md`
+- 旧规则文件或团队自定义规则
+- 代表性的源码、测试、配置、构建文件
+- 用户明确提供的约束
 
-- root build files and module build files;
-- major source, resource, and test roots;
-- representative classes from each major module;
-- existing rule/spec/agent instruction files;
-- `.specify/memory/business-architecture.md`, `technical-architecture.md`, `data-architecture.md`, and `constitution.md`;
-- `.specify/sql/**/*.sql`;
-- test framework, test naming, fixtures, mocks, and regression checks;
-- migration scripts, ORM models, mapper XML, entity classes, repositories, query SQL, database configuration, and transaction boundaries. Migration scripts are strong evidence but not a prerequisite for DDL knowledge generation.
+不要为了生成规则而全量读取所有知识库、源码或文档。
 
-## Shared Document Structure
+## 必须表达的规则主题
 
-Each rule file must contain:
+`agent运行规则.md` 必须覆盖：
 
-- `## 项目事实`: repository facts or user decisions supporting the rules.
-- `## 强制规则`: non-negotiable constraints that future implementation must follow.
-- `## 推荐规则`: preferred practices that may have justified exceptions.
-- `## 禁止事项`: actions that create defects, inconsistency, or governance risk.
-- `## 例外机制`: when and how a rule may be bypassed.
-- `## 待确认约定`: unknowns that must not be presented as facts.
-- `## 验收检查`: checklist for reviewing whether future changes followed the rule.
+- 修改前理解需求；
+- 优先复用已有代码；
+- 优先遵循项目规范；
+- 不修改无关代码；
+- 不擅自引入新框架；
+- 不删除核心业务逻辑；
+- 不擅自修改数据库结构；
+- MCP 使用规则：可用工具、使用条件、必要配置、安全边界和待确认项；
+- 修改后的输出内容；
+- 禁止猜测业务逻辑、编造接口、编造数据库字段、编造第三方 API；
+- 信息不足时主动说明缺失信息。
 
-Key rules should include a trigger condition, execution requirement, and exception path.
+## 代码编写规范主题
 
-## `code-style-rule.md`
+`代码编写规范.md` 只约束 AI agent 编写或修改代码时的注意事项，不记录项目技术栈、模块结构、数据库事实或业务事实。
 
-Purpose: define source-level coding conventions.
+必须覆盖：
 
-Must cover:
+- 基本编码原则；
+- 工具类与已有代码复用；
+- 代码风格和可读性；
+- DDD-lite 编码约束；
+- API 接口设计；
+- 异常与日志；
+- 数据访问与事务；
+- 测试与验证；
+- 禁止事项。
 
-- language, framework, runtime, and annotation conventions;
-- package, class, method, field, constant, DTO/VO/BO/entity, enum, and test naming;
-- utility package priority: JDK standard library, project utilities/components, already-introduced third-party utility packages such as Hutool, Apache Commons, Guava, then new dependencies;
-- dependency addition gates for new utility libraries, including rationale, alternatives, impact, and confirmation requirements;
-- readability, method complexity, expressive naming, and duplicate-code control;
-- DDD-lite domain expression: rich domain behavior naming, state transition methods, invariant encapsulation, and acceptable anemic-model exceptions;
-- dependency injection, visibility, null handling, validation, and type boundaries;
-- comment policy for key logic, domain fields, non-obvious decisions, and public contracts;
-- exception handling, business error codes, logging levels, sensitive-data masking, and i18n if present;
-- formatting and static analysis only when supported by repository evidence.
+不得把知识库中已经存在的项目技术栈、架构说明、领域说明、数据库结构搬进该文件。
 
-Common mistakes to prevent:
+## MCP 规则边界
 
-- generic style rules that contradict existing code;
-- forcing a formatter or library that the repo does not use;
-- requiring Hutool, Apache Commons, Guava, or any tool library when the project has not introduced or approved it;
-- hand-written string, collection, date/time, IO, bean conversion, null-check, or assertion logic when an existing project or approved third-party utility already covers it;
-- spreading core domain behavior through setters, controllers, mappers, or application services when a domain object or domain method should own it;
-- omitting exception, logging, and sensitive-data constraints.
+可以在 `agent运行规则.md` 中增加 MCP 相关规则，但只能写通用安全边界和已确认的项目配置。
 
-Acceptance checks:
+- 有项目事实或用户明确指定时，可以写具体 MCP 名称、用途和配置方式。
+- 没有事实时，必须写 `待确认`，不得编造 MCP 名称、数据库、账号、环境或连接方式。
+- 默认优先只读。任何写入、删除、更新、发送请求或影响外部系统的 MCP 操作都必须先获得用户明确确认。
+- 多个 MCP、数据库、环境或账号都可能匹配时，必须先询问用户选择。
+- 不得把 MCP 工具名称、查询语句、连接信息、令牌、账号、内部地址或敏感返回内容写入长期文档，除非项目明确要求且已脱敏。
 
-- every mandatory style rule has evidence or an explicit default label;
-- utility and dependency rules follow the existing-first strategy and do not force new dependencies;
-- readability, complexity, and duplicate-code checks are explicit;
-- DDD-lite expression rules are present without forcing full DDD architecture;
-- uncertain conventions appear under `待确认约定`;
-- examples use project-like names rather than generic placeholders when evidence exists.
+## 新项目处理
 
-## `project-structure-rule.md`
+从 0 到 1 的项目可能还没有 `.specify/memory/` 或 `.specify/rules/`。这种情况下可以先创建 `agent运行规则.md` 作为最小执行约束。
 
-Purpose: define module, package, file placement, and dependency boundaries.
+新项目规则必须避免伪造项目事实。没有证据的技术栈、模块、数据库、接口和 CI 流程都应写为 `待确认`，或不写入规则。
 
-Must cover:
+## 旧规则迁移
 
-- repository module layout and parent-child build relationships;
-- source, resource, generated, migration, and test directory placement;
-- package naming and layer boundaries;
-- controller/API, service/application, domain, persistence, adapter, config, constants, strategy, utility, and shared module placement;
-- dependency direction between modules and layers;
-- DDD-lite boundary mapping for domain, application, infrastructure, and adapter responsibilities based on the repository's existing structure;
-- where `.specify/rules/`, `specs/`, project-local skills, `.specify/memory/`, and `.specify/sql/` belong.
+如果旧规则文件已经存在，生成器可以建议迁移：
 
-Common mistakes to prevent:
-
-- inventing modules or layers that do not exist;
-- forcing a full DDD package hierarchy for a single feature instead of mapping DDD-lite responsibilities to existing structure;
-- allowing lower-level modules to depend on app-level modules;
-- mixing infrastructure adapters into domain or application logic without a boundary.
-
-Acceptance checks:
-
-- major modules and directories are named when discoverable;
-- dependency direction is explicit;
-- DDD-lite boundary rules protect domain code from infrastructure concerns while allowing lightweight CRUD exceptions;
-- missing module decisions are labeled as `待确认约定`.
-
-## `features-rule.md`
-
-Purpose: define how new features and behavior changes should be planned and implemented.
-
-Must cover:
-
-- requirement clarification before design or coding;
-- S1/S2 SDD usage, artifact paths, and confirmation gates;
-- fact-first repository investigation with progressive context loading: file inventory, keyword search, targeted truth-source sections, and scoped source/test reads;
-- technical design before non-trivial implementation;
-- task breakdown aligned with TDD;
-- reuse of existing utilities, components, and local conventions;
-- DDD-lite implementation rules for business behavior ownership, rich model usage, anemic-model exceptions, application-layer orchestration, and domain-service conditions;
-- migration, compatibility, rollback, observability, and security considerations;
-- knowledge sync for `.specify/memory/`, `.specify/sql/`, `.specify/rules/`, `docs/`, or other truth sources.
-
-Common mistakes to prevent:
-
-- heavyweight process for tiny safe edits;
-- full-loading every `.specify/memory/`, `.specify/sql/`, `.specify/rules/`, `specs/`, or `docs/` file when targeted search would be enough;
-- direct implementation of ambiguous feature requests;
-- putting core business rules in controllers, mappers, adapters, or long application-service methods without a documented DDD-lite exception;
-- changing public behavior or data semantics without SDD change analysis.
-
-Acceptance checks:
-
-- feature workflow explains when to use S1 and S2;
-- context sources are targeted and listed, with skipped truth sources explained when relevant;
-- implementation is gated by approved tasks;
-- core business behavior has a DDD-lite ownership decision or an explicit lightweight exception;
-- durable business, technical, data, or governance facts have a knowledge-sync path.
-
-## `testing-rule.md`
-
-Purpose: define automated and manual verification rules.
-
-Must cover:
-
-- test pyramid or practical test layering used by the repository;
-- unit, integration, contract/API, persistence, UI, and manual verification expectations where applicable;
-- test naming, package placement, fixture data, mocks/stubs/fakes, clock/randomness control, and external dependency isolation;
-- RED-GREEN-REFACTOR requirements for behavior changes;
-- regression selection, failure triage, flaky test handling, and when manual validation is acceptable;
-- commands or build profiles when discoverable.
-
-Common mistakes to prevent:
-
-- treating manual checks as a replacement for feasible automated tests;
-- adding broad slow tests when a focused test proves the behavior;
-- leaving bug fixes without a reproducible failing signal.
-
-Acceptance checks:
-
-- each implementation task can name a verification method;
-- bug fixes include reproduction, root cause, regression, and manual verification;
-- unavailable automated tests require a documented reason.
-
-## `data-ddl-rule.md`
-
-Purpose: define data model, persistence, migration, transaction, and DDL knowledge rules.
-
-Must cover:
-
-- persistent model ownership, entity/table naming, field naming, indexes, constraints, lifecycle, and audit fields when discoverable;
-- transaction boundaries, consistency, idempotency, concurrency, and rollback expectations;
-- migration script location and review expectations when the repo has migrations;
-- SQL knowledge generation from real DDL evidence: configured database MCP query results or existing repository SQL DDL files;
-- user selection before DDL retrieval when multiple MCP tools or plausible databases exist and current facts do not uniquely identify the target;
-- SQL artifact privacy: generated `.specify/sql/**/*.sql` files must not store MCP/Tool identifiers, queries, source paths, or provenance headers;
-- executable change DDL: when SDD implementation alters an existing table with confirmed original DDL in `.specify/sql/`, require a separate copy-executable `ALTER TABLE` or equivalent script in the established migration location or `specs/features/<feature-slug>/ddl-changes/<change-id>-<database_or_service>-<business_model>.sql`, without MCP/Tool identifiers or provenance metadata;
-- stage boundary: design/tasks/CR artifacts plan the executable DDL path and rollback needs, while only approved implementation writes the executable SQL file;
-- prohibition on generating `CREATE TABLE` from entities, ORM metadata, mapper interfaces, repositories, Java fields, or code-only guesses;
-- `.specify/sql/<database_or_service>/<business_model>.sql` DDL knowledge files;
-- `.specify/sql/pending/<business_model>.sql` fallback when database/service ownership is unknown;
-- same database/service plus cohesive business-model grouping;
-- mandatory split when tables belong to different databases, service-owned schemas, or physical data sources.
-
-Common mistakes to prevent:
-
-- one table per file when strongly coupled tables belong to the same database and business model;
-- merging DDL across databases or service-owned schemas;
-- skipping SQL knowledge files because no migration script exists;
-- presenting inferred columns, indexes, or constraints as confirmed facts;
-- treating `.specify/sql/**/*.sql` as executable migrations;
-- updating the current-state SQL knowledge file without generating the required executable change DDL for an existing-table structural change;
-- changing schema without updating SDD tasks and data architecture knowledge.
-
-Acceptance checks:
-
-- DDL grouping rule is explicit;
-- every schema-changing feature has a DDL sync task or approved deferral;
-- missing migration scripts still result in SQL knowledge files with `推断` or `待确认` evidence status;
-- data architecture indexes generated SQL files when present.
-- confirmed existing-table schema changes include an executable change DDL deliverable distinct from the SQL knowledge snapshot.
+- 将通用执行约束合并到 `agent运行规则.md`；
+- 将详细代码风格、结构、测试、数据规则保留为历史参考或后续重构对象；
+- 删除旧规则前必须获得用户确认。

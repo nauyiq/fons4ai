@@ -1,4 +1,4 @@
----
+﻿---
 name: fons4ai-sdd-change
 description: "Fons4AI gated SDD change workflow. Auto-trigger only when an in-scope AGENTS.md contains '<!-- fons4ai-skill-routing: enabled -->'; otherwise use only when the user explicitly names this skill or asks for the Fons4AI/SDD workflow."
 ---
@@ -24,18 +24,18 @@ It must not write business code; implementation remains the responsibility of `f
 ## Required Context
 
 1. Load `../fons4ai-sdd-requirements/references/sdd-artifact-contract.md`, including its context-loading rules.
-2. Identify the target `specs/features/<feature-slug>/` directory.
+2. Identify the target `spec/features/<yyyymmdd>/` directory.
 3. Search by change intent, AC IDs, modules, APIs, domain objects, table/model names, and SQL paths before loading truth sources.
    - Optionally run `../fons4ai-sdd-requirements/scripts/find_relevant_context.py --root <repo-root> <keyword...>` to get candidate truth-source files before reading.
-4. Read only relevant project rules, matching `.specify/memory/` sections, targeted `.specify/sql/` files, and governance files that affect the change.
-5. Read existing `spec.md`, `plan.md`, `tasks.md`, prior `changes/`, reports, and relevant source/test files.
+4. Read only relevant project rules, matching `.specify/memory/index.md`, knowledge cards/domain documents, targeted `.specify/sql/` files, and governance files that affect the change. Read project-level memory overviews only for cross-domain, S2, or global-constraint decisions.
+5. Read existing `需求说明书.md`, `plan.md`, `tasks.md`, prior `changes/`, reports, and relevant source/test files.
 6. Use `assets/templates/change-template.md`.
 
 ## Workflow
 
 1. Confirm the existing feature and change intent. If multiple feature directories match, ask the user to choose one.
 2. Run the change clarification gate before assigning a final CR ID or modifying artifacts.
-   - If a blocking ambiguity exists, stop and ask exactly one highest-impact clarification question. Do not create `CR-xxx.md`, update `spec.md`, update `plan.md`, or append tasks in the same turn.
+   - If a blocking ambiguity exists, stop and ask exactly one highest-impact clarification question. Do not create `CR-xxx.md`, update `需求说明书.md`, update `plan.md`, or append tasks in the same turn.
    - If the user explicitly asks for a draft before answering, create only a draft CR with `文档状态：草案-待确认`, mark assumptions as `待确认`, and do not add executable implementation tasks.
    - If all blocking ambiguities are closed, create a formal CR without exposing the internal clarification checklist, clarification status, or question log.
 3. Determine the next CR ID by scanning `changes/CR-*.md`.
@@ -50,7 +50,7 @@ It must not write business code; implementation remains the responsibility of `f
    - Regression risk and rollback needs.
    - Knowledge impact: business, technical, data architecture, governance, other truth-source, or DDL facts that must be synchronized.
    - For any persistent data model addition or change, name each impacted `.specify/sql/<database_or_service>/<business_model>.sql` file, required action, and DDL evidence source: MCP query, repository SQL file, or implementation migration/schema SQL.
-   - If the change alters an existing table whose SQL knowledge file already contains confirmed baseline DDL, name an executable change DDL output file: use an established migration path when present, otherwise `specs/features/<feature-slug>/ddl-changes/CR-xxx-<database_or_service>-<business_model>.sql`.
+   - If the change alters an existing table whose SQL knowledge file already contains confirmed baseline DDL, name an executable change DDL output file: use an established migration path when present, otherwise `spec/features/<yyyymmdd>/ddl-changes/CR-xxx-<database_or_service>-<business_model>.sql`.
    - If multiple database MCP tools or candidate databases could provide DDL and explicit user input or existing facts do not select one, capture a clarification question and obtain user selection before retrieving DDL.
    - Generated SQL knowledge files must not include MCP/Tool identifiers, query text, source paths, or provenance headers.
    - Keep same-database cohesive business model tables together when useful, but split files for different databases, service-owned schemas, or physical data sources.

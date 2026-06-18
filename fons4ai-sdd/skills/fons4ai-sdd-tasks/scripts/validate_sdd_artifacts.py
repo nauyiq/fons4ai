@@ -1,4 +1,4 @@
-#!/usr/bin/env python3
+﻿#!/usr/bin/env python3
 """Validate minimal Fons4AI SDD artifact consistency."""
 
 from __future__ import annotations
@@ -21,21 +21,22 @@ S2_RE = re.compile(r"(SDD\s*Level|SDD\s*等级)\s*[:：]\s*`?S2`?", re.IGNORECAS
 
 APPROVAL_GATE_HEADINGS = ("## 实现确认门禁", "## Implementation Approval Gate")
 DOCUMENT_STATUS_RE = re.compile(r"(文档状态|Document Status)\s*[:：]\s*([^\n\r]+)", re.IGNORECASE)
-CLARIFICATION_STATUS_RE = re.compile(r"(澄清状态|Clarification Status)\s*[:：]\s*([^\n\r]+)", re.IGNORECASE)
 BLOCKING_ARTIFACT_RE = re.compile(r"草案-待确认|草案-含待确认|阻塞|blocking|draft", re.IGNORECASE)
 SPEC_REQUIRED_HEADING_GROUPS = (
-    ("背景与目标", ("## 背景与目标", "## 背景与问题")),
-    ("业务范围", ("## 业务范围", "## 范围")),
-    ("角色与业务场景", ("## 角色与业务场景", "## 用户与场景")),
-    ("业务流程", ("## 业务流程", "## 流程概览")),
-    ("业务规则", ("## 业务规则", "## 关键业务规则与约束")),
-    ("功能需求", ("## 功能需求", "## 需求概要", "## Functional Overview")),
-    ("业务数据说明", ("## 业务数据说明", "## 关键数据或领域对象")),
-    ("业务影响", ("## 业务影响", "## 影响面概览", "## Impact Overview")),
-    ("验收标准", ("## 验收标准", "## Acceptance Criteria")),
-    ("非功能要求", ("## 非功能要求", "## 非功能需求")),
-    ("风险、假设与待确认事项", ("## 风险、假设与待确认事项", "## 风险概览", "## 假设", "## 待确认问题")),
-    ("版本修订记录", ("## 版本修订记录", "## Revision History")),
+    ("一句话说明", ("## 一句话说明",)),
+    ("需求澄清摘要", ("## 需求澄清摘要",)),
+    ("背景与目标", ("## 背景与目标",)),
+    ("需求范围", ("## 需求范围",)),
+    ("角色与场景", ("## 角色与场景",)),
+    ("需求列表", ("## 需求列表",)),
+    ("业务规则", ("## 业务规则",)),
+    ("业务流程", ("## 业务流程",)),
+    ("业务数据口径", ("## 业务数据口径",)),
+    ("影响说明", ("## 影响说明",)),
+    ("验收标准", ("## 验收标准",)),
+    ("质量要求", ("## 质量要求",)),
+    ("风险与待确认", ("## 风险与待确认",)),
+    ("版本修订记录", ("## 版本修订记录",)),
 )
 PLAN_REQUIRED_HEADING_GROUPS = (
     ("设计目标与范围", ("## 设计目标与范围", "## 设计摘要")),
@@ -87,6 +88,10 @@ def read(path: Path) -> str:
         raise
     except UnicodeDecodeError:
         return path.read_text()
+
+
+def requirement_artifact_paths(feature_dir: Path) -> list[Path]:
+    return sorted(feature_dir.glob("*-需求说明书.md"))
 
 
 def task_blocks(tasks_text: str) -> list[tuple[str, str]]:
@@ -158,15 +163,14 @@ def validate_req_ac_mapping(spec_text: str) -> list[str]:
     for req_id in req_ids:
         mapped = any(req_id in line and AC_RE.search(line) for line in spec_text.splitlines())
         if not mapped:
-            errors.append(f"{req_id} has no AC mapping in spec.md")
+            errors.append(f"{req_id} has no AC mapping in requirement artifact")
     return errors
 
 
 def validate_artifact_readiness(text: str, artifact_name: str) -> list[str]:
     errors: list[str] = []
     statuses = [match.group(2).strip() for match in DOCUMENT_STATUS_RE.finditer(text)]
-    legacy_statuses = [match.group(2).strip() for match in CLARIFICATION_STATUS_RE.finditer(text)]
-    if any(BLOCKING_ARTIFACT_RE.search(status) for status in statuses + legacy_statuses):
+    if any(BLOCKING_ARTIFACT_RE.search(status) for status in statuses):
         errors.append(f"{artifact_name} is a draft or has unresolved clarification and cannot enter downstream planning")
     return errors
 
@@ -210,11 +214,19 @@ def executable_ddl_paths(text: str) -> list[str]:
 def validate(feature_dir: Path, strict: bool = False) -> tuple[list[str], list[str]]:
     errors: list[str] = []
     warnings: list[str] = []
-    spec = feature_dir / "spec.md"
+    requirement_files = requirement_artifact_paths(feature_dir)
+    if not requirement_files:
+        errors.append(f"Missing required artifact: {feature_dir / '<功能中文名>-需求说明书.md'}")
+        spec = feature_dir / "<功能中文名>-需求说明书.md"
+    elif len(requirement_files) > 1:
+        errors.append(f"Multiple requirement artifacts found in {feature_dir}; keep exactly one *-需求说明书.md")
+        spec = requirement_files[0]
+    else:
+        spec = requirement_files[0]
     plan = feature_dir / "plan.md"
     tasks = feature_dir / "tasks.md"
 
-    for required in (spec, plan, tasks):
+    for required in (plan, tasks):
         if not required.exists():
             errors.append(f"Missing required artifact: {required}")
 
@@ -228,10 +240,10 @@ def validate(feature_dir: Path, strict: bool = False) -> tuple[list[str], list[s
 
     ac_ids = sorted(set(AC_RE.findall(spec_text)))
     if not ac_ids:
-        errors.append("spec.md contains no AC-### acceptance criteria IDs")
+        errors.append("requirement artifact contains no AC-### acceptance criteria IDs")
 
-    errors.extend(validate_required_heading_groups(spec_text, SPEC_REQUIRED_HEADING_GROUPS, "spec.md"))
-    errors.extend(validate_artifact_readiness(spec_text, "spec.md"))
+    errors.extend(validate_required_heading_groups(spec_text, SPEC_REQUIRED_HEADING_GROUPS, str(spec.name)))
+    errors.extend(validate_artifact_readiness(spec_text, str(spec.name)))
     errors.extend(validate_req_ac_mapping(spec_text))
     errors.extend(validate_required_heading_groups(plan_text, PLAN_REQUIRED_HEADING_GROUPS, "plan.md"))
 
@@ -369,8 +381,8 @@ def validate_bugfix_report(report: Path) -> list[str]:
 
 def main() -> int:
     parser = argparse.ArgumentParser(description="Validate Fons4AI SDD artifacts")
-    parser.add_argument("--feature-dir", help="Path to specs/features/<feature-slug>")
-    parser.add_argument("--change-file", help="Path to specs/features/<feature-slug>/changes/CR-xxx.md")
+    parser.add_argument("--feature-dir", help="Path to spec/features/<yyyymmdd>")
+    parser.add_argument("--change-file", help="Path to spec/features/<yyyymmdd>/changes/CR-xxx.md")
     parser.add_argument("--bugfix-report", help="Path to specs/bugfixes/<bug-slug>/bugfix-report.md")
     parser.add_argument("--strict", action="store_true", help="Fail modern SDD section omissions instead of warning")
     args = parser.parse_args()

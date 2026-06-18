@@ -1,4 +1,4 @@
-# <功能名称> 实施报告
+﻿# <功能名称> 实施报告
 
 > 功能标识：`<feature-slug>`
 > 任务范围：`Txxx`
@@ -15,7 +15,7 @@
 
 - path/to/file：
 - .specify/sql/<database_or_service>/<business_model>.sql：
-- specs/features/<feature-slug>/ddl-changes/<INIT|CR-xxx>-<database_or_service>-<business_model>.sql | <project-migration-path>.sql：
+- spec/features/<yyyymmdd>/ddl-changes/<INIT|CR-xxx>-<database_or_service>-<business_model>.sql | <project-migration-path>.sql：
 
 ## TDD 记录
 

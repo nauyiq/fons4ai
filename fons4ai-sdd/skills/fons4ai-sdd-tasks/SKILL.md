@@ -1,4 +1,4 @@
----
+﻿---
 name: fons4ai-sdd-tasks
 description: "Fons4AI gated SDD task-planning workflow. Auto-trigger only when an in-scope AGENTS.md contains '<!-- fons4ai-skill-routing: enabled -->'; otherwise use only when the user explicitly names this skill or asks for the Fons4AI/SDD workflow."
 ---
@@ -17,23 +17,23 @@ If none is true, do not apply this skill automatically. Continue with normal Cod
 
 ## Overview
 
-Use this skill after `fons4ai-sdd-design` has produced `plan.md` from a formal business-oriented `spec.md`.
+Use this skill after `fons4ai-sdd-design` has produced `plan.md` from a formal business-oriented `需求说明书.md`.
 The output is a reviewed `tasks.md` for `fons4ai-sdd-implement`. Planning artifacts are not implementation approval; after writing tasks, stop and wait for the user to confirm execution.
 
 ## Required Context
 
 1. Load `../fons4ai-sdd-requirements/references/sdd-artifact-contract.md`, including its context-loading rules.
-2. Read `spec.md`, `plan.md`, and any S2 artifacts in the feature directory. Confirm that `spec.md` is not marked `文档状态：草案-待确认` before task planning.
+2. Read `需求说明书.md`, `plan.md`, and any S2 artifacts in the feature directory. Confirm that the requirement document is not marked `文档状态：草案-待确认` before task planning.
 3. Search by AC IDs, task scope, modules, files, domain objects, tables, and business model paths before loading truth sources.
    - Optionally run `../fons4ai-sdd-requirements/scripts/find_relevant_context.py --root <repo-root> <keyword...>` to get candidate truth-source files before reading.
-4. Read only relevant project rules, matching memory sections, and targeted SQL files needed to respect module, data, DDL, and governance boundaries.
+4. Read only relevant project rules, matching knowledge cards/domain documents, and targeted SQL files needed to respect module, data, DDL, and governance boundaries. Read project-level memory overviews only for cross-domain, S2, or global-constraint decisions.
 5. Use `assets/templates/tasks-template.md`.
 6. If `tasks.md` already exists, read it and ask before replacing or materially rewriting it.
 
 ## Workflow
 
-1. Confirm `spec.md` and `plan.md` exist. Stop if either is missing.
-   - If `spec.md` says `文档状态：草案-待确认`, `澄清状态：阻塞-等待回答`, `澄清状态：草案-含待确认`, `Clarification Status: blocking`, or `Clarification Status: draft`, stop and route back to `fons4ai-sdd-requirements`.
+1. Confirm `需求说明书.md` and `plan.md` exist. Stop if either requirement document or plan is missing.
+   - If `需求说明书.md` says `文档状态：草案-待确认`, `澄清状态：阻塞-等待回答`, `澄清状态：草案-含待确认`, `Clarification Status: blocking`, or `Clarification Status: draft`, stop and route back to `fons4ai-sdd-requirements`.
    - Run a quick ambiguity scan before task generation. The formal specification intentionally hides internal clarification details, so artifact existence alone is not evidence that blocking ambiguity is closed.
 2. Extract AC IDs, affected modules/files, design decisions, dependencies, and verification expectations.
 3. Generate tasks in dependency order:
@@ -61,13 +61,13 @@ The output is a reviewed `tasks.md` for `fons4ai-sdd-implement`. Planning artifa
    - One SQL file may cover multiple strongly related tables only when they are in the same database/service and cohesive business model.
    - Split tasks and SQL files when the affected tables belong to different databases, service-owned schemas, or physical data sources.
    - Place it with the related model/migration task, before service-layer tasks that depend on the schema.
-   - Verification must confirm the SQL file matches the implemented model/table group and is indexed by `.specify/memory/data-architecture.md` when that document exists.
+   - Verification must confirm the SQL file matches the implemented model/table group and is indexed by `.specify/memory/index.md` and the affected domain `数据架构.md` when those documents exist.
    - Only mark it as deferred when `plan.md` records user-approved owner/reason.
-   - If `plan.md` declares a structural change to an existing table with confirmed baseline DDL in `.specify/sql/`, add a separate executable change DDL task. The task must name either the established migration path or `specs/features/<feature-slug>/ddl-changes/<change-id>-<database_or_service>-<business_model>.sql`, and require implementation to produce copy-executable `ALTER TABLE` or equivalent statements after user approval.
+   - If `plan.md` declares a structural change to an existing table with confirmed baseline DDL in `.specify/sql/`, add a separate executable change DDL task. The task must name either the established migration path or `spec/features/<yyyymmdd>/ddl-changes/<change-id>-<database_or_service>-<business_model>.sql`, and require implementation to produce copy-executable `ALTER TABLE` or equivalent statements after user approval.
    - Do not generate the executable change DDL while writing `tasks.md`; this is an implementation output guarded by the implementation approval gate.
 7. If `plan.md` declares non-DDL knowledge impact, add a documentation synchronization or follow-up task that names the impacted truth-source path.
 8. Run `scripts/validate_sdd_artifacts.py --feature-dir <feature-dir> --strict` after writing new tasks. This validates AC coverage, DDL mapping, knowledge impact, modern required sections, and S2 risk gates. Fix validation failures before reporting success.
-   - For legacy feature directories created before the latest template upgrade, `scripts/validate_sdd_artifacts.py --feature-dir <feature-dir>` may be used first to surface warnings; new or updated artifacts should pass `--strict`.
+   - Run `scripts/validate_sdd_artifacts.py --feature-dir <feature-dir>` after updating the task plan.
 9. Stop after task planning. Do not invoke implementation. Tell the user they can reply `执行`, `开始实现`, or `继续执行` to execute all unfinished tasks, or `执行 T001,T002` to specify task IDs.
 
 ## Task Format
@@ -83,11 +83,11 @@ Use this shape for each task:
   - Done: 客观完成标准
 ```
 
-`[P]` is optional and means the task can run in parallel because it touches different files and has no unfinished dependency. Story labels are optional; use them only when `spec.md` has user-story phases.
+`[P]` is optional and means the task can run in parallel because it touches different files and has no unfinished dependency. Story labels are optional; use them only when the requirement document has user-story phases.
 
 ## Output Rules
 
-- Create or update only `specs/features/<feature-slug>/tasks.md`.
+- Create or update only `spec/features/<yyyymmdd>/tasks.md`.
 - Generated artifact headings and fixed prose must be Chinese-first. Keep machine-readable task labels `AC:`, `Files:`, `Verification:`, `Quality:`, and `Done:` unchanged.
 - Do not write business code.
 - Do not mark tasks complete.
