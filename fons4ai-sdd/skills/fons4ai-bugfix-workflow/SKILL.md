@@ -1,110 +1,246 @@
 ---
 name: fons4ai-bugfix-workflow
-description: "Fons4AI gated BUG fix workflow. Auto-trigger only when an in-scope AGENTS.md contains '<!-- fons4ai-skill-routing: enabled -->'; otherwise use only when the user explicitly names this skill or asks for the Fons4AI/SDD workflow."
+description: "Fons4AI 受控的 BUG 修复工作流。只有当作用域内 AGENTS.md 包含 '<!-- fons4ai-skill-routing: enabled -->' 时才允许自动触发；否则仅在用户明确指定该技能，或明确要求使用 Fons4AI/SDD 工作流时使用。用于复现、诊断、最小修复、验证并沉淀 BUG、异常、报错、回归失败或不符合既有预期的行为。"
 ---
 
-# Fons4AI Bugfix Workflow
+# Fons4AI BUG 修复工作流
 
-## Activation Gate
+## 角色说明
 
-Before using this skill, verify at least one condition is true:
+你是高级开发工程师，负责在 Fons4AI 约束下处理 BUG、异常、报错、回归失败和不符合既有预期的行为。
 
-1. The user explicitly names this skill, such as `$fons4ai-bugfix-workflow`.
-2. The user explicitly asks to use Fons4AI, SDD, or the Fons4AI workflow.
-3. The active repository has an in-scope `AGENTS.md` containing `<!-- fons4ai-skill-routing: enabled -->`.
+你的目标不是重新定义需求，也不是大范围重构，而是在确认既有期望的前提下完成：
 
-If none is true, do not apply this skill automatically. Continue with normal Codex behavior or ask whether the user wants to enable the Fons4AI workflow.
+1. 收集问题事实。
+2. 建立可复现或可验证的失败信号。
+3. 定位根因。
+4. 执行最小修复。
+5. 完成自动化或手动验证。
+6. 沉淀 BUG 修复报告。
 
-## Overview
+默认报告路径：
 
-Use this skill when the user asks to fix a bug, investigate an error, diagnose an exception, repair a regression, or correct behavior that does not match existing expectations.
+`specs/bugfixes/<yyyymmdd>/<bug-slug>-bugfix-report.md`
 
-Default report path:
+如果用户明确给出报告路径，使用用户指定路径。
 
-- `specs/bugfixes/<bug-slug>/bugfix-report.md`
+本技能只处理实现缺陷。如果修复会改变需求、验收标准、公共行为、数据模型语义或长期架构事实，必须停止编码并建议使用 `fons4ai-sdd-change`。
 
-If the user gives an explicit report path, use that path instead.
+## 触发条件
 
-This skill fixes implementation defects. If the work changes requirements, acceptance criteria, public behavior, data model semantics, or long-lived architecture facts, stop and recommend `fons4ai-sdd-change` before coding.
+使用本技能前，必须满足以下任一条件：
 
-## Required Context
+1. 用户明确指定该技能，例如 `$fons4ai-bugfix-workflow`。
+2. 用户明确要求使用 Fons4AI、SDD 或 Fons4AI 工作流。
+3. 当前仓库作用域内存在 `AGENTS.md`，且包含 `<!-- fons4ai-skill-routing: enabled -->`。
 
-1. Read `AGENTS.md`, then search by error text, stack traces, module names, API paths, table/model names, and affected feature names before loading truth sources.
-   - Optionally run `../fons4ai-sdd-requirements/scripts/find_relevant_context.py --root <repo-root> <keyword...>` to get candidate truth-source files before reading.
-2. Read only relevant project rules and truth-source sections before editing:
-   - `.specify/rules/*.md` files that match the affected area.
-   - Matching `.specify/memory/` sections when expected behavior or architecture is involved.
-   - Targeted `.specify/sql/**/*.sql` files when data model or DDL knowledge may be involved.
-   - Other project-declared knowledge sources such as `docs/`, custom rule directories, or API documents when search results or file paths indicate relevance.
-3. Read existing SDD artifacts for the affected feature when discoverable:
-   - `specs/features/<feature-slug>/spec.md`
-   - `plan.md`
-   - `tasks.md`
+如果以上条件都不满足，不得自动应用本技能。应继续使用普通 AI agent 行为，或询问用户是否希望启用 Fons4AI/SDD 工作流。
+
+触发后按以下顺序工作：
+
+1. 推导或确认 `<bug-slug>`，用于默认报告文件名，使用简短中文概述功能名称或问题主题，例如 `登录令牌过期`。
+2. 使用当前项目本地日期生成 `<yyyymmdd>`，例如 `20260622`。
+3. 确认处理模式：仅诊断，或修复执行。
+4. 确认问题是否属于 BUG 修复，而不是新增需求、需求变更或验收口径调整。
+5. 判定 BUG 修复风险等级：`S1` 或 `S2`。
+6. 确认报告路径，默认使用 `specs/bugfixes/<yyyymmdd>/<bug-slug>-bugfix-report.md`。
+7. 定位相关上下文，重点搜索错误文本、堆栈、模块名、接口路径、表/模型名、功能名、测试名、`REQ-###` 和 `AC-###`。
+8. 先执行复现门禁；门禁未关闭时不得修改代码。
+
+`<bug-slug>` 优先从“功能名称 + 问题主题”生成，使用 2-12 个中文字符表达业务含义；不得包含日期、账号、手机号、令牌、客户名或其他敏感信息。
+
+## 处理模式
+
+先判断用户意图，再决定是否允许修改代码：
+
+| 模式 | 触发语义 | 允许行为 |
+| --- | --- | --- |
+| 仅诊断 | 用户要求排查、看看、分析、定位原因、解释报错 | 可读取上下文、复现、定位根因、输出建议；不得修改业务代码 |
+| 修复执行 | 用户明确要求修复、解决、处理、改掉、提交修复，或语义等价的实现请求 | 在复现门禁关闭后，可执行最小修复并写 BUG 修复报告 |
+
+修复执行必须记录最新用户消息中的授权依据。无法识别授权依据时，只能按“仅诊断”处理。
+
+## BUG 边界判定
+
+开始编码前必须先判断工作类型：
+
+| 场景 | 处理方式 |
+| --- | --- |
+| 代码行为不符合既有规格、测试、真理源、历史行为或用户明确确认的期望 | 继续使用本技能 |
+| 测试断言与既有期望冲突 | 先确认期望来源，再决定修测试或修代码 |
+| 需要新增业务能力、调整验收标准或改变用户可见行为 | 停止编码，建议 `fons4ai-sdd-change` |
+| 涉及公共 API、权限安全、数据模型语义、DDL、兼容性或长期架构事实变化 | 停止编码，建议 `fons4ai-sdd-change` |
+| 只是补充日志、注释、报告或测试说明，不改变行为 | 可继续，但不得伪装成已修复 BUG |
+
+## 风险等级
+
+BUG 修复只使用 `S1` 和 `S2`：
+
+- `S1`：默认级别，适用于局部实现缺陷、小范围行为修复、单模块或少量文件变更，且可通过聚焦测试或明确手动步骤验证。
+- `S2`：涉及权限安全、事务一致性、公共 API 或公共契约、兼容性、缓存/MQ/限流、跨核心模块、数据一致性、持久化结构、迁移、回滚成本高或影响范围不清。
+
+S2 BUG 修复必须补充更严格的回归验证、风险说明和回滚方案。若 S2 的修复需要改变需求、AC、公共行为、数据模型语义、表结构、字段、索引、约束或迁移策略，停止编码并建议 `fons4ai-sdd-change`。
+
+## 必读上下文
+
+修改前必须先读取相关上下文，不得凭空猜测业务逻辑、接口、字段、表结构或第三方 API。
+
+读取顺序：
+
+1. 读取 `AGENTS.md`。
+2. 按错误文本、堆栈、模块名、API 路径、表/模型名和受影响功能名搜索。
+   - 如果 `../fons4ai-sdd-requirements/scripts/find_relevant_context.py` 存在，可选运行 `python ../fons4ai-sdd-requirements/scripts/find_relevant_context.py --root <repo-root> <keyword...>` 获取候选真理源文件。
+3. 只读取与问题相关的规则和真理源：
+   - `.specify/rules/*.md` 中与受影响区域匹配的文件。
+   - 涉及既有行为或架构时，读取匹配的 `.specify/memory/` 章节。
+   - 涉及数据模型或 DDL 知识时，读取目标 `.specify/sql/**/*.sql` 文件。
+   - 搜索结果或项目规则指向的 `docs/`、自定义规则目录、API 文档等。
+4. 读取可发现的既有 SDD 产物：
+   - `spec/features/<yyyymmdd>/<功能中文名>-需求说明书.md`
+   - `<功能中文名>-技术设计说明书.md`
+   - `<功能中文名>-任务规划.md`
    - `changes/`
    - `reports/`
-4. Read related source, tests, configuration, logs, and build files before modifying anything.
-5. Use `assets/templates/bugfix-report-template.md` for the report.
-6. Use `scripts/validate_bugfix_report.py --report <report-path>` after writing the report when Python is available.
+5. 读取相关源码、测试、配置、日志和构建文件。
+6. 写报告时使用 `assets/templates/bugfix-report-template.md`。
+7. Python 可用时，写完报告后运行 `scripts/validate_bugfix_report.py --report <report-path>`。
 
-## Workflow
+读取上下文时必须先定位再读取，不得默认全量读取 `.specify/memory/`、`.specify/sql/`、`.specify/rules/`、`spec/`、`specs/` 或 `docs/`。
 
-1. Collect bug facts.
-   - Problem location: page, API, module, job, command, or feature.
-   - Expected result and actual result.
-   - Reproduction steps, frequency, environment, version/configuration, logs, screenshots, and relevant data.
-   - If the user has not supplied executable reproduction information, ask for the missing facts and do not edit code.
+## 复现门禁
 
-2. Reproduce or establish a minimal failing signal.
-   - Prefer an automated failing test or command.
-   - If the bug can only be reproduced manually, record exact manual steps and observed result.
-   - If reproduction fails, stop and report the missing information or the closest observed evidence.
+复现门禁用于判断是否允许进入代码修改阶段。门禁未关闭时，不得编辑业务代码。
 
-3. Diagnose root cause.
-   - Narrow from feature/module to the smallest responsible code path.
-   - Compare existing expected behavior from specs, tests, truth sources, or explicit user facts.
-   - Distinguish implementation defect from requirement change.
-   - If the desired fix changes intended behavior, public contracts, AC, or data semantics, recommend `fons4ai-sdd-change`.
+至少需要确认以下事实：
 
-4. Plan the smallest fix.
-   - State affected files before editing.
-   - Preserve user changes and unrelated files.
-   - Ask before deleting logic, rewriting large sections, or making risky migrations.
-   - If persistent data models change, ensure the relevant `.specify/sql/<database_or_service>/<business_model>.sql` file is updated or route through `fons4ai-sdd-change` to add a DDL sync task.
-   - Keep same-database cohesive business model tables together when useful; split files for different databases, service-owned schemas, or physical data sources.
+1. 问题位置：页面、API、模块、任务、命令或功能。
+2. 期望结果和实际结果。
+3. 复现步骤、触发频率、环境、版本、配置、日志、截图或相关数据。
+4. 既有期望来源：规格、测试、真理源、历史行为或用户明确确认。
+5. 最小失败信号：自动化失败测试、可执行命令、日志证据或可重复的手动步骤。
 
-5. Fix with Red-Green-Refactor.
-   - RED: add or update a focused test that fails for the bug when feasible.
-   - GREEN: implement the smallest change that makes the test pass.
-   - REFACTOR: keep cleanup local and necessary; avoid unrelated restructuring.
-   - If an automated test is not feasible, record why and provide a precise manual verification path.
+提问规则：
 
-6. Verify.
-   - Run the focused test or command that proves the bug is fixed.
-   - Run the smallest useful regression check around the affected area.
-   - Always produce manual verification steps with expected results.
+1. 用户未提供可执行复现信息时，只问一个最高影响问题，问完立即停止等待用户回答。
+2. 问题必须围绕复现门禁事实，并说明会影响修复报告或代码修改的哪一部分。
+3. 优先确认期望结果、实际结果和复现步骤；如果缺少既有期望来源，必须优先确认。
+4. 用户只说 `修一下`、`继续`、`先改`、`看报错` 等模糊指令时，不得视为复现门禁已关闭。
+5. 若问题只能手动复现，必须记录精确手动步骤、观察结果和预期结果。
+6. 如果无法复现且没有足够失败证据，停止并说明缺失信息或当前最接近的证据。
 
-7. Write the bugfix report.
-   - Create `specs/bugfixes/<bug-slug>/` when using the default path.
-   - Copy the report structure from `assets/templates/bugfix-report-template.md`.
-   - Fill reproduction, root cause, fix, verification, risk/rollback, knowledge sync, and follow-up fields.
-   - Run the report validator when available and fix missing required sections before finishing.
+## 工作流程
 
-8. Handle knowledge sync.
-   - If the fix confirms durable business, technical, data, or governance facts, mark `Knowledge Sync Needed: yes` in the report and suggest `fons4ai-knowledge-summary`.
-   - If the fix updates DDL knowledge, list the `.specify/sql/**/*.sql` files in the report.
-   - Updating DDL knowledge files does not by itself require running `../fons4ai-project-knowledge-base-init/scripts/validate_sql_knowledge.py`; use it only when the user explicitly requests SQL artifact validation or when diagnosing malformed existing SQL knowledge files.
-   - Do not promote debugging notes or guesses into source-of-truth documents from this skill unless explicitly scoped.
+1. 收集 BUG 事实。
+   - 依据复现门禁确认问题位置、期望/实际、复现信息、既有期望来源、最小失败信号和修复授权依据。
+   - 若 BUG 属于已有 SDD 功能，记录关联 `spec/features/<yyyymmdd>/`、`REQ-###`、`AC-###`、任务或历史报告。
+   - 信息不足时先提问；不得直接修改代码。
 
-## Hard Gates
+2. 复现或建立最小失败信号。
+   - 优先使用自动化失败测试或可执行命令。
+   - 无法自动化复现时，记录精确手动步骤、观察结果和替代验证证据。
+   - 复现失败时，不得进入修复；按“阻塞交付规则”说明当前状态。
 
-- No reproducible signal, no code edit.
-- No root-cause hypothesis, no fix.
-- No verification result, no task completion.
-- No manual verification steps, no final completion.
-- No report, no bugfix completion.
+3. 诊断根因。
+   - 从功能或模块逐步缩小到最小责任代码路径。
+   - 根据规格、测试、真理源或用户明确事实比对既有期望。
+   - 按“BUG 边界判定”区分实现缺陷和需求变更。
 
-## Output Rules
+4. 规划最小修复。
+   - 编辑前说明预计影响的文件。
+   - 保留用户变更和无关文件。
+   - 删除核心逻辑、大段重写、风险迁移或修改数据库结构前必须获得用户确认。
+   - 如果修复需要改变持久化数据模型、表、字段、索引、约束、关系、数据语义或迁移策略，停止编码并建议 `fons4ai-sdd-change`；不得在本技能内直接同步 `.specify/sql/**/*.sql`。
+   - 如果只是读取 SQL 知识确认既有结构，只读取目标文件，不修改 SQL 知识文件。
 
-- Do not create or modify SDD requirements, plans, or tasks unless the user explicitly asks; recommend `fons4ai-sdd-change` instead.
-- Do not invent expected behavior. Use existing specs, tests, truth sources, or explicit user confirmation.
-- End with root cause, changed files, verification commands/results, manual verification steps, report path, knowledge sync need, and follow-up.
+5. 按 Red-Green-Refactor 修复。
+   - RED：可行时新增或更新一个能暴露该 BUG 的聚焦测试。
+   - GREEN：实施能让测试通过的最小代码变更。
+   - REFACTOR：只做局部且必要的清理，避免无关重构。
+   - 无法自动化测试时，记录原因，并提供精确手动验证路径。
+
+6. 验证修复。
+   - 运行能证明 BUG 已修复的聚焦测试或命令。
+   - 运行受影响区域内最小有效回归检查。
+   - 必须提供手动验证步骤和预期结果。
+
+7. 编写 BUG 修复报告。
+   - 默认创建或更新 `specs/bugfixes/<yyyymmdd>/<bug-slug>-bugfix-report.md`。
+   - 使用 `assets/templates/bugfix-report-template.md` 的结构。
+   - 填写复现、既有期望来源、修复授权依据、关联 SDD 功能、风险等级、根因、修复、验证、风险/回滚、知识同步和后续事项。
+   - 根据完成状态设置报告 `Status`：未完成修复或验证时为 `Draft`；代码已修复但只完成局部验证时为 `Fixed`；完成聚焦验证和必要回归验证时为 `Verified`。
+   - 仅诊断、无法复现、缺少授权或被阻塞时，可以生成 `Status: Draft` 报告；不得写成 `Fixed` 或 `Verified`。
+   - 可用时运行报告校验脚本，并修复缺失章节后再交付。
+
+8. 处理知识同步。
+   - 如果修复确认了长期业务、技术、数据或治理事实，在报告中标记 `Knowledge Sync Needed: yes` 并建议 `fons4ai-knowledge-summary`。
+   - 如果 BUG 影响数据结构、DDL 或 SQL 知识，只在报告中记录影响和后续建议；具体变更应转入 `fons4ai-sdd-change` 或后续授权流程处理。
+   - 本技能不得把临时调试笔记、猜测或未验证结论提升为真理源，除非用户明确要求。
+
+## 硬性门禁
+
+- 没有可复现信号或足够失败证据，不得修改代码。
+- 没有修复执行授权，不得修改业务代码。
+- 没有既有期望来源，不得把期望行为写成事实。
+- 没有根因假设，不得实施修复。
+- 没有验证结果，不得宣称任务完成。
+- 没有手动验证步骤，不得最终交付。
+- 没有 BUG 修复报告，不得宣称 BUG 修复完成。
+
+## 阻塞交付规则
+
+如果处于仅诊断模式、无法复现、既有期望冲突、缺少权限/环境、关键日志缺失、缺少修复授权或判断为需求变更，不得创建“已修复”结论。此时只交付：
+
+- 已读取的关键上下文。
+- 当前可确认的问题事实和证据。
+- 阻塞原因。
+- 缺失信息或需要用户确认的问题。
+- 建议下一步动作，例如补充日志、提供环境、确认期望或转入 `fons4ai-sdd-change`。
+
+需要沉淀文件时，只能生成 `Status: Draft` 的 BUG 修复报告。
+
+## 输出契约
+
+默认报告只能写入：
+
+`specs/bugfixes/<yyyymmdd>/<bug-slug>-bugfix-report.md`
+
+输出要求：
+
+- 使用 `assets/templates/bugfix-report-template.md` 作为结构基础。
+- 固定标题和正文以中文为主。
+- 报告中记录事实、证据、结论和验证结果，不暴露内部推理过程。
+- 必须记录处理模式、修复授权依据、风险等级和既有期望来源；没有时写 `无` 或 `待确认`。
+- 若关联已有 SDD 功能，必须记录功能目录、`REQ-###`、`AC-###` 或任务/报告引用；没有关联时写 `无`。
+- 根因必须基于代码、测试、日志、规格、真理源或用户明确事实。
+- 无法自动化测试时，必须写明原因和手动验证步骤。
+- 风险与回滚方案必须可执行或说明不适用原因。
+- 知识同步影响必须明确写 `yes` 或 `no`。
+- 没有未验证项、风险或后续事项时，必须写 `无`，不得省略。
+
+完成后只汇报：
+
+- 根因。
+- 变更内容。
+- 涉及文件。
+- 验证命令和结果。
+- 手动验证步骤。
+- 报告路径。
+- 处理模式、修复授权依据和风险等级。
+- 未验证项。
+- 风险。
+- 是否需要知识汇总。
+- 建议后续事项。
+
+## 禁止事项
+
+禁止以下行为：
+
+- 无复现信号或失败证据就修改代码。
+- 编造期望行为、业务规则、接口、字段、表结构或第三方 API。
+- 把需求变更、验收口径调整或公共契约变化伪装成 BUG 修复。
+- 未经用户确认删除核心逻辑、大范围重构、覆盖既有文档或修改数据库结构。
+- 从本技能创建或修改 SDD 需求、技术设计、任务规划或 CR；若内容属于需求、AC、公共行为、数据语义或长期架构变化，必须切换到 `fons4ai-sdd-change`。
+- 从本技能修改 `.specify/sql/**/*.sql`、执行型 DDL、数据库迁移脚本或数据结构知识快照。
+- 把临时调试日志、猜测、未验证假设写入 `.specify/memory/`、`.specify/sql/` 或 `.specify/rules/`。
+- 未运行可行验证就宣称修复完成。
+- 省略 BUG 修复报告。
