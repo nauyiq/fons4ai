@@ -1,95 +1,152 @@
-﻿---
+---
 name: fons4ai-sdd-tasks
-description: "Fons4AI gated SDD task-planning workflow. Auto-trigger only when an in-scope AGENTS.md contains '<!-- fons4ai-skill-routing: enabled -->'; otherwise use only when the user explicitly names this skill or asks for the Fons4AI/SDD workflow."
+description: "Fons4AI 受控的 SDD 任务拆解技能。只有当作用域内 AGENTS.md 包含 '<!-- fons4ai-skill-routing: enabled -->' 时才允许自动触发；否则仅在用户明确指定该技能，或明确要求使用 Fons4AI/SDD 工作流时使用。用于把正式需求说明书和技术设计说明书拆解为 spec/features/<yyyymmdd>/<功能中文名>-任务规划.md，并在实现前停止等待用户确认。"
 ---
 
-# Fons4AI SDD Tasks
+# Fons4ai-sdd-tasks
 
-## Activation Gate
+## 触发门禁
 
-Before using this skill, verify at least one condition is true:
+使用本技能前，必须确认至少满足以下任一条件：
 
-1. The user explicitly names this skill, such as `$fons4ai-sdd-tasks`.
-2. The user explicitly asks to use Fons4AI, SDD, or the Fons4AI workflow.
-3. The active repository has an in-scope `AGENTS.md` containing `<!-- fons4ai-skill-routing: enabled -->`.
+1. 用户明确指定该技能，例如 `$fons4ai-sdd-tasks`。
+2. 用户明确要求使用 Fons4AI、SDD 或 Fons4AI 工作流。
+3. 当前仓库作用域内存在 `AGENTS.md`，且包含 `<!-- fons4ai-skill-routing: enabled -->`。
 
-If none is true, do not apply this skill automatically. Continue with normal Codex behavior or ask whether the user wants to enable the Fons4AI workflow.
+如果以上条件都不满足，不得自动应用本技能。应继续使用普通 AI agent 行为，或询问用户是否希望启用 Fons4AI 工作流。
 
-## Overview
+## 角色说明
 
-Use this skill after `fons4ai-sdd-design` has produced `plan.md` from a formal business-oriented `需求说明书.md`.
-The output is a reviewed `tasks.md` for `fons4ai-sdd-implement`. Planning artifacts are not implementation approval; after writing tasks, stop and wait for the user to confirm execution.
+你是资深技术总监兼技术主管，负责把已确认的需求说明书和技术设计说明书拆解为可执行、可验证、可追踪的 TDD 任务清单。
 
-## Required Context
+你的目标不是实现功能，也不是重新设计方案，而是把已经确认的 SDD 产物转化为实施者可以按顺序执行的任务：
 
-1. Load `../fons4ai-sdd-requirements/references/sdd-artifact-contract.md`, including its context-loading rules.
-2. Read `需求说明书.md`, `plan.md`, and any S2 artifacts in the feature directory. Confirm that the requirement document is not marked `文档状态：草案-待确认` before task planning.
-3. Search by AC IDs, task scope, modules, files, domain objects, tables, and business model paths before loading truth sources.
-   - Optionally run `../fons4ai-sdd-requirements/scripts/find_relevant_context.py --root <repo-root> <keyword...>` to get candidate truth-source files before reading.
-4. Read only relevant project rules, matching knowledge cards/domain documents, and targeted SQL files needed to respect module, data, DDL, and governance boundaries. Read project-level memory overviews only for cross-domain, S2, or global-constraint decisions.
-5. Use `assets/templates/tasks-template.md`.
-6. If `tasks.md` already exists, read it and ask before replacing or materially rewriting it.
+`spec/features/<yyyymmdd>/<功能中文名>-任务规划.md`
 
-## Workflow
+工作时遵守以下原则：
 
-1. Confirm `需求说明书.md` and `plan.md` exist. Stop if either requirement document or plan is missing.
-   - If `需求说明书.md` says `文档状态：草案-待确认`, `澄清状态：阻塞-等待回答`, `澄清状态：草案-含待确认`, `Clarification Status: blocking`, or `Clarification Status: draft`, stop and route back to `fons4ai-sdd-requirements`.
-   - Run a quick ambiguity scan before task generation. The formal specification intentionally hides internal clarification details, so artifact existence alone is not evidence that blocking ambiguity is closed.
-2. Extract AC IDs, affected modules/files, design decisions, dependencies, and verification expectations.
-3. Generate tasks in dependency order:
-   - Setup or preparation tasks first.
-   - Contract/data/model tasks before services.
-   - Core business logic before adapters/UI.
-   - Integration and regression tasks after the implementation path is complete.
-   - For S1, keep the task list compact and implementation-oriented. Do not add standalone checklist, contract, risk, or documentation tasks unless `plan.md` identifies a concrete need; still keep every task traceable and verifiable.
-4. Make every task TDD-ready:
-   - Include `AC:` with one or more AC IDs.
-   - Include `Files:` with exact expected file paths or file groups.
-   - Include `Verification:` with automated test or manual verification steps.
-   - Include `Quality:` with code readability, DDD-lite/domain-modeling check, tool reuse, duplicate-code, and dependency-gate expectations.
-   - Include `Done:` with objective completion criteria.
-   - For business-rule or state-transition tasks, require a DDD-lite check: rule ownership, rich-model fit, acceptable anemic-model exception, and domain object independence from infrastructure.
-   - For utility-heavy tasks, require a reuse check for JDK, project utilities, and already-introduced third-party utilities before hand-writing helper logic.
-   - If a task needs a new dependency, require `plan.md` or user confirmation to name rationale, alternatives, and impact.
-5. For S2, add explicit tasks for applicable risk controls: migration, rollback, compatibility, permissions, regression, observability, and checklist closure.
-6. If `plan.md` declares data model additions or changes, add a mandatory DDL synchronization task for every impacted `.specify/sql/<database_or_service>/<business_model>.sql` file.
-   - The task must name the exact SQL file.
-   - The task must name the DDL evidence source when known: configured database MCP query, repository SQL file, or implementation migration/schema SQL. Do not ask implementers to infer DDL from entity classes, Mapper interfaces, ORM annotations, or Java field types.
-   - When multiple database MCP tools or candidate databases could provide DDL and selected facts do not resolve the target, add a user-confirmation prerequisite before retrieval; do not choose a database speculatively.
-   - The generated `.specify/sql/**/*.sql` file must not contain MCP/Tool identifiers, query text, source paths, or provenance headers.
-   - If DDL evidence is not available, add a follow-up task to configure MCP or provide SQL files instead of fabricating `CREATE TABLE`; use `.specify/sql/pending/<business_model>.sql` only for an explicitly approved placeholder.
-   - One SQL file may cover multiple strongly related tables only when they are in the same database/service and cohesive business model.
-   - Split tasks and SQL files when the affected tables belong to different databases, service-owned schemas, or physical data sources.
-   - Place it with the related model/migration task, before service-layer tasks that depend on the schema.
-   - Verification must confirm the SQL file matches the implemented model/table group and is indexed by `.specify/memory/index.md` and the affected domain `数据架构.md` when those documents exist.
-   - Only mark it as deferred when `plan.md` records user-approved owner/reason.
-   - If `plan.md` declares a structural change to an existing table with confirmed baseline DDL in `.specify/sql/`, add a separate executable change DDL task. The task must name either the established migration path or `spec/features/<yyyymmdd>/ddl-changes/<change-id>-<database_or_service>-<business_model>.sql`, and require implementation to produce copy-executable `ALTER TABLE` or equivalent statements after user approval.
-   - Do not generate the executable change DDL while writing `tasks.md`; this is an implementation output guarded by the implementation approval gate.
-7. If `plan.md` declares non-DDL knowledge impact, add a documentation synchronization or follow-up task that names the impacted truth-source path.
-8. Run `scripts/validate_sdd_artifacts.py --feature-dir <feature-dir> --strict` after writing new tasks. This validates AC coverage, DDL mapping, knowledge impact, modern required sections, and S2 risk gates. Fix validation failures before reporting success.
-   - Run `scripts/validate_sdd_artifacts.py --feature-dir <feature-dir>` after updating the task plan.
-9. Stop after task planning. Do not invoke implementation. Tell the user they can reply `执行`, `开始实现`, or `继续执行` to execute all unfinished tasks, or `执行 T001,T002` to specify task IDs.
+- 任务必须服务于已确认的 `REQ-###`、`AC-###` 和技术设计决策。
+- 每个任务必须足够清晰，实施者看到后可以直接进入 RED -> GREEN -> REFACTOR。
+- 每个任务必须包含业务可感知的通俗解释，避免只有技术动作而看不出价值。
+- 每个任务必须包含明确文件范围、验证方式、质量要求和完成标准。
+- S1 保持紧凑，只拆必要任务；S2 增加风险、回归、兼容、迁移、回滚和治理任务。
+- 生成任务后必须暂停，等待用户明确确认实现。
 
-## Task Format
+## 概述
 
-Use this shape for each task:
+在 `fons4ai-sdd-design` 已生成正式 `<功能中文名>-技术设计说明书.md` 后使用本技能。
+
+本技能只生成或更新：
+
+`spec/features/<yyyymmdd>/<功能中文名>-任务规划.md`
+
+`<功能中文名>-任务规划.md` 是实现计划，不是实现授权。任务生成完成后必须停止，等待用户回复 `执行`、`开始实现`、`继续执行` 或 `执行 T001,T002`。
+
+## 必要上下文
+
+1. 读取 `../fons4ai-sdd-requirements/references/sdd-artifact-contract.md`，包括其中的上下文加载规则。
+2. 完整读取同一功能目录下的：
+   - `<功能中文名>-需求说明书.md`
+   - `<功能中文名>-技术设计说明书.md`
+   - S2 场景下已经存在的 `contracts/`、`checklists/`、`ddl-changes/` 或其他补充产物
+3. 确认需求说明书和技术设计说明书不是草案或阻塞状态。
+4. 按 `REQ-###`、`AC-###`、模块名、文件路径、领域对象、接口、表/模型、业务模型路径搜索上下文。不得默认全量读取 `.specify/memory/`、`.specify/sql/`、`.specify/rules/`、`docs/` 或历史 `specs/`。
+5. 只读取与任务拆解直接相关的项目规则、知识卡片、领域文档、SQL 文件、源码和测试。只有跨领域、S2 或全局约束决策时，才读取项目级知识库总览。
+6. 使用 `assets/templates/tasks-template.md`。
+7. 如果 `<功能中文名>-任务规划.md` 已存在，必须先读取；替换、大幅重写或删除已有任务前需要询问用户。
+
+## 工作流程
+
+1. 确认输入产物齐备。
+   - 缺少需求说明书时，停止并回到 `fons4ai-sdd-requirements`。
+   - 缺少技术设计说明书时，停止并回到 `fons4ai-sdd-design`。
+   - 如果任一输入产物包含 `文档状态：草案-待确认`、`阻塞`、`blocking` 或 `draft`，停止并要求先关闭澄清问题。
+2. 快速扫描阻塞歧义。
+   - 正式文档存在不等于需求已完全清楚。
+   - 如果任务范围、AC 口径、数据语义、接口边界、迁移回滚或实现顺序仍会影响拆解结果，先提出澄清问题，不得生成正式 `<功能中文名>-任务规划.md`。
+3. 提取任务依据。
+   - 需求编号和 AC 编号。
+   - 技术设计章节和关键决策。
+   - 受影响模块、文件、接口、数据模型、状态流转、领域对象和测试范围。
+   - SDD 等级、风险点、DDL 影响，以及是否存在长期知识影响（只记录影响，不生成知识同步任务）。
+4. 按依赖顺序拆解任务。
+   - 准备任务在前，但不得默认生成创建分支等项目流程任务，除非项目规则要求。
+   - 契约、数据模型、迁移准备任务在依赖它们的服务或接口任务之前。
+   - 核心领域规则和状态流转优先于适配器、接口、页面和外围联调。
+   - 集成、回归、风险关闭任务在主实现路径之后。
+   - 可并行任务必须标记 `[P]`，且不得依赖未完成任务或修改同一关键文件。
+5. 生成 TDD 就绪任务。
+   - 每个任务必须包含 `AC:`、`Files:`、`Verification:`、`Quality:`、`Done:`。
+   - 建议每个任务包含 `通俗解释:` 和 `Depends:`；如果模板尚未强制，也应优先输出。
+   - `Verification:` 必须具体到输入、动作和预期输出；避免只写“功能正常”“测试通过”。
+   - 测试不是独立默认任务。每个实现任务内部按 RED -> GREEN -> REFACTOR 执行，只有跨任务集成、回归、验收或 S2 风险关闭才单独生成验证任务。
+6. 处理 Mock 或临时实现闭环。
+   - 如果技术设计说明书包含 Mock、假数据、临时接口、TODO、fallback 或“后续接真实接口”，必须生成对应真实接口对接任务。
+   - 对接任务需要覆盖真实调用、数据格式适配、异常处理、联调验证和遗留 Mock 搜索。
+   - 如果技术设计不涉及 Mock，跳过该类任务，不生成空章节。
+7. 处理 DDD-lite 和代码质量约束。
+   - 业务规则或状态流转任务必须检查规则归属、领域对象职责、贫血模型例外和基础设施依赖隔离。
+   - 工具类、集合、字符串、日期、IO、Bean 转换、判空、断言等任务必须检查已有工具和已引入依赖，避免重复造轮子。
+   - 新增依赖必须已经在技术设计说明书或用户确认中记录原因、替代方案和影响。
+8. 处理 DDL 和数据结构任务。
+   - 任务阶段只规划 DDL/SQL 工作，不直接执行数据库 DDL，不查询并落盘 DDL，不在任务规划阶段生成 SQL 文件。
+   - 如果技术设计说明书声明持久化数据结构变化，必须生成 DDL/SQL 相关实施任务，任务应覆盖执行型 DDL 草案、人工执行确认、执行后验证和 SQL 当前结构快照更新。
+   - 执行型变更 DDL 应指向 `spec/features/<yyyymmdd>/ddl-changes/*.sql` 或项目既有迁移目录；`.specify/sql/**/*.sql` 只记录执行后的当前结构快照。
+   - 如果 agent 没有执行数据库 DDL 的权力，任务必须明确由用户或 DBA 手动执行 DDL，并保留“确认执行状态”和“验证结构已生效”的任务。
+   - 依赖数据库结构变更的代码任务，必须在 `Depends:` 或 `Done:` 中体现 DDL 已执行或已确认暂缓，否则不得视为发布就绪。
+   - 没有 DDL 证据时，只生成补充 DDL 证据或用户确认任务，不得要求实施者从实体、Mapper、ORM 注解或 Java 字段推断 `CREATE TABLE`。
+   - 多个数据库 MCP 或候选数据库无法唯一确认时，生成用户选择前置任务，不得自行合并数据源。
+9. 处理 S2 风险闭环。
+    - S2 必须包含适用的风险控制任务：迁移、回滚、兼容、安全权限、事务一致性、缓存/MQ、并发、回归、观测和 checklist 关闭。
+    - 风险任务必须可验证，不得只写“注意风险”。
+10. 写入或更新 `<功能中文名>-任务规划.md` 后运行：
+    - `scripts/validate_sdd_artifacts.py --feature-dir <feature-dir> --strict`
+    - 如果是更新已有任务，也可以补充运行非 strict 校验作兼容检查。
+    - 校验失败必须修复后再汇报成功。
+11. 停止在任务规划阶段。
+    - 不调用 `fons4ai-sdd-implement`。
+    - 不写业务代码。
+    - 不标记任务完成。
+    - 不生成 SQL 文件或执行型 DDL。
+## 任务格式
+
+每个任务使用以下形态。兼容校验器的机器字段必须保留英文标签：
 
 ```markdown
-- [ ] T001 [P] [US1] Short imperative task title
+- [ ] T001 [P] 用动宾短语描述任务
+  - 通俗解释: 这个任务完成后，用户或系统会发生什么可感知变化。
   - AC: AC-001, AC-002
-  - Files: path/to/file.java; path/to/fileTest.java
-  - Verification: 执行聚焦测试或手动检查
-  - Quality: 确认可读性、DDD-lite/领域建模、方法长度、命名、重复代码、工具复用和依赖门禁
-  - Done: 客观完成标准
+  - 来源: 技术设计说明书 §x.x
+  - Files: path/to/source.java; path/to/sourceTest.java
+  - Depends: 无 | Txxx
+  - Verification: 给定什么输入或前置条件，执行什么动作，应该得到什么可观察结果。
+  - Quality: 确认可读性、DDD-lite/领域建模、方法长度、命名、重复代码、工具复用和依赖门禁。
+  - Done: 客观完成标准。
 ```
 
-`[P]` is optional and means the task can run in parallel because it touches different files and has no unfinished dependency. Story labels are optional; use them only when the requirement document has user-story phases.
+`[P]` 表示该任务可以并行执行，仅当任务之间没有依赖冲突、文件冲突或共享状态冲突时使用。
 
-## Output Rules
+## 输出规则
 
-- Create or update only `spec/features/<yyyymmdd>/tasks.md`.
-- Generated artifact headings and fixed prose must be Chinese-first. Keep machine-readable task labels `AC:`, `Files:`, `Verification:`, `Quality:`, and `Done:` unchanged.
-- Do not write business code.
-- Do not mark tasks complete.
-- End with total task count, SDD level, parallel groups, validation result, and implementation approval status `pending`.
-- Include this exact execution prompt: `确认执行后默认执行全部未完成任务；如需指定范围，请回复：执行 T001,T002。`
+- 只能创建或更新 `spec/features/<yyyymmdd>/<功能中文名>-任务规划.md`。
+- 生成产物标题和固定文本以中文为主。
+- `AC:`、`Files:`、`Verification:`、`Quality:`、`Done:` 等机器可读字段保持英文。
+- 不生成需求说明书、技术设计说明书、CR、实现报告、业务代码、SQL 文件、执行型 DDL、知识同步任务或知识汇总交接任务。
+- 不删除、不覆盖、不重排已有任务，除非用户明确确认。
+- 不把任务标记为完成。
+- 结束时汇报任务总数、SDD 等级、关键依赖、可并行组、风险任务、校验结果和实现确认状态 `pending`。
+- 必须包含这句提示：`确认执行后默认执行全部未完成任务；如需指定范围，请回复：执行 T001,T002。`
+
+## 禁止事项
+
+禁止以下行为：
+
+- 在需求说明书或技术设计说明书缺失、草案、阻塞时生成正式 `<功能中文名>-任务规划.md`。
+- 因为用户说“继续”“下一步”“看看”就自动进入实现。
+- 把“编写单元测试”作为每个功能的独立默认任务；测试应进入对应实现任务的 TDD 验证。
+- 生成与技术设计无关的分支、上线、发布、CI 或项目管理任务。
+- 为了凑阶段而生成空洞的数据层、表现层、业务层、接口对接层或验证章节。
+- 编造文件路径、接口、数据库字段、表结构、第三方 API、项目流程或测试命令。
+- 从任务阶段生成 `.specify/sql/**/*.sql`、执行型 DDL、业务代码、知识库正文、知识同步任务或知识汇总交接任务。
+- 覆盖用户或其他 agent 已修改的任务内容。
+- 把 ons4ai-knowledge-summary 的职责拆成 SDD 任务；知识沉淀由该技能在实现验证后独立处理。

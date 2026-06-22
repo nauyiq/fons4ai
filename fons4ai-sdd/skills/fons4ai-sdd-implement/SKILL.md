@@ -1,86 +1,135 @@
-﻿---
+---
 name: fons4ai-sdd-implement
-description: "Fons4AI gated SDD implementation workflow. Requires the user's latest message to explicitly confirm implementation; if no task IDs are specified, execute all unfinished tasks."
+description: "Fons4AI 受控的 SDD 实现技能。只有当作用域内 AGENTS.md 启用 Fons4AI 路由，或用户明确指定该技能/SDD 流程，并且最新用户消息明确确认执行时才使用；未指定任务 ID 时默认执行任务规划中的全部未完成任务。"
 ---
 
-# Fons4AI SDD Implement
+# Fons4ai-sdd-implement
 
-## Activation Gate
+## 触发门禁
 
-Before using this skill, verify at least one condition is true:
+使用本技能前，必须同时满足以下条件：
 
-1. The user explicitly names this skill, such as `$fons4ai-sdd-implement`.
-2. The user explicitly asks to use Fons4AI, SDD, or the Fons4AI workflow.
-3. The active repository has an in-scope `AGENTS.md` containing `<!-- fons4ai-skill-routing: enabled -->`.
+1. 满足 Fons4AI 路由条件之一：
+   - 用户明确指定该技能，例如 `$fons4ai-sdd-implement`。
+   - 用户明确要求使用 Fons4AI、SDD 或 Fons4AI 工作流。
+   - 当前仓库作用域内存在 `AGENTS.md`，且包含 `<!-- fons4ai-skill-routing: enabled -->`。
+2. 最新用户消息明确确认进入实现。
+   - 未指定任务 ID 时，默认选择 `<功能中文名>-任务规划.md` 中全部未完成任务。
+   - 指定任务 ID 时，只选择用户指定的未完成任务。
 
-If none is true, do not apply this skill automatically. Continue with normal Codex behavior or ask whether the user wants to enable the Fons4AI workflow.
+如果任一条件不满足，不得自动实现。只说明需要用户回复 `执行`、`开始实现`、`继续执行`，或 `执行 T001,T002`。
 
-## Overview
+## 角色说明
 
-Use this skill only after `tasks.md` exists and the user's latest message explicitly confirms implementation. It executes planned tasks with TDD and updates task status.
-All features use the S1 or S2 path.
+你是高级开发工程师，负责把已经确认的 SDD 任务规划落实为高质量代码。
 
-## Required Context
+你的核心能力不是重新设计需求或扩展范围，而是：
 
-1. Load `../fons4ai-sdd-requirements/references/sdd-artifact-contract.md`, including its context-loading rules.
-2. Read `spec/features/<yyyymmdd>/tasks.md` first.
-3. Search by selected task IDs, AC IDs, file paths, modules, domain objects, business model names, and SQL paths before loading truth sources.
-   - Optionally run `../fons4ai-sdd-requirements/scripts/find_relevant_context.py --root <repo-root> <keyword...>` to get candidate truth-source files before reading.
-4. Read only relevant project rules, matching knowledge cards/domain documents, targeted SQL files, and governance constraints for the selected tasks. Read project-level memory overviews only for cross-domain, S2, or global-constraint decisions.
-5. Load `需求说明书.md`, `plan.md`, or S2 artifacts only when the selected task references them or when the task text is insufficient.
-6. Use `assets/templates/implementation-report-template.md` for completion reports.
+- 严格按 `<功能中文名>-任务规划.md` 执行任务。
+- 用 TDD 或等价验证闭环保证行为正确。
+- 写出可读、可维护、符合项目风格的代码。
+- 优先复用已有工具类、组件、领域对象和已引入依赖。
+- 发现任务、设计、DDL 或验收口径有问题时及时停止，不边做边扩大范围。
 
-## Workflow
+## 职责边界
 
-1. Confirm implementation approval from the user's latest message.
-   - Valid approval without task IDs includes `执行`, `开始实现`, `继续执行`, `开始开发`, or an equivalent explicit request to implement. In this case, select all unfinished tasks.
-   - Valid approval with task IDs includes patterns such as `执行 T001`, `执行 T001,T002`, or `实现 T003`. In this case, select only the specified unfinished tasks.
-   - Ambiguous follow-ups such as `看看`, `下一步是什么`, `继续看`, or a generated `tasks.md` alone are not approval. Stop and ask the user to confirm execution.
-   - Capture the exact approval evidence from the latest user message, either as a short quote or a concise message summary. If this evidence cannot be identified, stop.
-2. Identify the requested feature directory. If the feature directory is ambiguous, ask for the exact feature path.
-3. Select tasks:
-   - If task IDs are named in the latest user message, use exactly those task IDs.
-   - If no task IDs are named but implementation is clearly approved, use all unfinished tasks in dependency order.
-4. Verify prerequisites:
-   - `tasks.md` exists.
-   - Selected tasks are unchecked.
-   - Dependency tasks are already complete unless the user explicitly approves a different order.
-   - The working tree may contain user changes; read affected files before editing and do not revert unrelated work.
-5. Before code edits, state the selected tasks and expected file scope. Ask before deleting or materially rewriting existing code.
-6. Execute each task with Red-Green-Refactor:
-   - RED: write or update the focused test first and confirm it fails for the expected reason.
-   - GREEN: implement the smallest code change that passes the test.
-   - Before REFACTOR: run a code quality self-check for readability, method length, expressive naming, DDD-lite/domain-modeling fit, duplicate logic, utility/package reuse, dependency gate, exception/logging style, and test readability.
-   - For business behavior, prefer rich domain methods for core rules, state transitions, validation, and invariants. Keep application services focused on orchestration, transactions, permissions, external collaboration, and persistence coordination.
-   - Do not force full DDD structures for simple CRUD, read-only queries, or thin wrappers; record the lightweight/anemic-model exception when applicable.
-   - REFACTOR: improve structure while keeping tests green. Prefer JDK, project utilities/components, and already-introduced third-party utilities such as Hutool, Apache Commons, or Guava before hand-writing common helper logic.
-   - If a new dependency appears necessary, stop unless `plan.md` or the user has confirmed rationale, alternatives, and impact.
-7. Run the task verification from `tasks.md`, then run the smallest useful regression check.
-8. Mark completed tasks as `[x]` in `tasks.md` only after verification passes.
-9. When a selected task names `.specify/sql/<database_or_service>/<business_model>.sql`, create or update that SQL file as part of the same task after reading any existing file.
-   - Keep one database-scoped cohesive business model per SQL file.
-   - Multiple strongly related tables may share one SQL file only when they belong to the same database/service.
-   - Never merge DDL from different databases, service-owned schemas, or physical data sources into one SQL file.
-   - Preserve database/service, business model, table list, status, and last generated date in the SQL header.
-   - SQL knowledge updates must be backed by actual DDL evidence from implementation migration/schema SQL, repository SQL files, or configured database MCP query results. Do not infer `CREATE TABLE` from entity classes, Mapper interfaces, ORM annotations, or Java field types.
-   - If multiple database MCP tools or candidate databases could provide required DDL and selected tasks or project facts do not resolve the target, stop and ask the user to select the MCP tool/database scope before retrieving DDL.
-   - Generated SQL knowledge files must not contain MCP/Tool identifiers, query text, source paths, `Source`, `Migration Script`, or `DDL Evidence` metadata.
-   - If the task names `.specify/sql/pending/<business_model>.sql`, keep the database/service as `待确认` until a later SDD change or knowledge-summary task confirms ownership.
-   - If implementation changes a persistent model but no selected task names the matching database-scoped business-model SQL file, stop and recommend returning to `fons4ai-sdd-tasks` or `fons4ai-sdd-change` to add the DDL sync task.
-   - Updating SQL knowledge files does not by itself require running `../fons4ai-project-knowledge-base-init/scripts/validate_sql_knowledge.py`; use it only when the user explicitly requests SQL artifact validation or when diagnosing malformed existing SQL knowledge files.
-   - If implementation changes the structure of an existing table and the selected task identifies confirmed baseline DDL in `.specify/sql/`, generate the planned executable change DDL file after approval. Prefer the project's migration directory; otherwise create `spec/features/<yyyymmdd>/ddl-changes/<change-id>-<database_or_service>-<business_model>.sql`.
-   - The executable change DDL file must contain the concrete `ALTER TABLE` or database-equivalent operations needed for this change, with concise execution prerequisites and rollback notes when required. It is provided for user execution and must not be substituted by the updated `.specify/sql/` current-state snapshot; do not write MCP/Tool identifiers, query text, or source-path/provenance metadata into this SQL file.
-   - If the task requires executable change DDL but does not identify an output path or the original DDL baseline is not reliable, stop and return to task/change planning rather than inventing an executable script.
-10. Write a report under `spec/features/<yyyymmdd>/reports/` summarizing tasks, approval evidence, files, tests, AC coverage, unresolved risks, updated DDL files, S2 gate closure when applicable, and whether knowledge-base or source-of-truth documents need synchronization.
+本技能只负责执行已授权的实现任务，并更新实现相关产物：
 
-## Output Rules
+- 业务代码、测试、配置和必要的实现文件。
+- `<功能中文名>-任务规划.md` 中被选中任务的完成状态。
+- 必要的执行型 DDL 草案或 `.specify/sql/**/*.sql` 当前结构快照，仅限被选中任务明确要求。
+- `spec/features/<yyyymmdd>/reports/<功能中文名>-实施报告.md`。
 
-- Follow the task plan; do not implement unplanned scope.
-- Generated implementation reports must use Chinese-first headings and fixed prose. Keep file names, IDs, paths, and technical markers such as `T001`, `AC-001`, `RED`, `GREEN`, and `REFACTOR` unchanged.
-- Never treat `需求说明书.md`, `plan.md`, `tasks.md`, or a previous planning response as implementation approval. Approval must come from the latest user message.
-- Record `实现确认依据` in the implementation report. Use the latest user message quote or concise summary; never infer approval from artifact existence.
-- If the plan is wrong or incomplete, stop and recommend returning to `fons4ai-sdd-tasks` or `fons4ai-sdd-change`.
-- Treat `.specify/sql/**/*.sql` as required knowledge artifacts for planned persistent data model additions or changes, not as optional follow-up.
-- Treat planned executable change DDL for confirmed existing-table structural changes as an implementation deliverable, separate from `.specify/sql/**/*.sql` current-state knowledge.
-- Never skip RED for behavior changes. If automated testing is impossible, record an explicit manual verification reason and steps.
-- End with completed task IDs, changed files, verification commands/results, knowledge/DDL sync need, remaining tasks, and suggest `fons4ai-knowledge-summary` when verified changes should be merged into a knowledge base or source-of-truth document.
+本技能不得执行以下工作：
+
+- 不生成或重写需求说明书、技术设计说明书、任务规划或 CR。
+- 不执行未出现在任务规划中的需求或技术范围。
+- 不生成知识同步任务、知识汇总交接任务或知识库正文。
+- 不直接执行生产数据库 DDL。
+- 不修改与选中任务无关的代码、文档、配置或格式。
+
+## 必要上下文
+
+1. 读取 `../fons4ai-sdd-requirements/references/sdd-artifact-contract.md`，包括上下文加载和实现确认规则。
+2. 优先读取 `spec/features/<yyyymmdd>/<功能中文名>-任务规划.md`。
+3. 按选中任务 ID、AC ID、`Files:`、模块名、领域对象、业务模型、接口和 SQL 路径搜索上下文。
+4. 只读取与选中任务直接相关的源码、测试、配置、项目规则、知识卡片、领域文档和 SQL 文件。
+5. 仅当任务描述不足、存在冲突、涉及跨域/S2/DDL/契约风险时，再读取 `<功能中文名>-需求说明书.md`、`<功能中文名>-技术设计说明书.md`、`contracts/`、`checklists/` 或其他补充产物。
+6. 使用 `assets/templates/implementation-report-template.md` 生成实施报告。
+
+## 执行流程
+
+1. 确认实现授权。
+   - 有效授权包括 `执行`、`开始实现`、`继续执行`、`开始开发`，或语义等价的明确实现请求。
+   - 有效指定任务包括 `执行 T001`、`执行 T001,T002`、`实现 T003`。
+   - `看看`、`下一步是什么`、`继续看`、生成任务规划本身、历史对话中的确认，都不是实现授权。
+   - 必须记录最新用户消息中的实现确认依据；无法识别依据时停止。
+2. 确认功能目录。
+   - 若存在多个候选 `spec/features/<yyyymmdd>/`，先询问用户明确路径。
+3. 选择任务。
+   - 用户指定任务 ID 时，只选择这些未完成任务。
+   - 用户未指定任务 ID 但明确确认执行时，按依赖顺序选择全部未完成任务。
+4. 执行前检查。
+   - `<功能中文名>-任务规划.md` 存在且包含实现确认门禁。
+   - 选中任务仍是 `[ ]` 未完成。
+   - 依赖任务已完成；否则必须停止，除非用户明确批准不同顺序。
+   - `Files:` 覆盖预计修改文件；如需新增或修改未列文件，先说明原因。大范围新增必须回到任务规划。
+   - 若任务涉及 DDL、权限、安全、兼容、事务或外部接口，确认任务中已有对应验证和风险控制要求。
+   - 工作区可能有用户改动；编辑前读取受影响文件，不得回滚无关改动。
+5. 执行前向用户简要说明选中任务和预计文件范围。
+   - 删除文件、删除核心逻辑、大范围重构、覆盖已有内容前必须再次确认。
+6. 按任务执行 RED -> GREEN -> REFACTOR。
+   - RED：业务行为变化必须先写或更新聚焦测试，并确认失败原因符合预期。
+   - GREEN：用最小代码改动让聚焦测试通过。
+   - REFACTOR 前自检：可读性、方法长度、命名表达力、DDD-lite/领域建模、重复逻辑、工具复用、依赖门禁、异常日志风格、测试可读性。
+   - REFACTOR：在测试保持通过的前提下整理结构，不混入无关重构。
+7. 代码质量要求。
+   - 核心业务规则、状态流转、校验和不变量优先下沉到领域对象或领域方法。
+   - 应用服务主要负责编排、事务、权限、外部协作和持久化协调。
+   - 简单 CRUD、纯查询或薄包装逻辑不强行 DDD 化，但报告中说明轻量实现原因。
+   - 常见字符串、集合、日期、IO、Bean 转换、判空、断言等逻辑，优先使用 JDK、项目已有工具、已引入三方工具包，再考虑手写。
+   - 新增依赖必须已在技术设计说明书或用户确认中说明原因、替代方案和影响；否则停止。
+8. 执行任务验证。
+   - 先运行任务 `Verification:` 指定的聚焦验证。
+   - 再运行最小必要回归检查。
+   - 自动化测试不可用时，必须记录原因和可复现的手动验证步骤。
+9. 更新任务状态。
+   - 只有验证通过后，才能把对应任务从 `[ ]` 改为 `[x]`。
+   - DDL 草案生成任务：DDL 草案生成并通过自检后可完成。
+   - DDL 执行确认任务：必须用户确认已执行，或通过只读数据库 MCP/查询确认结构生效后才能完成。
+   - DDL 未执行、外部接口未就绪、依赖任务未完成或验证失败时，任务保持 `[ ]`，在报告中标记阻塞原因。
+10. 生成实施报告。
+    - 报告路径：`spec/features/<yyyymmdd>/reports/<功能中文名>-实施报告.md`。
+    - 记录实现确认依据、任务范围、完成/未完成/阻塞任务、变更文件、TDD 记录、验证结果、AC 覆盖、代码质量复盘、DDL 状态、长期知识影响和风险。
+
+## DDL 与 SQL 规则
+
+仅当被选中任务明确命名 SQL/DDL 路径或 DDL 工作项时处理。
+
+- agent 可以生成执行型 DDL 草案，但不得直接执行生产 DDL。
+- 执行型 DDL 草案优先写入项目既有迁移目录；若项目没有约定目录，写入 `spec/features/<yyyymmdd>/ddl-changes/<INIT|CR-xxx>-<database_or_service>-<business_model>.sql`。
+- 执行型 DDL 草案必须包含具体 `ALTER TABLE` 或数据库等价语句、执行前置条件和必要回滚说明。
+- 执行型 DDL 草案只提供给用户或 DBA 审核执行，不等于数据库已经变更。
+- `.specify/sql/**/*.sql` 是执行后的当前结构快照，不是迁移脚本。
+- 更新 `.specify/sql/**/*.sql` 必须基于真实 DDL 证据：已确认执行的变更 DDL、仓库正式 SQL/迁移文件、或只读数据库 MCP/查询结果。
+- 不得从实体类、Mapper、ORM 注解或 Java 字段推断 `CREATE TABLE`。
+- 多个数据库 MCP 或候选数据库无法唯一确认时，停止并询问用户选择。
+- SQL 文件不得包含 MCP/Tool 标识、查询文本、来源路径、`Source`、`Migration Script` 或 `DDL Evidence` 等来源元数据。
+- 实现中发现持久化结构变化但任务未规划 SQL/DDL 工作时，停止并建议回到 `fons4ai-sdd-tasks` 或 `fons4ai-sdd-change` 补任务。
+
+## 失败处理
+
+- 测试失败：停止，保留失败命令、错误摘要和当前判断，不标记任务完成。
+- 任务与设计冲突：停止，说明冲突点，建议回到设计或任务规划。
+- 实现会改变需求、AC 或公共行为：停止，建议进入 `fons4ai-sdd-change`。
+- DDL 基线不可靠或输出路径不明确：停止，回到任务规划或变更规划，不编造脚本。
+- 用户改动与当前任务冲突：停止并说明冲突文件，等待用户决策。
+
+## 输出规则
+
+- 只执行选中任务，不实现未规划范围。
+- 默认只修改任务 `Files:` 指定文件；新增文件或修改未列文件必须有明确理由。
+- 报告和固定标题以中文为主；`T001`、`AC-001`、`RED`、`GREEN`、`REFACTOR`、路径和命令保持原样。
+- 必须在报告中记录 `实现确认依据`，不得从产物存在或历史对话推断授权。
+- 结束回复包含：完成任务、未完成/阻塞任务、变更文件、验证结果、DDL 状态、长期知识影响、风险和后续建议。
+- 可记录“长期知识影响：是/否”，但不得生成知识同步任务或知识汇总交接任务；知识沉淀由 `fons4ai-knowledge-summary` 在用户显式触发后处理。

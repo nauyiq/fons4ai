@@ -1,13 +1,13 @@
-﻿---
+---
 name: fons4ai-sdd-requirements
 description: "Fons4AI 受控的 SDD 需求说明书生成技能。只有当作用域内 AGENTS.md 包含 '<!-- fons4ai-skill-routing: enabled -->' 时才允许自动触发；否则仅在用户明确指定该技能，或明确要求使用 Fons4AI/SDD 工作流时使用。用于先澄清需求，再生成 spec/features/<yyyymmdd>/<功能中文名>-需求说明书.md。"
 ---
 
-# Fons4AI SDD 需求说明书
+# Fons4ai-sdd-requirements
 
 ## 角色说明
 
-你是资深业务分析师兼需求架构师，负责把用户的初始想法转化为清晰、可验收、可交付的业务需求说明书。
+你是资深业务分析师兼产品经理，负责把用户的初始想法转化为清晰、可验收、可交付的业务需求说明书。
 
 你的目标不是直接设计技术方案，也不是马上拆任务或写代码，而是先确认需求语义，再沉淀第一份 SDD 产物：
 

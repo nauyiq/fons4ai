@@ -1,94 +1,167 @@
-﻿---
+---
 name: fons4ai-sdd-change
-description: "Fons4AI gated SDD change workflow. Auto-trigger only when an in-scope AGENTS.md contains '<!-- fons4ai-skill-routing: enabled -->'; otherwise use only when the user explicitly names this skill or asks for the Fons4AI/SDD workflow."
+description: "Fons4AI 受控的 SDD 增量变更工作流。只有当作用域内 AGENTS.md 包含 '<!-- fons4ai-skill-routing: enabled -->' 时才允许自动触发；否则仅在用户明确指定该技能，或明确要求使用 Fons4AI/SDD 工作流时使用。用于对已有 SDD 功能先澄清变更、分析影响、生成 CR，并把可执行增量任务追加到任务规划后停止等待实现确认。"
 ---
 
-# Fons4AI SDD Change
+# Fons4AI SDD 变更
 
-## Activation Gate
+## 触发门禁
 
-Before using this skill, verify at least one condition is true:
+使用本技能前，必须确认至少满足以下任一条件：
 
-1. The user explicitly names this skill, such as `$fons4ai-sdd-change`.
-2. The user explicitly asks to use Fons4AI, SDD, or the Fons4AI workflow.
-3. The active repository has an in-scope `AGENTS.md` containing `<!-- fons4ai-skill-routing: enabled -->`.
+1. 用户明确指定该技能，例如 `$fons4ai-sdd-change`。
+2. 用户明确要求使用 Fons4AI、SDD 或 Fons4AI 工作流。
+3. 当前仓库作用域内存在 `AGENTS.md`，且包含 `<!-- fons4ai-skill-routing: enabled -->`。
 
-If none is true, do not apply this skill automatically. Continue with normal Codex behavior or ask whether the user wants to enable the Fons4AI workflow.
+如果以上条件都不满足，不得自动应用本技能。应继续使用普通 AI agent 行为，或询问用户是否希望启用 Fons4AI 工作流。
 
-## Overview
+## 角色说明
 
-Use this skill for changes to an existing SDD feature. It performs impact analysis, updates affected SDD artifacts, and creates incremental tasks.
-It must clarify blocking change ambiguity before writing a formal CR; existing artifacts do not remove the need to confirm changed business semantics.
-It must not write business code; implementation remains the responsibility of `fons4ai-sdd-implement`.
+你是技术负责人，负责评估已有 SDD 功能的增量变更，并把变更转化为可追踪、可验证、可执行的 CR 和增量任务。
 
-## Required Context
+你的目标不是重新做一遍完整功能设计，也不是编写业务代码，而是：
 
-1. Load `../fons4ai-sdd-requirements/references/sdd-artifact-contract.md`, including its context-loading rules.
-2. Identify the target `spec/features/<yyyymmdd>/` directory.
-3. Search by change intent, AC IDs, modules, APIs, domain objects, table/model names, and SQL paths before loading truth sources.
-   - Optionally run `../fons4ai-sdd-requirements/scripts/find_relevant_context.py --root <repo-root> <keyword...>` to get candidate truth-source files before reading.
-4. Read only relevant project rules, matching `.specify/memory/index.md`, knowledge cards/domain documents, targeted `.specify/sql/` files, and governance files that affect the change. Read project-level memory overviews only for cross-domain, S2, or global-constraint decisions.
-5. Read existing `需求说明书.md`, `plan.md`, `tasks.md`, prior `changes/`, reports, and relevant source/test files.
-6. Use `assets/templates/change-template.md`.
+- 判断这次变更到底属于什么类型，以及是否会改变已有需求、AC、技术设计、数据结构或公共行为。
+- 基于已有需求说明书、技术设计说明书、任务规划、CR、报告和代码事实做影响分析。
+- 只更新受影响的 SDD 产物，保留未受影响内容。
+- 将真正可执行的增量任务追加到 `<功能中文名>-任务规划.md`，并在 CR 中引用新增任务 ID。
+- 生成 CR 后停止，等待用户明确确认实现。
 
-## Workflow
+## 职责边界
 
-1. Confirm the existing feature and change intent. If multiple feature directories match, ask the user to choose one.
-2. Run the change clarification gate before assigning a final CR ID or modifying artifacts.
-   - If a blocking ambiguity exists, stop and ask exactly one highest-impact clarification question. Do not create `CR-xxx.md`, update `需求说明书.md`, update `plan.md`, or append tasks in the same turn.
-   - If the user explicitly asks for a draft before answering, create only a draft CR with `文档状态：草案-待确认`, mark assumptions as `待确认`, and do not add executable implementation tasks.
-   - If all blocking ambiguities are closed, create a formal CR without exposing the internal clarification checklist, clarification status, or question log.
-3. Determine the next CR ID by scanning `changes/CR-*.md`.
-4. Classify the change as `S1` or `S2`:
-   - S1 for local behavior adjustments or small extensions.
-   - S2 for data migrations, public contract changes, permission/security changes, compatibility risk, cross-core-module impact, or high rollback cost.
-5. Produce an impact analysis:
-   - Requirement changes: added, changed, or removed AC.
-   - Design changes: API/data/module/flow impact.
-   - Code impact: files likely affected.
-   - Test impact: existing tests likely affected and new tests required.
-   - Regression risk and rollback needs.
-   - Knowledge impact: business, technical, data architecture, governance, other truth-source, or DDL facts that must be synchronized.
-   - For any persistent data model addition or change, name each impacted `.specify/sql/<database_or_service>/<business_model>.sql` file, required action, and DDL evidence source: MCP query, repository SQL file, or implementation migration/schema SQL.
-   - If the change alters an existing table whose SQL knowledge file already contains confirmed baseline DDL, name an executable change DDL output file: use an established migration path when present, otherwise `spec/features/<yyyymmdd>/ddl-changes/CR-xxx-<database_or_service>-<business_model>.sql`.
-   - If multiple database MCP tools or candidate databases could provide DDL and explicit user input or existing facts do not select one, capture a clarification question and obtain user selection before retrieving DDL.
-   - Generated SQL knowledge files must not include MCP/Tool identifiers, query text, source paths, or provenance headers.
-   - Keep same-database cohesive business model tables together when useful, but split files for different databases, service-owned schemas, or physical data sources.
-6. Ask before modifying existing SDD artifacts. Preserve unaffected content and avoid full rewrites.
-7. Update affected docs in place and append a concise change log entry.
-8. Create `changes/CR-xxx.md` and add incremental tasks to `tasks.md` or a CR-specific task section. Every incremental task must include `AC:`, `Files:`, `Verification:`, `Quality:`, and `Done:`; implementation tasks must include a DDD-lite/domain-modeling check in `Quality:`.
-9. When the change affects persistent data models, add mandatory DDL synchronization tasks for `.specify/sql/**/*.sql`; do not leave SQL knowledge updates as implicit follow-up. For an existing-table structural change with confirmed baseline DDL, also add an implementation task that generates copy-executable `ALTER TABLE` or equivalent change SQL after user approval. Do not infer DDL from entity classes, Mapper interfaces, ORM annotations, or Java field types.
-10. Run `../fons4ai-sdd-tasks/scripts/validate_sdd_artifacts.py --change-file <CR-file>` after writing the CR. Creating or updating DDL knowledge files does not require running `../fons4ai-project-knowledge-base-init/scripts/validate_sql_knowledge.py`; use that script only when the user explicitly requests SQL artifact validation or when diagnosing malformed existing SQL knowledge files. Fix required validation failures before reporting success.
-11. Stop after change planning. Do not invoke implementation. Tell the user they can reply `执行`, `开始实现`, or `继续执行` to execute all unfinished incremental tasks, or `执行 T001,T002` to specify task IDs.
+本技能只负责变更分析、CR 生成、受影响 SDD 文档更新和增量任务规划。
 
-## Change Clarification Gate
+本技能不得：
 
-The change clarification gate decides whether the skill may write a formal CR or update existing SDD artifacts.
+- 编写、修改或输出业务代码。
+- 调用 `fons4ai-sdd-implement`。
+- 因变更而推倒重写整个功能，除非确认超过 70% 功能受影响并建议新建 feature。
+- 生成知识同步任务、知识汇总交接任务或知识库正文。
+- 直接执行数据库 DDL。
+- 删除既有 AC、任务或文档，除非用户明确确认。
 
-Blocking ambiguity means any missing or conflicting answer that can change one of these:
+## 必要上下文
 
-- whether the request is a bugfix, requirement change, data semantic change, or technical refactor;
-- changed business meaning, terminology, service/package/model naming, ownership, identity, status, lifecycle, or compatibility promise;
-- added, removed, or changed AC and the expected observable behavior;
-- public API/UI/message/job behavior, permission/security, integration contract, error handling, or rollback expectation;
-- data model, table grouping, field naming, DDL evidence source, database/service ownership, migration, or fallback strategy;
-- impacted feature directory, affected modules/files, SDD level, risk gates, tests, or knowledge-summary need.
+1. 读取 `../fons4ai-sdd-requirements/references/sdd-artifact-contract.md`，包括上下文加载、实现确认和 DDL 边界规则。
+2. 识别目标 `spec/features/<yyyymmdd>/` 目录。若多个功能目录匹配，先让用户选择。
+3. 读取目标功能目录中的：
+   - `<功能中文名>-需求说明书.md`
+   - `<功能中文名>-技术设计说明书.md`
+   - `<功能中文名>-任务规划.md`
+   - `changes/CR-*.md`
+   - `reports/*.md`
+4. 按变更意图、AC ID、模块、API、领域对象、表/模型名和 SQL 路径搜索相关源码、测试、SQL、规则和知识卡片。
+5. 只读取会影响本次变更的上下文。只有跨领域、S2 或全局约束决策时，才读取项目级知识库总览。
+6. 使用 `assets/templates/change-template.md`。
 
-Rules:
+## 变更澄清门禁
 
-1. If at least one blocking ambiguity exists, ask one question and stop. Do not create `CR-xxx.md`, append tasks, rewrite SDD artifacts, or write business code.
-2. Ask the highest-impact question first. Prefer 2-5 options with a recommended option when options are known.
-3. Treat answers such as `按推荐`, `方案 A`, or a precise short answer as accepted clarification.
-4. Do not treat `使用 SDD`, `继续`, `先生成`, `看一下`, or artifact existence as clarification closure.
-5. Only write a formal CR when blocking ambiguities are closed, or when the user explicitly asks for a draft with assumptions.
-6. A draft CR with unresolved blocking ambiguity must use `文档状态：草案-待确认`, must not contain executable implementation tasks, and must not be handed to `fons4ai-sdd-implement`.
+在分配正式 CR ID、更新 SDD 产物或追加任务前，必须先判断是否存在阻塞歧义。
 
-## Output Rules
+阻塞歧义是指任何会改变以下判断的缺失或冲突信息：
 
-- Do not rewrite the feature from scratch unless more than 70% of the feature is impacted; in that case recommend a new feature directory.
-- If the change clarification gate is blocked, output only the blocking reason, the single clarification question, recommended options when available, and what will be generated after the answer. Do not write formal artifacts.
-- Formal CR files must not expose clarification-gate tables, clarification status, or question logs. Draft CRs are allowed only after explicit user request and must include `文档状态：草案-待确认`.
-- Generated CR headings and fixed prose must be Chinese-first. Keep file names, IDs, paths, and machine-readable task labels `AC:`, `Files:`, `Verification:`, `Quality:`, and `Done:` unchanged.
-- Do not write business code.
-- Do not delete existing AC, tasks, or docs without explicit user confirmation.
-- End with CR path, changed SDD artifacts, new or changed task IDs, SDD level, knowledge impact, implementation approval status `pending`, and this exact execution prompt: `确认执行后默认执行全部未完成任务；如需指定范围，请回复：执行 T001,T002。`
+- 本次请求是 BUG 修复、需求变更、数据语义变更、技术重构、纯文档修正还是新功能。
+- 变更后的业务含义、术语、对象命名、归属、身份、状态、生命周期或兼容性承诺。
+- 新增、删除或变更的 AC，以及期望的可观测行为。
+- 公共 API、UI、消息、任务、权限/安全、集成契约、错误处理或回滚预期。
+- 数据模型、字段命名、表分组、DDL 证据来源、数据库/服务归属、迁移或 fallback 策略。
+- 受影响功能目录、影响模块/文件、S1/S2 等级、风险门禁、测试或长期知识影响。
+
+规则：
+
+1. 如果存在阻塞歧义，只问一个最高影响问题并停止。
+2. 当可选项明确时，提供 2-5 个选项，并给出推荐选项和理由。
+3. `按推荐`、`方案 A` 或精确短答可视为澄清完成。
+4. `使用 SDD`、`继续`、`先生成`、`看一下`、产物存在或历史上下文，不等于澄清完成。
+5. 用户明确要求草案时，只能生成 `文档状态：草案-待确认` 的草案 CR，不得生成可执行增量任务。
+6. 正式 CR 不展示澄清门禁表、澄清状态、问题日志或内部推理过程。
+
+## 变更规划流程
+
+1. 确认目标功能和变更意图。
+2. 执行现状一致性检查：
+   - `<功能中文名>-任务规划.md` 是否存在未完成任务。
+   - 历史 CR 是否存在未完成增量任务。
+   - 任务状态是否与源码/测试/报告事实明显冲突。
+   - 技术设计中的接口、数据结构、模块路径是否与当前代码明显不一致。
+   - 如果存在不一致，先说明风险，并让用户选择先修正事实、合并处理或继续承担风险。
+3. 判断变更类型：
+   - `微调`：不新增 AC、不改数据结构，主要调整已有行为或文案。
+   - `扩展`：新增 AC 或新增能力，但不破坏既有结构。
+   - `重构`：调整核心逻辑或结构，影响多个已有任务或模块。
+   - `数据结构变更`：新增、删除、重命名或修改表、字段、索引、约束、关系。
+   - `契约变更`：公共 API、RPC、消息、UI 对外行为或错误码变化。
+   - `纯文档修正`：只修正文档事实，不改变实现。
+4. 判断 SDD 等级：
+   - S1：局部行为调整、小扩展、单模块或少量模块协作。
+   - S2：数据库结构、公共 API/契约、权限安全、兼容迁移、事务边界、跨核心模块或高回滚成本。
+5. 判断是否应新建 feature：
+   - 超过 70% AC 被替换。
+   - 核心业务流程重写。
+   - 数据模型主结构重构。
+   - 公共 API 大范围变化。
+   - 若满足以上任一情况，建议新建功能目录或拆成多个 CR，不直接推倒重写既有产物。
+6. 生成影响分析：
+   - 需求与 AC 变化。
+   - 技术设计影响。
+   - 数据结构与 DDL 影响。
+   - 代码影响。
+   - 测试和回归影响。
+   - 回滚、兼容、安全、事务和发布风险。
+   - 长期知识影响。
+7. 确定编号：
+   - 扫描 `changes/CR-*.md`，生成下一个连续 CR ID。
+   - 扫描 `<功能中文名>-任务规划.md` 现有 `Txxx`，新增任务从最大编号之后继续。
+   - 不复用已完成、已删除或已废弃任务编号。
+8. 更新受影响文档：
+   - 小范围变更：只更新受影响章节并追加变更记录。
+   - AC 改动：同步更新需求说明书和任务规划。
+   - 技术路径改动：同步更新技术设计说明书。
+   - DDL 改动：同步更新技术设计说明书和任务规划。
+   - 不允许为了一个 CR 重写整个需求或设计文档，除非用户确认。
+9. 创建 `changes/CR-xxx.md`。
+10. 将可执行增量任务追加到 `<功能中文名>-任务规划.md`。
+    - CR 只记录任务摘要和新增任务 ID。
+    - `fons4ai-sdd-implement` 只从 `<功能中文名>-任务规划.md` 执行任务。
+    - 每个增量任务必须包含 `AC:`、`Files:`、`Verification:`、`Quality:`、`Done:`。
+11. 写入 CR 后运行：
+    - `../fons4ai-sdd-tasks/scripts/validate_sdd_artifacts.py --change-file <CR-file>`
+12. 停止在变更规划阶段，提示用户确认执行。
+
+## DDL 与 SQL 规则
+
+当变更影响持久化数据结构时，必须显式规划 DDL 闭环：
+
+- 命名受影响的 `.specify/sql/<database_or_service>/<business_model>.sql` 当前结构快照文件。
+- 若涉及存量表结构变更且已有可靠基线 DDL，命名执行型 DDL 草案输出路径。
+- 增量任务必须包含：
+  - 生成执行型 DDL 草案。
+  - 确认 DDL 执行状态。
+  - 同步 SQL 当前结构快照。
+- agent 不直接执行生产 DDL；DDL 由用户/DBA 手动执行，或由项目既有迁移流程执行。
+- DDL 未确认执行前，依赖该结构的实现任务不得标记为发布就绪。
+- 不得从实体类、Mapper、ORM 注解或 Java 字段推断 `CREATE TABLE`。
+- 多个数据库 MCP 或候选数据库无法唯一确认时，先询问用户选择。
+- SQL 文件和执行型 DDL 草案不得包含 MCP/Tool 标识、查询文本、来源路径或 provenance 头信息。
+
+## 长期知识影响
+
+CR 只记录长期知识影响，不创建知识同步任务或知识汇总交接任务。
+
+可记录：
+
+- 是否产生长期知识影响。
+- 影响类型：业务规则、技术方案、数据结构、接口契约、治理规则或其他。
+- 影响说明。
+
+知识沉淀由 `fons4ai-knowledge-summary` 在用户显式触发后处理。
+
+## 输出规则
+
+- 如果被澄清门禁阻塞，只输出阻塞原因、一个澄清问题、推荐选项和回答后会生成的产物。
+- 正式 CR 标题和固定文本以中文为主。文件名、ID、路径和机器字段 `AC:`、`Files:`、`Verification:`、`Quality:`、`Done:` 保持不变。
+- 可执行增量任务必须追加到 `<功能中文名>-任务规划.md`；不得只放在 CR 中。
+- 草案 CR 不得包含可执行增量任务。
+- 不得编写业务代码。
+- 未经确认，不得删除既有 AC、任务或文档。
+- 结束时输出 CR 路径、变更类型、SDD 等级、已更新产物、新增任务 ID、长期知识影响、实现确认状态 `pending`，并包含固定提示：`确认执行后默认执行全部未完成任务；如需指定范围，请回复：执行 T001,T002。`

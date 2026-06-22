@@ -1,4 +1,4 @@
-﻿#!/usr/bin/env python3
+#!/usr/bin/env python3
 """Validate minimal Fons4AI SDD artifact consistency."""
 
 from __future__ import annotations
@@ -19,7 +19,7 @@ EXECUTABLE_DDL_PATH_RE = re.compile(
 )
 S2_RE = re.compile(r"(SDD\s*Level|SDD\s*等级)\s*[:：]\s*`?S2`?", re.IGNORECASE)
 
-APPROVAL_GATE_HEADINGS = ("## 实现确认门禁", "## Implementation Approval Gate")
+APPROVAL_GATE_HEADINGS = ("## 2. 实现确认门禁", "## 12. 实现确认门禁", "## 实现确认门禁", "## Implementation Approval Gate")
 DOCUMENT_STATUS_RE = re.compile(r"(文档状态|Document Status)\s*[:：]\s*([^\n\r]+)", re.IGNORECASE)
 BLOCKING_ARTIFACT_RE = re.compile(r"草案-待确认|草案-含待确认|阻塞|blocking|draft", re.IGNORECASE)
 SPEC_REQUIRED_HEADING_GROUPS = (
@@ -39,35 +39,34 @@ SPEC_REQUIRED_HEADING_GROUPS = (
     ("版本修订记录", ("## 版本修订记录",)),
 )
 PLAN_REQUIRED_HEADING_GROUPS = (
-    ("设计目标与范围", ("## 设计目标与范围", "## 设计摘要")),
-    ("总体架构设计", ("## 总体架构设计", "## 架构设计")),
-    ("核心业务规则与策略落地", ("## 核心业务规则与策略落地", "## 关键业务规则与策略设计")),
-    ("核心业务场景实现", ("## 核心业务场景实现", "### 核心业务方案落地")),
-    ("数据流设计", ("## 数据流设计", "## 数据流")),
-    ("领域建模决策", ("## 领域建模决策",)),
-    ("关键规则代码片段", ("## 关键规则代码片段", "## Key Rule Code Sketches")),
-    ("状态流转设计", ("## 状态流转设计", "## State Transition Design")),
-    ("接口与契约设计", ("## 接口与契约设计", "## API 与契约细节", "## API and Contract Details")),
-    ("数据模型与 ER 设计", ("## 数据模型与 ER 设计", "## 数据结构变更", "## Data Structure Changes")),
-    ("事务与一致性", ("## 事务与一致性", "## Transaction and Consistency")),
-    ("异常处理与日志", ("## 异常处理与日志", "## 错误与异常处理")),
-    ("工具包与依赖决策", ("## 工具包与依赖决策",)),
-    ("迁移、兼容与回滚", ("## 迁移、兼容与回滚", "## 迁移与回滚细节")),
-    ("验证策略", ("## 验证策略", "## Verification Strategy")),
-    ("AC 映射", ("## AC 映射",)),
-    ("知识同步清单", ("## 知识同步清单", "## 知识同步影响", "## Knowledge Impact")),
-    ("风险与待确认事项", ("## 风险与待确认事项", "## 风险与回滚", "## Risk and Rollback")),
+    ("设计概要", ("## 1. 设计概要", "## 设计概要")),
+    ("架构与调用链路", ("## 2. 架构与调用链路", "## 架构与调用链路")),
+    ("API / RPC / 消息契约设计", ("## 3. API / RPC / 消息契约设计", "## API / RPC / 消息契约设计")),
+    ("数据模型与 DDL 影响", ("## 4. 数据模型与 DDL 影响", "## 数据模型与 DDL 影响")),
+    ("核心逻辑设计", ("## 5. 核心逻辑设计", "## 核心逻辑设计")),
+    ("领域建模与业务规则落地", ("## 6. 领域建模与业务规则落地", "## 领域建模与业务规则落地")),
+    ("状态流转设计", ("## 7. 状态流转设计", "## 状态流转设计")),
+    ("异常、安全、事务与性能", ("## 8. 异常、安全、事务与性能", "## 异常、安全、事务与性能")),
+    ("技术决策", ("## 9. 技术决策", "## 技术决策")),
+    ("验证策略、AC 映射与风险", ("## 10. 验证策略、AC 映射与风险", "## 验证策略、AC 映射与风险")),
 )
-KNOWLEDGE_IMPACT_HEADINGS = ("## 知识同步清单", "## 知识同步影响", "## Knowledge Impact")
-RISK_ROLLBACK_HEADINGS = ("## 风险与待确认事项", "## 风险与回滚", "## Risk and Rollback")
+KNOWLEDGE_IMPACT_HEADINGS = ("### 10.4 知识同步影响", "## 知识同步清单", "## 知识同步影响", "## Knowledge Impact")
+RISK_ROLLBACK_HEADINGS = ("### 10.3 风险与回滚", "## 10. 验证策略、AC 映射与风险", "## 风险与回滚", "## Risk and Rollback")
 S2_QUALITY_GATE_HEADINGS = ("## S2 质量门禁", "## S2 Quality Gates")
 CHANGE_REQUIRED_HEADING_GROUPS = (
-    ("影响分析", ("## 影响分析", "## Impact Analysis")),
-    ("知识同步清单", ("### 知识同步清单", "### 知识同步影响", "### Knowledge Impact")),
-    ("回归与回滚", ("## 回归与回滚", "## Regression and Rollback")),
+    ("变更摘要", ("## 1. 变更摘要", "## 变更摘要")),
+    ("影响范围", ("## 4. 影响范围", "## 影响范围", "## 影响分析", "## Impact Analysis")),
+    ("需求与 AC 变化", ("## 5. 需求与 AC 变化", "## 需求与 AC 变化", "### 需求影响")),
+    ("技术设计影响", ("## 6. 技术设计影响", "## 技术设计影响", "### 设计影响")),
+    ("数据结构与 DDL 影响", ("## 7. 数据结构与 DDL 影响", "## 数据结构与 DDL 影响")),
+    ("回归与回滚", ("## 8. 回归与回滚", "## 回归与回滚", "## Regression and Rollback")),
+    ("长期知识影响", ("## 9. 长期知识影响", "## 长期知识影响", "### 知识同步清单", "### 知识同步影响", "### Knowledge Impact")),
+    ("文档更新", ("## 10. 文档更新", "## 文档更新")),
     ("实现确认门禁", APPROVAL_GATE_HEADINGS),
-    ("增量任务", ("## 增量任务", "## Incremental Tasks")),
+    ("增量任务", ("## 11. 增量任务", "## 增量任务", "## Incremental Tasks")),
 )
+
+CHANGE_TYPE_RE = re.compile(r"(变更类型|Change Type)\s*[:：]\s*(微调|扩展|重构|数据结构变更|契约变更|纯文档修正|tweak|extension|refactor)", re.IGNORECASE)
 
 DOMAIN_QUALITY_RE = re.compile(r"DDD|domain|领域|充血|贫血|业务规则|应用层", re.IGNORECASE)
 KNOWLEDGE_OR_DDL_TASK_RE = re.compile(
@@ -92,6 +91,14 @@ def read(path: Path) -> str:
 
 def requirement_artifact_paths(feature_dir: Path) -> list[Path]:
     return sorted(feature_dir.glob("*-需求说明书.md"))
+
+
+def technical_design_artifact_paths(feature_dir: Path) -> list[Path]:
+    return sorted(feature_dir.glob("*-技术设计说明书.md"))
+
+
+def task_planning_artifact_paths(feature_dir: Path) -> list[Path]:
+    return sorted(feature_dir.glob("*-任务规划.md"))
 
 
 def task_blocks(tasks_text: str) -> list[tuple[str, str]]:
@@ -223,20 +230,32 @@ def validate(feature_dir: Path, strict: bool = False) -> tuple[list[str], list[s
         spec = requirement_files[0]
     else:
         spec = requirement_files[0]
-    plan = feature_dir / "plan.md"
-    tasks = feature_dir / "tasks.md"
-
-    for required in (plan, tasks):
-        if not required.exists():
-            errors.append(f"Missing required artifact: {required}")
+    design_files = technical_design_artifact_paths(feature_dir)
+    if not design_files:
+        errors.append(f"Missing required artifact: {feature_dir / '<功能中文名>-技术设计说明书.md'}")
+        design = feature_dir / "<功能中文名>-技术设计说明书.md"
+    elif len(design_files) > 1:
+        errors.append(f"Multiple technical design artifacts found in {feature_dir}; keep exactly one *-技术设计说明书.md")
+        design = design_files[0]
+    else:
+        design = design_files[0]
+    task_files = task_planning_artifact_paths(feature_dir)
+    if not task_files:
+        errors.append(f"Missing required artifact: {feature_dir / '<功能中文名>-任务规划.md'}")
+        tasks = feature_dir / "<功能中文名>-任务规划.md"
+    elif len(task_files) > 1:
+        errors.append(f"Multiple task planning artifacts found in {feature_dir}; keep exactly one *-任务规划.md")
+        tasks = task_files[0]
+    else:
+        tasks = task_files[0]
 
     if errors:
         return errors, warnings
 
     spec_text = read(spec)
-    plan_text = read(plan)
+    design_text = read(design)
     tasks_text = read(tasks)
-    all_text = "\n".join((spec_text, plan_text, tasks_text))
+    all_text = "\n".join((spec_text, design_text, tasks_text))
 
     ac_ids = sorted(set(AC_RE.findall(spec_text)))
     if not ac_ids:
@@ -245,59 +264,49 @@ def validate(feature_dir: Path, strict: bool = False) -> tuple[list[str], list[s
     errors.extend(validate_required_heading_groups(spec_text, SPEC_REQUIRED_HEADING_GROUPS, str(spec.name)))
     errors.extend(validate_artifact_readiness(spec_text, str(spec.name)))
     errors.extend(validate_req_ac_mapping(spec_text))
-    errors.extend(validate_required_heading_groups(plan_text, PLAN_REQUIRED_HEADING_GROUPS, "plan.md"))
+    errors.extend(validate_required_heading_groups(design_text, PLAN_REQUIRED_HEADING_GROUPS, str(design.name)))
 
     for ac_id in ac_ids:
-        if ac_id not in plan_text:
-            errors.append(f"{ac_id} is not referenced in plan.md")
+        if ac_id not in design_text:
+            errors.append(f"{ac_id} is not referenced in {design.name}")
         if ac_id not in tasks_text:
-            errors.append(f"{ac_id} is not referenced in tasks.md")
+            errors.append(f"{ac_id} is not referenced in {tasks.name}")
 
-    plan_sql_files = sorted(set(SQL_PATH_RE.findall(plan_text)))
-    if plan_declares_sql_sync(plan_text) and not plan_sql_files:
-        errors.append("plan.md declares DDL sync but names no .specify/sql/**/*.sql file")
+    plan_sql_files = sorted(set(SQL_PATH_RE.findall(design_text)))
+    if plan_declares_sql_sync(design_text) and not plan_sql_files:
+        errors.append(f"{design.name} declares DDL sync but names no .specify/sql/**/*.sql file")
     for sql_file in plan_sql_files:
         if sql_file not in tasks_text:
-            errors.append(f"{sql_file} is referenced in plan.md but not in tasks.md")
+            errors.append(f"{sql_file} is referenced in {design.name} but not in {tasks.name}")
 
-    if declares_existing_table_change_with_baseline(plan_text):
-        executable_ddl_files = executable_ddl_paths(plan_text)
+    if declares_existing_table_change_with_baseline(design_text):
+        executable_ddl_files = executable_ddl_paths(design_text)
         if not executable_ddl_files:
-            errors.append("plan.md declares an existing-table change with baseline DDL but names no executable change DDL file")
+            errors.append(f"{design.name} declares an existing-table change with baseline DDL but names no executable change DDL file")
         for ddl_file in executable_ddl_files:
             if ddl_file not in tasks_text:
-                errors.append(f"{ddl_file} is referenced as executable change DDL in plan.md but not in tasks.md")
+                errors.append(f"{ddl_file} is referenced as executable change DDL in {design.name} but not in {tasks.name}")
         if not re.search(r"(执行型变更\s*DDL|Executable\s+change\s+DDL|ALTER\s+TABLE)", tasks_text, re.IGNORECASE):
-            errors.append("tasks.md has no executable change DDL task for the existing-table structural change")
+            errors.append(f"{tasks.name} has no executable change DDL task for the existing-table structural change")
 
-    if not has_any_heading(plan_text, KNOWLEDGE_IMPACT_HEADINGS):
-        errors.append("plan.md is missing knowledge impact section")
+    if not has_any_heading(design_text, KNOWLEDGE_IMPACT_HEADINGS):
+        errors.append(f"{design.name} is missing knowledge impact section")
     if not has_any_heading(tasks_text, APPROVAL_GATE_HEADINGS):
-        errors.append("tasks.md is missing implementation approval gate section")
-    if re.search(r"Knowledge Sync Needed\s*:\s*yes", plan_text, re.IGNORECASE):
-        has_knowledge_task = (
-            "Knowledge" in tasks_text
-            or "知识" in tasks_text
-            or "truth-source" in tasks_text
-            or ".specify/memory/" in tasks_text
-            or "fons4ai-knowledge-summary" in tasks_text
-        )
-        if not has_knowledge_task:
-            errors.append("plan.md declares Knowledge Sync Needed: yes but tasks.md has no knowledge sync task")
+        errors.append(f"{tasks.name} is missing implementation approval gate section")
 
     if S2_RE.search(all_text):
-        if not has_any_heading(plan_text, RISK_ROLLBACK_HEADINGS):
-            errors.append("S2 plan.md is missing risk and rollback section")
+        if not has_any_heading(design_text, RISK_ROLLBACK_HEADINGS):
+            errors.append(f"S2 {design.name} is missing risk and rollback section")
         for display_name, headings in PLAN_REQUIRED_HEADING_GROUPS:
-            if has_any_heading(plan_text, headings) and not has_section_content(plan_text, headings):
-                errors.append(f"S2 plan.md section '{display_name}' has no content")
+            if has_any_heading(design_text, headings) and not has_section_content(design_text, headings):
+                errors.append(f"S2 {design.name} section '{display_name}' has no content")
         has_s2_quality_gate = has_any_heading(tasks_text, S2_QUALITY_GATE_HEADINGS)
         if not has_s2_quality_gate and not RISK_CONTROL_RE.search(tasks_text):
-            errors.append("S2 tasks.md must include S2 quality gates or explicit risk-control tasks")
+            errors.append(f"S2 {tasks.name} must include S2 quality gates or explicit risk-control tasks")
 
     blocks = task_blocks(tasks_text)
     if not blocks:
-        errors.append("tasks.md contains no checklist tasks in '- [ ] T001' format")
+        errors.append(f"{tasks.name} contains no checklist tasks in '- [ ] T001' format")
 
     seen: set[str] = set()
     for task_id, block in blocks:
@@ -309,7 +318,7 @@ def validate(feature_dir: Path, strict: bool = False) -> tuple[list[str], list[s
         for label in ("Files:", "Verification:", "Quality:", "Done:"):
             if label not in block:
                 errors.append(f"{task_id} is missing '{label}'")
-        errors.extend(validate_quality_domain_check(task_id, block, "tasks.md"))
+        errors.extend(validate_quality_domain_check(task_id, block, str(tasks.name)))
 
     return errors, warnings
 
@@ -322,6 +331,13 @@ def validate_change_file(change_file: Path) -> list[str]:
     text = read(change_file)
     errors.extend(validate_required_heading_groups(text, CHANGE_REQUIRED_HEADING_GROUPS, str(change_file)))
     errors.extend(validate_artifact_readiness(text, str(change_file)))
+
+    if not CHANGE_TYPE_RE.search(text):
+        errors.append(f"{change_file} is missing change type field")
+    if BLOCKING_ARTIFACT_RE.search(text) and TASK_RE.search(text):
+        errors.append(f"{change_file} is a draft or blocked CR but contains executable incremental tasks")
+    if re.search(r"^- \[[ xX]\] T\d{3}.*(知识同步|知识汇总)", text, re.MULTILINE):
+        errors.append(f"{change_file} must not create knowledge-sync or knowledge-summary handoff tasks")
 
     if not AC_RE.search(text):
         errors.append(f"{change_file} contains no AC-### mapping")
@@ -342,8 +358,12 @@ def validate_change_file(change_file: Path) -> list[str]:
         sql_files = sorted(set(SQL_PATH_RE.findall(text)))
         if not sql_files:
             errors.append(f"{change_file} declares SQL DDL action but names no .specify/sql/**/*.sql file")
-        if not re.search(r"(Sync\s+DDL|同步\s*DDL)", text, re.IGNORECASE):
-            errors.append(f"{change_file} declares SQL DDL action but has no DDL sync task")
+        if not re.search(r"(执行型\s*DDL|执行型变更\s*DDL|Executable\s+change\s+DDL|ALTER\s+TABLE)", text, re.IGNORECASE):
+            errors.append(f"{change_file} declares SQL DDL action but has no executable DDL draft task")
+        if not re.search(r"(确认\s*DDL\s*执行状态|DDL\s*执行确认|read-only verification|只读.*验证)", text, re.IGNORECASE):
+            errors.append(f"{change_file} declares SQL DDL action but has no DDL execution-confirmation task")
+        if not re.search(r"(同步\s*SQL\s*当前结构快照|SQL\s*当前结构快照|\\.specify/sql/)", text, re.IGNORECASE):
+            errors.append(f"{change_file} declares SQL DDL action but has no SQL current-structure snapshot task")
     if declares_existing_table_change_with_baseline(text):
         executable_ddl_files = executable_ddl_paths(text)
         if not executable_ddl_files:
@@ -381,7 +401,7 @@ def validate_bugfix_report(report: Path) -> list[str]:
 
 def main() -> int:
     parser = argparse.ArgumentParser(description="Validate Fons4AI SDD artifacts")
-    parser.add_argument("--feature-dir", help="Path to spec/features/<yyyymmdd>")
+    parser.add_argument("--feature-dir", help="Path to spec/features/<yyyymmdd> containing *-任务规划.md")
     parser.add_argument("--change-file", help="Path to spec/features/<yyyymmdd>/changes/CR-xxx.md")
     parser.add_argument("--bugfix-report", help="Path to specs/bugfixes/<bug-slug>/bugfix-report.md")
     parser.add_argument("--strict", action="store_true", help="Fail modern SDD section omissions instead of warning")

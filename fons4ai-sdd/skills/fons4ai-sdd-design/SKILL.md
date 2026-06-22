@@ -1,92 +1,93 @@
-﻿---
+---
 name: fons4ai-sdd-design
-description: "Fons4AI gated SDD technical-design workflow. Auto-trigger only when an in-scope AGENTS.md contains '<!-- fons4ai-skill-routing: enabled -->'; otherwise use only when the user explicitly names this skill or asks for the Fons4AI/SDD workflow."
+description: "Fons4AI 受控的 SDD 技术设计技能。只有当作用域内 AGENTS.md 包含 '<!-- fons4ai-skill-routing: enabled -->' 时才允许自动触发；否则仅在用户明确指定该技能，或明确要求使用 Fons4AI/SDD 工作流时使用。用于在正式需求说明书之后生成 spec/features/<yyyymmdd>/<功能中文名>-技术设计说明书.md。"
 ---
 
-# Fons4AI SDD Design
+# Fons4AI-sdd-design
 
-## Activation Gate
+## 触发门禁
 
-Before using this skill, verify at least one condition is true:
+使用本技能前，必须确认至少满足以下任一条件：
 
-1. The user explicitly names this skill, such as `$fons4ai-sdd-design`.
-2. The user explicitly asks to use Fons4AI, SDD, or the Fons4AI workflow.
-3. The active repository has an in-scope `AGENTS.md` containing `<!-- fons4ai-skill-routing: enabled -->`.
+1. 用户明确指定该技能，例如 `$fons4ai-sdd-design`。
+2. 用户明确要求使用 Fons4AI、SDD 或 Fons4AI 工作流。
+3. 当前仓库作用域内存在 `AGENTS.md`，且包含 `<!-- fons4ai-skill-routing: enabled -->`。
 
-If none is true, do not apply this skill automatically. Continue with normal Codex behavior or ask whether the user wants to enable the Fons4AI workflow.
+如果以上条件都不满足，不得自动应用本技能。应继续使用普通 AI agent 行为，或询问用户是否希望启用 Fons4AI 工作流。
 
-## Overview
+## 概述
 
-Use this skill after `fons4ai-sdd-requirements` has produced a formal business-oriented `需求说明书.md`.
-The output is a detailed technical design in `spec/features/<yyyymmdd>/plan.md`; S2 features may also need `contracts/`, `data-model.md`, or migration notes when the design requires them.
+在 `fons4ai-sdd-requirements` 已生成正式、面向业务的 `<功能中文名>-需求说明书.md` 后使用本技能。
 
-## Required Context
+本技能只生成或更新技术设计说明书：
 
-1. Load `../fons4ai-sdd-requirements/references/sdd-artifact-contract.md`, including its context-loading rules.
-2. Read `spec/features/<yyyymmdd>/<功能中文名>-需求说明书.md` completely and confirm it is not marked `文档状态：草案-待确认`.
-3. Search first by feature terms, AC/REQ IDs, domains, modules, domain objects, APIs, tables, and error/risk terms. Do not bulk-read all project rules, memory, SQL, specs, or docs by default.
-   - Optionally run `../fons4ai-sdd-requirements/scripts/find_relevant_context.py --root <repo-root> <keyword...>` to get candidate truth-source files before reading.
-4. Read `AGENTS.md`, relevant project rules, matching knowledge cards/domain documents, targeted SQL files, build files, and representative source/test files for affected modules. Read project-level memory overviews only for cross-domain, S2, or global-constraint decisions.
-5. Use `assets/templates/plan-template.md`.
-6. If `plan.md` already exists, read it and ask before replacing or materially rewriting it.
+`spec/features/<yyyymmdd>/<功能中文名>-技术设计说明书.md`
 
-## Workflow
+不得再生成、读取或兼容 `plan.md` 作为设计产物。
 
-1. Confirm the specification is ready for design and determine the SDD level.
-   - If `需求说明书.md` says `文档状态：草案-待确认`, `澄清状态：阻塞-等待回答`, `澄清状态：草案-含待确认`, `Clarification Status: blocking`, or `Clarification Status: draft`, stop and route back to `fons4ai-sdd-requirements`.
-   - Perform a quick ambiguity scan even when the formal specification intentionally hides the internal clarification process. If blocking requirement ambiguity remains, stop and ask to run `fons4ai-sdd-requirements` before design.
-   - Determine `S1` or `S2` from the requirement scope and repository facts, then record the classification and reason in `plan.md`.
-2. Build an internal fact base from the repository. Use it for decisions but do not render a repository-fact or knowledge-base-fact inventory in `plan.md`:
-   - Existing modules, layers, package conventions, reusable utilities, components, test style, domain objects, application services, and integration boundaries.
-   - Current APIs, data objects, domain rules, state transitions, configs, caches, queues, transactions, permissions, dependencies, utility packages, and extension points relevant to the feature.
-   - Relevant long-lived architecture and data facts from `.specify/memory/index.md`, matching domain cards/documents, and targeted `.specify/sql/` files when available.
-   - Any conflict between truth-source and code facts; mark likely stale knowledge explicitly instead of silently overriding it.
-3. Design the simplest implementation that satisfies all AC.
-   - Prefer existing helpers and patterns.
-   - Apply DDD-lite for business behavior: place core business rules, state transitions, validation, and invariants in domain objects or domain methods when the repository structure supports it.
-   - Keep application services focused on orchestration, transactions, permissions, external collaboration, and persistence coordination.
-   - Do not force full DDD package structures for simple CRUD, read-only queries, thin wrappers, or repositories that do not already support that shape; record the lightweight exception instead.
-   - If business rules stay in service/application code, record why: thin logic, existing project style, orchestration-only concern, or unstable domain abstraction.
-   - For common utility work such as string, collection, date/time, IO, bean conversion, null-check, assertion, encoding, encryption, or masking, record the intended tool choice.
-   - Use this priority for utility decisions: JDK standard library, project utilities/components, already-introduced third-party utilities such as Hutool, Apache Commons, or Guava, then new dependency.
-   - Avoid introducing new frameworks, modules, abstractions, or dependencies unless the repository facts justify them.
-   - If a new dependency is needed, record rationale, alternatives, impact, and user/design confirmation before implementation.
-4. Write a detailed technical design, not just a lightweight plan:
-   - Describe design goals and scope, overall architecture, key business-rule and strategy landing, scenario implementation, data flow, API/contract details, data model and ER design, error handling, transaction and consistency, migration and rollback, and verification strategy.
-   - For core business rules, policies, scoring, routing, approval, permission, pricing, status transition, or matching logic, record the technical landing: module, domain/application object, strategy component, data dependency, transaction boundary, extension point, and verification approach.
-   - Include Mermaid `sequenceDiagram`, `flowchart`, or `stateDiagram-v2` for important business-rule execution, strategy decisions, or core business flows when facts support it. If facts are partial, write `不适用，原因` or mark uncertain nodes as `待确认`; do not invent actors or systems.
-   - Include key rule code sketches for important business rules, validation, status checks, or data transformations. These sketches must be short pseudocode or code-like snippets based on repository facts, existing types, existing utilities, approved dependencies, and DDD-lite domain methods.
-   - Do not write final production code in `plan.md`; code sketches explain intent and edge cases for later implementation.
-   - Record state transition design with source state, trigger, preconditions, next state, failure handling, and idempotency. Use a table by default; use Mermaid `stateDiagram` only when facts support it.
-   - Record data structure changes with fields, types, defaults, indexes, constraints, compatibility, DDL path, migration, and rollback expectations when applicable.
-   - Include Mermaid `erDiagram` when the design adds tables, changes relationships, or coordinates multiple tables. For a single-column or single-index adjustment, keep the structure-change table and write `不适用，原因` for the ER diagram.
-   - When an existing `.specify/sql/<database_or_service>/<business_model>.sql` contains the baseline DDL for a table that will be altered, record the required executable change DDL target: use the repository migration directory when established, otherwise `spec/features/<yyyymmdd>/ddl-changes/<change-id>-<database_or_service>-<business_model>.sql`. Design names the artifact and expected `ALTER TABLE` intent but does not generate the executable SQL before implementation approval.
-5. For S1, use the minimal complete profile: keep all required sections, cover every AC, and keep the design practical but not empty. If there is no state transition, data structure change, API change, migration, rollback, diagram, or rule snippet, write `不适用，原因` in that section instead of fabricating content.
-6. For S2, include the additional governance sections that apply:
-   - Compatibility and migration impact.
-   - Rollback plan.
-   - Security/permission analysis.
-   - Transaction, cache, MQ, rate-limit, or concurrency risks.
-   - Public contract changes under `contracts/` when needed.
-   - Data model notes under `data-model.md` when database or persistent schema changes are involved.
-   - A concrete DDL sync plan naming every impacted `.specify/sql/<database_or_service>/<business_model>.sql` file for persistent data model additions or changes.
-   - For existing-table structural changes backed by an existing SQL knowledge baseline, a concrete executable change DDL plan naming the migration-script path or fallback `ddl-changes/` artifact path, plus forward-change and rollback expectations.
-   - DDL knowledge files must be backed by real DDL evidence: configured database MCP query results or existing repository SQL files. Entities, ORM metadata, mapper interfaces, repository methods, and Java field types may locate candidate tables but must not generate `CREATE TABLE`.
-   - If multiple candidate database MCP tools or databases could supply DDL and explicit user input or project facts do not uniquely select one, record the ambiguity and require user selection before DDL retrieval.
-   - DDL knowledge SQL files must not persist MCP/Tool identifiers, query text, source paths, `Source`, `Migration Script`, or `DDL Evidence` headers.
-   - If no MCP DDL and no repository SQL DDL are available, record the SQL source as `待确认` and add a follow-up to configure MCP or provide SQL files instead of fabricating schema details.
-   - If database/service ownership is unknown, use `.specify/sql/pending/<business_model>.sql` and mark unresolved schema facts as `推断` or `待确认`.
-   - DDL files are grouped by database/service plus cohesive business model. Same-database strongly related tables may share one file; cross-database or cross-service tables must use separate files.
-7. Map every AC and relevant REQ to one or more design decisions.
-8. Record whether this feature needs knowledge synchronization. For data model additions or changes, `.specify/sql/` synchronization is required unless the user explicitly defers it.
+## 角色说明
 
-## Output Rules
+你是资深系统架构师兼领域建模顾问，负责把已确认的业务需求说明书转化为可实现、可验证、可拆解任务的技术设计说明书。
 
-- Create or update `spec/features/<yyyymmdd>/plan.md`.
-- Generated artifact headings and fixed prose must be Chinese-first. Keep file names, IDs, paths, code identifiers, and technical terms such as `API`, `DDL`, `REQ-001`, and `AC-001` unchanged when needed.
-- Create extra S2 artifacts only when they prevent concrete implementation mistakes.
-- Do not generate `tasks.md`; leave task breakdown to `fons4ai-sdd-tasks`.
-- Do not write business code.
-- `plan.md` code snippets are design sketches only and must not become unreviewed production implementation.
-- Do not expose repository-fact inventories, knowledge-base-fact inventories, or search traces in `plan.md`; render only technical conclusions.
-- End with generated paths, SDD level, key risks, knowledge impact, and suggested next skill.
+你的核心职责：
+
+- 将业务需求映射为清晰的模块边界、调用链路、数据流、状态流转、接口契约和验证策略。
+- 使用 DDD-lite 思路识别核心领域对象、业务规则归属、不变量、状态变化和应用层编排边界。
+- 优先复用项目已有架构、代码风格、工具类、组件和已引入依赖，不为单次需求强行引入完整 DDD 分层或新框架。
+- 轻量记录 SQL/DDL 影响，只说明结构影响、证据状态、目标路径、迁移位置和回滚思路；不在设计阶段生成 SQL 或执行型变更脚本。
+- 输出面向实现者的技术结论，不展示仓库事实清单、知识库事实清单、搜索过程或内部推理过程。
+
+## 必要上下文
+
+1. 读取 `../fons4ai-sdd-requirements/references/sdd-artifact-contract.md`，包括其中的上下文加载规则。
+2. 完整读取 `spec/features/<yyyymmdd>/<功能中文名>-需求说明书.md`，并确认其没有标记为 `文档状态：草案-待确认`。
+3. 先按功能词、AC/REQ 编号、领域、模块、领域对象、API、表名、错误或风险词搜索上下文。不得默认全量读取项目规则、知识库、SQL、specs 或 docs。
+   - 可选运行 `../fons4ai-sdd-requirements/scripts/find_relevant_context.py --root <repo-root> <keyword...>` 获取候选真理源文件，再决定读取范围。
+4. 读取 `AGENTS.md`、相关项目规则、匹配的知识卡片/领域文档、目标 SQL 文件、构建文件，以及受影响模块的代表性源码和测试文件。只有跨领域、S2 或全局约束决策时，才读取项目级知识库总览。
+5. 使用 `assets/templates/technical-design-template.md`。
+6. 如果 `<功能中文名>-技术设计说明书.md` 已存在，必须先读取；替换或大幅重写前需要询问用户。
+
+## 工作流程
+
+1. 确认需求说明书可以进入技术设计，并判定 SDD 等级。
+   - 如果需求说明书包含 `文档状态：草案-待确认`、`澄清状态：阻塞-等待回答`、`澄清状态：草案-含待确认`、`Clarification Status: blocking` 或 `Clarification Status: draft`，必须停止并回到 `fons4ai-sdd-requirements`。
+   - 即使正式需求说明书不展示内部澄清过程，也必须快速扫描是否仍存在阻塞性需求歧义。如果仍有阻塞歧义，停止并要求先运行 `fons4ai-sdd-requirements`。
+   - 根据需求范围和仓库事实判定 `S1` 或 `S2`，并在技术设计说明书中记录分级和理由。
+2. 基于仓库建立内部事实基础。事实用于设计决策，但不要把仓库事实清单、知识库事实清单或搜索轨迹写入技术设计说明书。
+3. 设计满足所有 AC 的最简单实现方案。
+   - 优先复用已有工具和模式。
+   - 对业务行为采用 DDD-lite：当仓库结构支持时，将核心业务规则、状态流转、校验和不变量放入领域对象或领域方法。
+   - 应用服务聚焦编排、事务、权限、外部协作和持久化协调。
+   - 不为简单 CRUD、只读查询或薄包装逻辑强行引入完整 DDD 包结构。
+   - 对字符串、集合、日期时间、IO、Bean 转换、判空、断言、编码、加密、脱敏等通用工具场景，记录工具选择。优先级为：JDK 标准库、项目已有工具/组件、已引入三方工具包，最后才是新增依赖。
+   - 不得引入新框架、新模块、新抽象或新依赖，除非仓库事实能够支持该决策。
+4. 编写偏技术实现的技术设计说明书，不重复需求文档职责。
+   - 固定使用 10 节结构：设计概要、架构与调用链路、API/RPC/消息契约设计、数据模型与 DDL 影响、核心逻辑设计、领域建模与业务规则落地、状态流转设计、异常/安全/事务/性能、技术决策、验证策略/AC 映射/风险。
+   - 不写需求澄清摘要、需求范围、角色与场景、业务数据口径等需求说明书内容；只承接需求结论和 AC。
+   - 对核心业务规则、策略、审批、权限、定价、状态流转、匹配逻辑，记录技术落地点：模块、领域/应用对象、策略组件、数据依赖、事务边界、扩展点和验证方式。
+   - 对重要业务规则执行、策略判断或核心业务流程，在事实支持时使用 Mermaid `sequenceDiagram`、`flowchart` 或 `stateDiagram-v2`。事实不足时写 `不适用，原因`，不得编造参与方或系统。
+   - 对重要业务规则、校验、状态判断或数据转换，补充简短伪代码或类代码片段。不得写最终生产代码。
+   - 状态流转设计记录原状态、触发条件、前置条件、目标状态、失败处理和幂等要求。
+   - 新增表、关系变化或多表协作时补充 Mermaid `erDiagram`；单字段或单索引调整时使用结构变更表并写明 ER 图不适用原因。
+5. 轻量记录 SQL/DDL 设计。
+   - 只记录是否涉及持久化结构变化、影响的 `.specify/sql/<database_or_service>/<business_model>.sql`、证据状态、迁移位置、执行型变更 DDL 路径和回滚思路。
+   - 设计阶段不生成 SQL 文件、不查询并落盘 DDL、不编写可执行 `ALTER TABLE` 脚本。
+   - DDL 证据只能来自数据库 MCP 查询结果或仓库 SQL 文件；实体、ORM、Mapper、Repository 方法和 Java 字段类型只能用于定位候选对象，不得用于生成 `CREATE TABLE`。
+   - 多个数据库 MCP 或候选数据库无法唯一确认时，记录 `待确认` 并要求用户选择。
+   - 没有 DDL 证据时，记录 `待确认` 和后续动作，不创建 pending SQL 占位，除非用户明确要求。
+6. 对 S1 使用“最小完整档案”：保留必备章节，覆盖每个 AC；无状态流转、数据结构变更、API 变更、迁移、回滚、图表或规则片段时，在对应章节写 `不适用，原因`。
+7. 对 S2 补充适用治理内容：兼容性、迁移影响、回滚、安全权限、事务、缓存、MQ、限流、并发、公共契约和风险控制。
+8. 在 `## 9. 技术决策` 中只记录关键方案选择、原因、替代方案和影响；代码风格、工具包优先级、禁止手写逻辑等通用代码约束应留在 `.specify/rules/代码编写规范.md`，不要在每个技术设计中重复。
+9. 将每个 AC 和相关 REQ 映射到一个或多个设计决策。
+10. 记录该功能是否需要知识同步。涉及数据模型新增或变更时，默认需要记录 SQL/DDL 同步影响，除非用户明确暂缓。
+
+## 输出规则
+
+- 只能创建或更新 `spec/features/<yyyymmdd>/<功能中文名>-技术设计说明书.md`。
+- 生成产物的标题和固定文本必须以中文为主。文件名、ID、路径、代码标识符，以及 `API`、`DDL`、`REQ-001`、`AC-001` 等技术术语按需保持原样。
+- 只有当额外 S2 产物能避免具体实现错误时，才创建 `contracts/` 等补充文件。
+- 不生成 `tasks.md`；任务拆解交给 `fons4ai-sdd-tasks`。
+- 不写业务代码。
+- 技术设计说明书中的代码片段只作为设计草图，不得变成未经评审的生产实现。
+- 不在技术设计说明书中暴露仓库事实清单、知识库事实清单或搜索轨迹；只输出技术结论。
+- 结束时汇报生成路径、SDD 等级、关键风险、知识影响和建议下一步技能。
