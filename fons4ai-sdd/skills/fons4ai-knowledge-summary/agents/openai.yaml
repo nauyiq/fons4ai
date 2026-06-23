@@ -1,4 +1,4 @@
 interface:
-  display_name: "Fons4AI Knowledge Summary"
-  short_description: "Generic Fons4AI knowledge summary with scenario traceability."
-  default_prompt: "Use $fons4ai-knowledge-summary when Fons4AI routing is enabled or explicitly requested to merge verified facts into architecture memory documents and SQL knowledge."
+  display_name: "Fons4ai-knowledge-summary"
+  short_description: "将已验证的业务、技术、数据、接口和治理事实汇总到分层知识库。"
+  default_prompt: "当 Fons4AI 路由启用或用户明确指定时，使用 $fons4ai-knowledge-summary；只汇总已验证事实，待确认内容不得写成事实，并按 index、领域文档、知识卡片和 SQL 快照分层维护。"

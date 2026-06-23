@@ -1,4 +1,4 @@
 interface:
-  display_name: "Fons4AI SDD 变更"
+  display_name: "Fons4ai-sdd-change"
   short_description: "受控处理已有 SDD 功能的增量变更，先澄清再生成 CR，并把增量任务追加到任务规划。"
   default_prompt: "当 Fons4AI 路由启用或用户明确指定时，使用 $fons4ai-sdd-change 处理已有功能变更；先关闭阻塞歧义，再分析影响、生成 CR、追加增量任务，并停止等待实现确认。"

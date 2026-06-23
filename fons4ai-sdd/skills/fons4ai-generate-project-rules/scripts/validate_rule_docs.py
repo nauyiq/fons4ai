@@ -10,12 +10,13 @@ from pathlib import Path
 
 REQUIRED_FILE = "agent运行规则.md"
 OPTIONAL_CODE_RULE_FILE = "代码编写规范.md"
+OPTIONAL_SDD_RULE_FILE = "sdd团队协作规范.md"
 
 REQUIRED_HEADINGS = (
     "# Agent运行规则",
     "## 项目适用范围",
     "## 核心原则",
-    "## MCP使用规则",
+    "## MCP与外部工具使用规则",
     "## 输出要求",
     "## 禁止事项",
     "## 信息不足时的处理",
@@ -31,11 +32,18 @@ REQUIRED_TERMS = (
     "不允许修改数据库结构",
     "MCP",
     "只读",
+    "个人本机 MCP",
     "猜测业务逻辑",
     "编造接口",
     "编造数据库字段",
     "编造第三方 API",
     "信息不足",
+)
+
+FORBIDDEN_DEFAULT_MCP_TABLE_TERMS = (
+    "| 能力场景 | 首选 MCP |",
+    "<MCP 名称或待确认>",
+    "能力清单填写 `待确认`",
 )
 
 CODE_RULE_HEADINGS = (
@@ -64,6 +72,32 @@ CODE_RULE_TERMS = (
     "测试",
 )
 
+SDD_RULE_HEADINGS = (
+    "# SDD团队协作规范",
+    "## 1. SDD使用准入规则",
+    "## 2. SDD产物质量标准",
+    "## 3. 角色与评审门禁",
+    "## 4. 评审结论",
+    "## 5. 标准扩展场景与专业工作流复用",
+    "## 6. 标准样例库",
+    "## 7. SDD完成定义",
+)
+
+SDD_RULE_TERMS = (
+    "全新业务功能",
+    "已有功能业务变更",
+    "S2",
+    "需求说明书合格标准",
+    "技术设计说明书合格标准",
+    "任务规划合格标准",
+    "主要评审人",
+    "有条件通过",
+    "专业工作流",
+    "标准扩展场景",
+    ".specify/examples/sdd",
+    "fons4ai-knowledge-summary",
+)
+
 
 def read_text(path: Path) -> str:
     try:
@@ -83,6 +117,10 @@ def validate_rule_file(path: Path) -> list[str]:
     for term in REQUIRED_TERMS:
         if term not in text:
             errors.append(f"{path.name} missing required rule term: {term}")
+
+    for term in FORBIDDEN_DEFAULT_MCP_TABLE_TERMS:
+        if term in text:
+            errors.append(f"{path.name} contains default MCP table placeholder: {term}")
 
     if len(text.strip()) < 500:
         errors.append(f"{path.name} is too short for a useful agent rule")
@@ -113,6 +151,29 @@ def validate_code_rule_file(path: Path) -> list[str]:
     return errors
 
 
+def validate_sdd_rule_file(path: Path) -> list[str]:
+    errors: list[str] = []
+    text = read_text(path)
+
+    for heading in SDD_RULE_HEADINGS:
+        if heading not in text:
+            errors.append(f"{path.name} missing heading: {heading}")
+
+    for term in SDD_RULE_TERMS:
+        if term not in text:
+            errors.append(f"{path.name} missing required SDD governance term: {term}")
+
+    forbidden_sections = ("## 具体需求", "## 具体技术方案", "## 真实项目事实")
+    for heading in forbidden_sections:
+        if heading in text:
+            errors.append(f"{path.name} must not duplicate feature-specific content: {heading}")
+
+    if len(text.strip()) < 1000:
+        errors.append(f"{path.name} is too short for a useful SDD team rule")
+
+    return errors
+
+
 def validate_rules_dir(rules_dir: Path) -> list[str]:
     errors: list[str] = []
     rule_path = rules_dir / REQUIRED_FILE
@@ -127,11 +188,9 @@ def validate_rules_dir(rules_dir: Path) -> list[str]:
     if code_rule_path.exists():
         errors.extend(validate_code_rule_file(code_rule_path))
 
-    for extra_path in sorted(rules_dir.glob("*.md")):
-        if extra_path.name not in (REQUIRED_FILE, OPTIONAL_CODE_RULE_FILE):
-            errors.append(
-                f"Unexpected extra rule file: {extra_path}. Allowed outputs are {REQUIRED_FILE} and {OPTIONAL_CODE_RULE_FILE}."
-            )
+    sdd_rule_path = rules_dir / OPTIONAL_SDD_RULE_FILE
+    if sdd_rule_path.exists():
+        errors.extend(validate_sdd_rule_file(sdd_rule_path))
 
     return errors
 

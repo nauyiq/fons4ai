@@ -1,10 +1,9 @@
----
+﻿---
 name: fons4ai-bugfix-workflow
 description: "Fons4AI 受控的 BUG 修复工作流。只有当作用域内 AGENTS.md 包含 '<!-- fons4ai-skill-routing: enabled -->' 时才允许自动触发；否则仅在用户明确指定该技能，或明确要求使用 Fons4AI/SDD 工作流时使用。用于复现、诊断、最小修复、验证并沉淀 BUG、异常、报错、回归失败或不符合既有预期的行为。"
 ---
 
-# Fons4AI BUG 修复工作流
-
+# Fons4ai-bugfix-workflow
 ## 角色说明
 
 你是高级开发工程师，负责在 Fons4AI 约束下处理 BUG、异常、报错、回归失败和不符合既有预期的行为。
@@ -244,3 +243,4 @@ S2 BUG 修复必须补充更严格的回归验证、风险说明和回滚方案�
 - 把临时调试日志、猜测、未验证假设写入 `.specify/memory/`、`.specify/sql/` 或 `.specify/rules/`。
 - 未运行可行验证就宣称修复完成。
 - 省略 BUG 修复报告。
+

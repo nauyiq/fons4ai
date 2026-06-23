@@ -1,101 +1,152 @@
 ---
 name: fons4ai-generate-project-rules
-description: "Fons4AI gated project agent-rule generator. Auto-trigger only when an in-scope AGENTS.md contains '<!-- fons4ai-skill-routing: enabled -->'; otherwise use only when the user explicitly names this skill or asks for the Fons4AI workflow. Generates a concise .specify/rules/agent运行规则.md for generic AI-agent execution constraints."
+description: "Fons4AI 受控的项目 Agent 规则生成技能。只有当作用域内 AGENTS.md 启用 Fons4AI 路由，或用户明确指定该技能/Fons4AI 流程时使用；用于生成或更新 .specify/rules/agent运行规则.md，并在用户要求时生成 .specify/rules/代码编写规范.md 或 .specify/rules/sdd团队协作规范.md。MCP 只写通用使用边界，只有项目存在明确 MCP 配置或用户明确要求时才生成 MCP 工具清单。"
 ---
 
-# Fons4AI Generate Project Rules
+# Fons4ai-generate-project-rules
 
-## Activation Gate
+## 触发门禁
 
-Before using this skill, verify at least one condition is true:
+使用本技能前，必须确认至少满足以下任一条件：
 
-1. The user explicitly names this skill, such as `$fons4ai-generate-project-rules`.
-2. The user explicitly asks to use Fons4AI, SDD, or the Fons4AI workflow.
-3. The active repository has an in-scope `AGENTS.md` containing `<!-- fons4ai-skill-routing: enabled -->`.
+1. 用户明确指定该技能，例如 `$fons4ai-generate-project-rules`。
+2. 用户明确要求使用 Fons4AI、SDD 或 Fons4AI 工作流。
+3. 当前仓库作用域内存在 `AGENTS.md`，且包含 `<!-- fons4ai-skill-routing: enabled -->`。
 
-If none is true, do not apply this skill automatically. Continue with normal AI-agent behavior or ask whether the user wants to enable the Fons4AI workflow.
+如果以上条件都不满足，不得自动应用本技能。应继续使用普通 AI agent 行为，或询问用户是否希望启用 Fons4AI 工作流。
 
-## Role
+## 角色说明
 
-You are an engineering governance architect. Your responsibility is to convert verified project facts and user decisions into concise, enforceable rules that guide AI agents while they inspect, design, modify, verify, and summarize work in the repository.
+你是 AI 工程治理架构师兼项目规则负责人，负责把已验证的项目事实和用户决策转化为简洁、可执行、可校验的 Agent 工作规则。
 
-The target is not a long architecture manual. The target is a short operational rule file that future agents can read quickly and follow consistently.
+你的目标不是编写长篇架构手册，而是生成未来 Agent 能快速阅读并稳定遵守的项目级规则。
 
-## Overview
+## 职责边界
 
-Use this skill to generate or update `.specify/rules/agent运行规则.md`.
-When the user asks for coding rules or code-writing constraints, also generate or update `.specify/rules/代码编写规范.md`.
-
-This skill no longer generates the old multi-file rule set. If legacy rule files already exist, read them only as historical input when useful. Do not update or recreate them unless the user explicitly asks.
-
-Read `references/rule-files.md` before drafting or updating rule files. Use `assets/templates/agent运行规则-template.md` and `assets/templates/代码编写规范-template.md` as the required structures.
-
-## Workflow
-
-1. Determine the mode.
-   - Existing Project Mode: use when the repository already has source code, tests, build files, project guidance, or existing rules.
-   - New Project Mode: use when the repository is empty, newly scaffolded, or the user wants a top-level rule before implementation.
-   - Mixed Mode: use confirmed facts where available and mark unclear decisions as `待确认`.
-
-2. Inspect facts before writing.
-   - Read `AGENTS.md` when present.
-   - Read `.specify/memory/index.md` when present, then only targeted cards, domain documents, or project-level summaries that match the rule scope.
-   - Read existing `.specify/rules/agent运行规则.md` and `.specify/rules/代码编写规范.md` when present.
-   - Search existing rules, specs, docs, build files, representative source files, representative tests, and configuration files.
-   - Do not bulk-read all knowledge, rules, specs, docs, or source files. Use file inventory, targeted search, and representative samples.
-   - Record missing evidence explicitly instead of guessing.
-
-3. Decide merge strategy.
-   - If `.specify/rules/agent运行规则.md` or `.specify/rules/代码编写规范.md` exists, read it first and decide whether to merge, append, or replace.
-   - Ask the user before overwriting or materially rewriting an existing rule file unless the user already requested a rebuild.
-   - If legacy rule files exist, do not delete them automatically. Mention they are legacy rule inputs and ask before deletion or migration.
-
-4. Draft rule files.
-   - Keep it concise and directly executable by future AI agents.
-   - Prefer hard constraints over broad essays.
-   - For `agent运行规则.md`, keep the default structure: project scope, core principles, MCP usage rules, output requirements, forbidden actions, and information-gaps handling.
-   - For `代码编写规范.md`, focus on coding-time constraints only: tool reuse, code style, API design, DDD-lite ownership, exceptions/logging, data access/transactions, testing, and forbidden actions.
-   - Do not duplicate project technology stack or architecture facts in `代码编写规范.md`; those belong in `.specify/memory/`.
-   - Use Chinese headings and Chinese body text by default.
-   - Do not add platform-specific product names unless the user explicitly asks for a platform-specific rule.
-
-5. Validate before reporting success.
-   - Run `scripts/validate_rule_docs.py --rules-dir .specify/rules` after writing the rule file when Python is available.
-   - Confirm the output does not contain old five-file default-output wording.
-   - Confirm the rule file can stand alone for a new project even when `.specify/memory/` has not been initialized.
-
-## Rule Quality Requirements
-
-- Rules must be short, explicit, and executable.
-- Rules must prioritize project facts and user decisions over generic model habits.
-- Rules must distinguish confirmed rules from `待确认` items.
-- Rules must not invent business logic, APIs, database fields, third-party services, build commands, frameworks, or deployment processes.
-- MCP rules must not invent configured tools, accounts, databases, environments, or connection methods. Mark unknown MCP capabilities as `待确认`.
-- Rules must protect existing user changes and unrelated code.
-- Rules must route substantial new work through SDD when the project enables Fons4AI.
-- Rules must allow lightweight handling for tiny safe changes, while preserving investigation and verification.
-
-## Output Contract
-
-Default generated file:
+本技能默认生成或更新：
 
 - `.specify/rules/agent运行规则.md`
 
-Optional generated file when requested:
+当用户要求代码规则、编码规范、接口设计、代码风格或代码质量约束时，额外生成或更新：
 
 - `.specify/rules/代码编写规范.md`
 
-The file must include:
+当用户要求 SDD 团队协作、企业级 SDD 准入、SDD 评审门禁、SDD 完成定义或团队使用规范时，额外生成或更新：
+
+- `.specify/rules/sdd团队协作规范.md`
+
+本技能不再生成旧的多文件规则集。若旧规则文件已存在，只能作为历史输入读取；除非用户明确要求，不得更新、重建或删除旧规则文件。
+
+本技能不得：
+
+- 生成项目知识库正文。
+- 生成 SDD 需求、技术设计或任务规划。
+- 编写业务代码。
+- 把技术栈、模块结构、数据库表结构等项目事实搬进规则文件。
+- 把个人本机 MCP 工具写成团队项目规则。
+
+## 必要上下文
+
+生成或更新规则前，按需读取：
+
+1. `AGENTS.md`。
+2. `.specify/memory/index.md`，再按规则范围读取命中的卡片、领域文档或项目级摘要。
+3. 已有 `.specify/rules/agent运行规则.md` 和 `.specify/rules/代码编写规范.md`。
+4. 旧规则文件或团队自定义规则。
+5. 代表性的源码、测试、配置、构建文件。
+6. 用户明确提供的约束。
+
+不得为了生成规则而全量读取所有知识库、规则、规格、文档或源码。使用文件清单、定向搜索和代表性样本。
+
+## 工作流程
+
+1. 判断模式：
+   - 已有项目：仓库已有源码、测试、构建文件、项目说明或既有规则。
+   - 新项目：仓库为空、刚初始化，或用户希望先建立顶层规则。
+   - 混合模式：只写已确认事实，无法确认的决策标记为 `待确认`。
+
+2. 建立规则证据矩阵：
+   - 规则项。
+   - 来源路径或用户确认。
+   - 是否已确认。
+   - 适用范围。
+   - 是否写入规则文件。
+   证据不足时，不得把猜测写成规则。
+
+3. 判断合并策略：
+   - 目标规则文件已存在时，先读取再判断合并、追加或替换。
+   - 除非用户已明确要求重建，否则覆盖或大幅重写前必须确认。
+   - 旧规则文件存在时，只提示可迁移；删除旧规则前必须确认。
+
+4. 编写规则文件：
+   - 保持简洁、直接、可执行。
+   - 优先写硬性约束，避免长篇解释。
+   - `agent运行规则.md` 聚焦 Agent 执行边界：适用范围、核心原则、MCP 与外部工具使用规则、输出要求、禁止事项、信息不足处理。
+   - `代码编写规范.md` 只写编码时约束：复用、风格、API、DDD-lite、异常日志、数据访问与事务、测试、禁止事项。
+   - `sdd团队协作规范.md` 只写团队如何使用 SDD：准入规则、产物质量标准、角色与评审门禁、评审结论、标准扩展场景与专业工作流复用、标准样例库引用和 SDD 完成定义。
+   - 标题和正文默认使用中文。
+   - 不写入平台专有产品名，除非用户明确要求。
+
+5. 校验后交付：
+   - Python 可用时运行 `scripts/validate_rule_docs.py --rules-dir .specify/rules`。
+   - 确认不包含旧五文件默认输出约束。
+   - 确认新项目即使没有 `.specify/memory/` 也能独立使用 `agent运行规则.md`。
+
+## MCP 规则边界
+
+MCP 配置通常是使用人环境能力，不是天然的项目事实。默认只写 MCP 与外部工具的通用使用边界，不生成 MCP 工具清单或表格。
+
+只有满足以下任一条件，才允许在 `agent运行规则.md` 中生成 MCP 工具清单或 MCP 表格：
+
+1. 仓库内存在项目级 MCP 配置文件或团队规范文件，并能确认其属于项目约束。
+2. 用户明确要求把指定 MCP 工具写入项目规则。
+3. 项目知识库或 AGENTS.md 明确声明统一 MCP 能力。
+
+即使生成 MCP 表格，也只能写项目级事实，例如服务名、项目用途、配置来源、默认权限、使用边界和状态。不得写 token、账号、连接串、内部地址、查询语句、个人本机路径或敏感返回内容。
+
+没有项目级 MCP 配置时：
+
+- 保留 MCP 与外部工具使用原则。
+- 不生成 MCP 表格。
+- 不编造 MCP 名称、数据库、账号、环境或连接方式。
+- 个人本机 MCP 只能作为当前会话工具能力，不得写成项目规则。
+
+## 规则质量要求
+
+- 规则必须简短、明确、可执行。
+- 规则必须优先遵循项目事实和用户决策，而不是通用模型习惯。
+- 规则必须区分已确认规则和 `待确认` 项。
+- 规则不得编造业务逻辑、API、数据库字段、第三方服务、构建命令、框架或发布流程。
+- MCP 规则不得编造已配置工具、账号、数据库、环境或连接方式。
+- 规则必须保护已有用户改动和无关代码。
+- 当项目启用 Fons4AI 时，较大新需求必须路由到 SDD。
+- 小型安全修改可以轻量处理，但仍必须先调研并说明验证。
+
+## 输出契约
+
+默认生成文件：
+
+- `.specify/rules/agent运行规则.md`
+
+用户要求代码规则时，额外生成：
+
+- `.specify/rules/代码编写规范.md`
+
+用户要求 SDD 团队规范、企业级 SDD 治理、准入规则、评审门禁或完成定义时，额外生成：
+
+- `.specify/rules/sdd团队协作规范.md`
+
+`agent运行规则.md` 必须包含：
 
 - `# Agent运行规则`
 - `## 项目适用范围`
 - `## 核心原则`
-- `## MCP使用规则`
+- `## MCP与外部工具使用规则`
 - `## 输出要求`
 - `## 禁止事项`
 - `## 信息不足时的处理`
 
-`代码编写规范.md` must include:
+`代码编写规范.md` 必须包含：
 
 - `# 代码编写规范`
 - `## 基本原则`
@@ -108,4 +159,15 @@ The file must include:
 - `## 测试与验证`
 - `## 禁止事项`
 
-When the user asks for a dry run, provide the planned rule content and evidence summary without writing files.
+`sdd团队协作规范.md` 必须包含：
+
+- `# SDD团队协作规范`
+- `## 1. SDD使用准入规则`
+- `## 2. SDD产物质量标准`
+- `## 3. 角色与评审门禁`
+- `## 4. 评审结论`
+- `## 5. 标准扩展场景与专业工作流复用`
+- `## 6. 标准样例库`
+- `## 7. SDD完成定义`
+
+当用户要求预览或 dry run 时，只输出计划生成的规则内容和证据摘要，不写文件。

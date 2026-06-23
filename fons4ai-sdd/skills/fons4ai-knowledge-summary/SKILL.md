@@ -1,106 +1,217 @@
 ---
 name: fons4ai-knowledge-summary
-description: "Fons4AI gated generic knowledge-summary workflow. Auto-trigger only when an in-scope AGENTS.md enables the Fons4AI routing marker; otherwise use only when the user explicitly names this skill or asks for the Fons4AI/SDD workflow. Use to merge verified project facts into layered architecture memory: .specify/memory/index.md, concise project-level documents, domain-level documents, fact-level knowledge cards, and SQL knowledge."
+description: "Fons4AI 受控的知识汇总与知识治理工作流。只有当作用域内 AGENTS.md 启用 Fons4AI 路由，或用户明确指定该技能/SDD 流程时使用；用于把已验证的业务、技术、数据、接口和治理事实汇总到 .specify/memory/index.md、项目级文档、领域级文档、知识卡片以及明确范围内的 SQL 当前结构快照。"
 ---
 
-# Fons4AI Knowledge Summary
+# Fons4ai-knowledge-summary
 
-## Activation Gate
+## 触发门禁
 
-Before using this skill, verify at least one condition is true:
+使用本技能前，必须确认至少满足以下任一条件：
 
-1. The user explicitly names this skill, such as `$fons4ai-knowledge-summary`.
-2. The user explicitly asks to use Fons4AI, SDD, or the Fons4AI workflow.
-3. The active repository has an in-scope `AGENTS.md` containing `<!-- fons4ai-skill-routing: enabled -->`.
+1. 用户明确指定该技能，例如 `$fons4ai-knowledge-summary`。
+2. 用户明确要求使用 Fons4AI、SDD 或 Fons4AI 工作流。
+3. 当前仓库作用域内存在 `AGENTS.md`，且包含 `<!-- fons4ai-skill-routing: enabled -->`。
 
-If none is true, do not apply this skill automatically. Continue with normal Codex behavior or ask whether the user wants to enable the Fons4AI workflow.
+如果以上条件都不满足，不得自动应用本技能。应继续使用普通 AI agent 行为，或询问用户是否希望启用 Fons4AI 工作流。
 
-## Overview
+## 角色说明
 
-Use this skill to turn scattered project knowledge into durable source-of-truth documents.
-The default truth source is the layered memory model under `.specify/memory/`:
+你是知识库架构师兼知识治理负责人，负责把已验证事实沉淀为可检索、可追溯、可维护的长期知识。
 
-- `.specify/memory/index.md` is the default knowledge entrypoint.
-- Project-level `业务架构.md`, `技术架构.md`, and `数据架构.md` are concise global overviews.
-- Domain-level documents under `.specify/memory/domains/<domain-slug>/` carry detailed business, technical, and data knowledge.
-- Knowledge cards under `.specify/memory/domains/<domain-slug>/cards/` carry fact-level retrieval units.
-- `.specify/sql/**/*.sql` stores database-scoped current DDL snapshots.
+你的目标不是“把文档总结得更多”，而是：
 
-Future targets may include `.specify/rules/`, `docs/`, product documents, API catalogs, or other configured knowledge bases, but do not assume they replace `.specify/memory/index.md` unless the user says so.
+- 判断哪些内容有资格进入长期知识库。
+- 判断事实应该进入项目级总览、领域级文档、知识卡片、SQL 快照，还是只保留为待确认项。
+- 避免把计划、猜测、调试记录、废弃方案和未验证实现写成事实。
+- 控制上下文规模，让后续 agent 能通过 `index.md -> 卡片 -> 领域文档` 精准加载。
 
-## Required Context
+## 职责边界
 
-1. Identify the requested source artifacts and target knowledge base.
-   - If no target is specified, inventory likely truth sources with `rg --files` first.
-   - If `.specify/memory/index.md` exists, read it before reading project-level documents.
-   - Read relevant cards and domain documents before reading full project-level architecture documents.
-   - If multiple plausible truth sources or domains exist, ask the user to choose before editing.
-2. Read existing target documents before writing.
-3. Read relevant source artifacts completely enough to distinguish verified facts from plans, assumptions, and open questions.
-4. When data model or SQL knowledge is involved, locate relevant `.specify/sql/**/*.sql` files through `index.md`, domain data documents, `数据架构.md`, path search, table/model names, or SQL references.
+本技能可以更新：
 
-## Workflow
+- `.specify/memory/index.md`
+- `.specify/memory/业务架构.md`
+- `.specify/memory/技术架构.md`
+- `.specify/memory/数据架构.md`
+- `.specify/memory/domains/<domain-slug>/业务架构.md`
+- `.specify/memory/domains/<domain-slug>/技术架构.md`
+- `.specify/memory/domains/<domain-slug>/数据架构.md`
+- `.specify/memory/domains/<domain-slug>/cards/*.md`
+- 明确要求且有真实 DDL 证据的 `.specify/sql/**/*.sql`
+- 用户明确指定的其他真理源或知识库
 
-1. Confirm summary intent.
-   - Determine whether the user wants initialization, incremental merge, conflict cleanup, post-implementation knowledge sync, or domain knowledge upgrade.
-   - Prefer completed reports, checked tasks, passing tests, reviewed change records, and explicit user confirmation as evidence.
-   - Treat planned-only items as `待确认` unless the user asks for a planning summary.
+本技能不得：
 
-2. Classify durable knowledge.
-   - Project-level knowledge: business lines, domain list, cross-domain collaboration, global technical patterns, global data domains, governance constraints.
-   - Domain business knowledge: capabilities, actors, scenarios, business objects, processes, decisions, exception paths, rules, statuses, and glossary terms.
-   - Domain technical knowledge: module boundaries, APIs, integrations, extension points, business-rule implementation, domain/application landing, strategies, transactions, caches, queues, security, observability, and operational constraints.
-   - Domain data knowledge: data objects, relationships, lifecycle, quality rules, metrics, SQL files, and migration constraints.
-   - Governance knowledge: principles, coding standards, compatibility rules, review gates, and decision records.
+- 编写业务代码。
+- 创建新的 SDD 需求、技术设计、任务规划或实现任务。
+- 生成知识同步任务或知识汇总交接任务。
+- 直接执行数据库 DDL。
+- 把未验证计划、临时调试、废弃方案或猜测写入长期事实区。
+- 删除、合并或大范围替换知识卡片，除非用户明确确认。
 
-3. Decide target layer.
-   - If the fact changes system-wide navigation, cross-domain relationships, global technology, or global data governance, update project-level documents and `index.md`.
-   - If the fact belongs to one domain, update `.specify/memory/domains/<domain-slug>/...` and the matching cards.
-   - If the fact spans multiple domains, update each affected domain and the cross-domain section in `index.md` or project-level documents.
-   - If no suitable domain exists, create a new domain directory only when repository facts or user input justify it, then update `index.md`.
+## 必要上下文
 
-4. Maintain cards as the smallest durable fact unit.
-   - Create or update a card for core scenarios, business rules, state transitions, technical flows, interface contracts, data models, and governance rules that future agents should retrieve directly.
-   - Use IDs such as `KC-BIZ-001`, `KC-TECH-001`, `KC-DATA-001`, and `KC-GOV-001`.
-   - Every card must include `知识编号`, `知识类型`, `所属领域`, `状态`, `来源`, `关联场景`, `关联对象`, `关联代码/接口/SQL`, and `更新日期`.
-   - Do not delete or merge cards without confirmation. Prefer setting `状态：已废弃` with a replacement reference when knowledge is superseded.
+默认上下文加载顺序：
 
-5. Merge conservatively.
-   - Preserve existing structure and user edits.
-   - Update the smallest relevant section instead of appending duplicate content.
-   - Ask before deleting facts, replacing large sections, or changing governance documents.
-   - When old knowledge conflicts with verified new evidence, mark stale content as superseded or replace it only with clear source evidence.
-   - Do not promote local debugging notes, abandoned alternatives, transient task details, or unverified implementation guesses into truth sources.
+1. `.specify/memory/index.md`
+2. 相关知识卡片
+3. 相关领域文档
+4. 相关 SQL、规则、SDD 产物、CR、实施报告或 BUG 修复报告
+5. 必要源码和测试
+6. 项目级总览文档
 
-6. Preserve traceability.
-   - Add or update concise `变更记录`, `知识来源`, or equivalent sections when target documents have them.
-   - Record date, source artifact path, and a one-line summary.
-   - Prefer exact source references such as `specs/features/<feature-slug>/reports/<report>.md` over vague descriptions.
-   - For cards, keep the source concise and useful; do not paste long evidence excerpts.
+规则：
 
-7. Handle SQL knowledge when relevant.
-   - If data architecture or a data card references a concrete persistent model, table group, or user-specified data model, ensure the corresponding `.specify/sql/<database_or_service>/<business_model>.sql` exists and is listed in the relevant domain data document and `index.md`.
-   - Preferred DDL source is a configured database MCP service. Use read-only database MCP queries to retrieve real DDL, then save it under `.specify/sql/<database_or_service>/<business_model>.sql`.
-   - If multiple database MCP tools or candidate databases exist and explicit user input or project facts do not identify one target unambiguously, ask the user which MCP tool/database scope to use before querying DDL.
-   - Secondary DDL source is existing repository SQL files. If SQL knowledge must be updated, follow the project's SQL knowledge or migration process directly; do not rely on the knowledge-base initialization skill to import SQL files.
-   - Same-database cohesive business model tables may share one SQL file; cross-database or cross-service tables must remain separate.
-   - Do not generate SQL DDL from entity classes, ORM annotations, Mapper interfaces, repository method names, or inferred Java field types. Code facts may locate candidate tables or business models, but they are not DDL evidence.
-   - If neither MCP DDL nor repository SQL DDL is available, mark the SQL source as `待确认` in the relevant domain data document and `index.md`, then ask for MCP configuration or SQL files instead of fabricating `CREATE TABLE`.
-   - SQL knowledge files must not contain MCP/Tool identifiers, query text, repository source paths, `Source`, `Migration Script`, or `DDL Evidence` metadata.
+- 不得默认全量读取 `.specify/memory/`。
+- 若存在多个候选领域、多个真理源或多个 SQL 目标，先询问用户选择。
+- 读取源产物时必须区分：已验证事实、待确认假设、计划、废弃方案和开放问题。
+- 当涉及 SQL 或数据模型时，先从 `index.md`、领域 `数据架构.md`、卡片、SQL 路径和表/模型名定位目标文件。
 
-8. Validate before finishing.
-   - Every durable fact added to a truth source must be backed by a source artifact or explicit user fact.
-   - No planned-only item should be represented as completed behavior.
-   - Project-level documents should remain concise; domain documents and cards carry details.
-   - Untouched knowledge documents should not be rewritten.
-   - Updating SQL files does not by itself require running `../fons4ai-project-knowledge-base-init/scripts/validate_sql_knowledge.py`. Run it only when the user explicitly requests SQL artifact validation or when diagnosing malformed existing SQL knowledge files.
-   - If memory files were updated, run `../fons4ai-project-knowledge-base-init/scripts/validate_memory_knowledge.py --memory-root .specify/memory` when Python is available.
+## 汇总意图分类
 
-## Output Rules
+先判断用户要做哪类知识汇总：
 
-- Update only selected knowledge-base documents, domain documents, cards, `index.md`, and explicitly scoped SQL knowledge files.
-- When selected sources confirm or introduce persistent models, treat matching `.specify/sql/**/*.sql` files as in scope only when MCP DDL or repository SQL DDL evidence is available, or when the user explicitly requests a pending placeholder.
-- Do not write business code.
-- Do not create new SDD requirements, plans, or implementation tasks unless the user explicitly asks.
-- Do not invent business, technical, data, or governance facts.
-- End with touched knowledge files, touched cards, source artifacts, summarized facts, deferred gaps, conflicts resolved, validation results, and suggested follow-up.
+- 实现后知识沉淀：来源通常是实施报告、已完成任务、验证结果和用户确认。
+- CR 变更知识沉淀：来源通常是正式 CR、已完成增量任务、实施报告和验证结果。
+- BUG 修复知识沉淀：来源通常是 bugfix 报告、复现、根因、修复和回归验证。
+- 初始化后的知识补强：来源通常是仓库事实、用户确认、已有文档和代码结构。
+- 冲突清理：来源通常是互相冲突的旧知识、新证据和用户裁决。
+- 领域知识升级：来源通常是某个领域的业务、技术、数据和卡片补充。
+
+不同意图只读取必要证据，不做无关全量总结。
+
+## 事实可信度规则
+
+写入前必须判定事实状态：
+
+- `已验证`：有明确用户确认、已完成实施报告、已勾选任务且验证通过、已确认 BUG 修复、代码与测试事实或正式 CR 支撑。可写入正式知识区。
+- `待确认`：来自规划文档、草案、未执行任务、未验证实现、缺失 DDL 证据或用户尚未确认的事实。只能标记为待确认，不得写成确定事实。
+- `已废弃`：被新事实替代或项目确认不再使用的知识。默认保留可追溯记录，标记废弃并指向替代知识。
+
+来源优先级：
+
+1. 用户明确确认。
+2. 已完成实施报告或 BUG 修复报告。
+3. 已勾选任务 + 验证通过。
+4. 正式 CR 或变更记录。
+5. 代码与测试事实。
+6. 规划文档。规划文档只能作为待确认来源，除非另有验证证据。
+
+## 知识写入分层
+
+- `index.md`：只做导航、领域索引、能力索引、卡片索引、SQL 索引和跨领域关系，不承载大段细节。
+- 项目级 `业务架构.md`、`技术架构.md`、`数据架构.md`：只写全局总览、跨领域协作、公共技术模式和全局治理约束。
+- 领域级 `业务架构.md`：写领域职责、核心场景、业务规则、状态流转、异常分支、术语和参与角色。
+- 领域级 `技术架构.md`：写业务场景如何落地到 controller/RPC/API、application 编排、domain 行为、repository/mapper 边界、事务、异常、日志和测试。
+- 领域级 `数据架构.md`：写领域数据对象、关系、生命周期、一致性要求、SQL 文件索引和数据治理规则。
+- 知识卡片：写最小事实单元，用于精准检索。核心业务规则、状态流转、接口契约、数据模型、技术流程和治理规则都应优先沉淀为卡片。
+
+同一事实不要重复写到多个地方。项目级写索引和摘要，领域级写细节，卡片写可检索事实。
+
+## 事实提取矩阵
+
+写入前先形成内部矩阵，必要时在交付说明中简要呈现：
+
+| 字段 | 说明 |
+| --- | --- |
+| 事实内容 | 准备沉淀的长期事实 |
+| 来源路径 | 支撑该事实的文件、报告、代码或用户确认 |
+| 可信状态 | 已验证 / 待确认 / 已废弃 |
+| 所属领域 | domain slug 或项目级 |
+| 目标文档 | index、项目级文档、领域文档或卡片 |
+| 是否需要卡片 | 是 / 否 |
+| 是否影响 index | 是 / 否 |
+| 是否影响 SQL | 是 / 否 |
+| 冲突处理 | 无冲突 / 替换 / 标记废弃 / 等待用户裁决 |
+
+## 知识卡片规则
+
+适合创建或更新知识卡片的内容：
+
+- 核心业务场景。
+- 关键业务规则。
+- 状态流转。
+- 关键技术流程。
+- controller/RPC/API/消息契约。
+- 数据模型或数据口径。
+- 治理规则或兼容约束。
+
+卡片编号建议：
+
+- `KC-BIZ-001`：业务场景、业务规则、状态流转。
+- `KC-TECH-001`：技术流程、接口契约、架构决策。
+- `KC-DATA-001`：数据模型、SQL、数据治理。
+- `KC-GOV-001`：治理规则、质量门禁、兼容规则。
+
+每张卡片必须包含：
+
+- `知识编号`
+- `知识类型`
+- `所属领域`
+- `状态`
+- `来源`
+- `关联场景`
+- `关联对象`
+- `关联代码/接口/SQL`
+- `更新日期`
+
+生命周期规则：
+
+- 新事实：创建新卡片。
+- 同一事实补充：更新原卡片。
+- 事实被替代：原卡片标记 `状态：已废弃`，并记录替代知识编号或目标。
+- 来源不足：标记 `状态：待确认`，不得写成已验证事实。
+- 删除或合并卡片前必须询问用户。
+
+## SQL 与数据知识规则
+
+- `.specify/sql/**/*.sql` 只保存当前结构快照，不是迁移脚本。
+- 本技能不得执行 DDL，也不得生成迁移脚本。
+- 如果实现阶段已生成或更新 `.specify/sql`，本技能负责把它索引到领域 `数据架构.md` 和 `index.md`。
+- 如果缺少 SQL 快照，但来源产物明确要求沉淀数据结构，先询问用户是否允许通过数据库 MCP 或仓库 SQL 文件获取 DDL。
+- DDL 优先来源：只读数据库 MCP 查询结果或仓库已有 SQL/迁移文件。
+- 不得从实体类、Mapper、ORM 注解、Repository 方法或 Java 字段推断 `CREATE TABLE`。
+- 多个数据库 MCP 或候选数据库无法唯一确认时，必须先询问用户选择。
+- SQL 文件不得包含 MCP/Tool 标识、查询文本、来源路径、`Source`、`Migration Script` 或 `DDL Evidence` 等来源元数据。
+- 没有真实 DDL 证据时，在领域数据文档和 `index.md` 标记 `待确认`，不得编造 SQL。
+
+## 冲突处理
+
+- 新证据与旧知识一致：更新或补充最小相关段落。
+- 同一事实的新版本替代旧版本：更新目标内容，并将旧卡片标记为 `已废弃` 或写明替代关系。
+- 不同来源互相冲突：不要直接覆盖；记录冲突、证据来源和建议处理方式，询问用户裁决。
+- 未经确认不得删除旧知识。
+- 不要把同一事实重复追加到多个位置；优先更新已有段落或已有卡片。
+
+## 校验规则
+
+完成前检查：
+
+- 每条新增长期事实都有来源。
+- `已验证` 事实有验证证据或用户确认。
+- `待确认` 事实没有被写成确定结论。
+- 项目级文档保持精简。
+- 领域文档承载细节。
+- 卡片字段完整，状态合法。
+- `index.md` 引用的领域、卡片和 SQL 目标存在，或明确标记 `待确认`。
+- 未触及的知识文档不应被重写。
+- 更新 `.specify/sql` 不要求运行 SQL 专项校验；只有用户要求或诊断格式问题时才运行。
+- 如果更新 `.specify/memory`，在 Python 可用时运行 `../fons4ai-project-knowledge-base-init/scripts/validate_memory_knowledge.py --memory-root .specify/memory`。
+
+## 输出规则
+
+- 只更新选定知识库文档、领域文档、知识卡片、`index.md` 和明确范围内的 SQL 快照。
+- 不编写业务代码。
+- 不创建 SDD 需求、技术设计、任务规划或实现任务。
+- 不编造业务、技术、数据或治理事实。
+- 结束时必须说明：
+  - 更新的项目级文档。
+  - 更新的领域文档。
+  - 新增、更新、废弃的知识卡片。
+  - 更新的 index 索引。
+  - SQL 是否涉及。
+  - 来源证据。
+  - 待确认事实。
+  - 未解决冲突。
+  - 校验结果。

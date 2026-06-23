@@ -15,13 +15,16 @@ BAD_TEXT_PATTERNS = tuple(
 )
 PROJECT_FILES = ("index.md", "业务架构.md", "技术架构.md", "数据架构.md")
 DOMAIN_FILES = ("业务架构.md", "技术架构.md", "数据架构.md")
-CARD_REQUIRED_FIELDS = ("知识编号", "知识类型", "所属领域", "状态", "来源", "更新日期")
+CARD_REQUIRED_FIELDS = ("知识编号", "知识类型", "所属领域", "状态", "来源", "可信度说明", "关联场景", "关联对象", "关联代码/接口/SQL", "更新日期")
 CARD_ALLOWED_TYPES = {"业务场景", "业务规则", "状态流转", "技术流程", "接口契约", "数据模型", "治理规则"}
-CARD_ALLOWED_STATUS = {"已确认", "推断", "待确认", "已废弃"}
+# Keep 已确认 for legacy documents; new templates should emit 已验证 / 待确认 / 已废弃.
+CARD_ALLOWED_STATUS = {"已验证", "待确认", "已废弃", "已确认"}
 SQL_PATH_RE = re.compile(r"\.specify/sql/[A-Za-z0-9_./-]+\.sql")
 DOMAIN_PATH_RE = re.compile(r"(?:\.specify/memory/)?domains/([A-Za-z0-9_-]+)(?:/|$)")
+CARD_PATH_RE = re.compile(r"\.specify/memory/domains/[A-Za-z0-9_-]+/cards/[A-Za-z0-9_.-]+\.md")
 SCENARIO_RE = re.compile(r"\bBS-(?:[A-Z0-9]+-)?\d{3}\b")
 HEADER_FIELD_RE = re.compile(r"^>\s*([^：:]+)\s*[：:]\s*(.+?)\s*$", re.MULTILINE)
+DOMAIN_SLUG_IN_LABEL_RE = re.compile(r"[（(]\s*([A-Za-z0-9_-]+)\s*[）)]")
 
 
 def read(path: Path) -> str:
@@ -43,6 +46,8 @@ def check_markdown(path: Path, text: str, errors: list[str]) -> None:
     for pattern in BAD_TEXT_PATTERNS:
         if pattern in text:
             errors.append(f"{path} contains mojibake pattern: {pattern}")
+    if "推断" in text:
+        errors.append(f"{path} must not use 推断 as a knowledge status; use 待确认 with a credibility note")
 
 
 def read_required(path: Path, errors: list[str]) -> str:
@@ -70,6 +75,14 @@ def card_fields(text: str) -> dict[str, str]:
     return {match.group(1).strip(): match.group(2).strip() for match in HEADER_FIELD_RE.finditer(text)}
 
 
+def domain_slug_from_label(label: str) -> str:
+    label = label.strip()
+    match = DOMAIN_SLUG_IN_LABEL_RE.search(label)
+    if match:
+        return match.group(1)
+    return label
+
+
 def resolve_repo_path(repo_root: Path, path_text: str) -> Path:
     clean = path_text.strip("`").replace("\\", "/")
     if clean.startswith(".specify/"):
@@ -83,6 +96,14 @@ def validate_sql_refs(path: Path, text: str, repo_root: Path, errors: list[str])
             continue
         if "待确认" not in text:
             errors.append(f"{path} references missing SQL file without pending marker: {sql_ref}")
+
+
+def validate_card_refs(path: Path, text: str, repo_root: Path, errors: list[str]) -> None:
+    for card_ref in sorted(set(CARD_PATH_RE.findall(text))):
+        if resolve_repo_path(repo_root, card_ref).exists():
+            continue
+        if "待确认" not in text:
+            errors.append(f"{path} references missing knowledge card without pending marker: {card_ref}")
 
 
 def validate_card(path: Path, expected_domain: str, repo_root: Path) -> list[str]:
@@ -100,10 +121,18 @@ def validate_card(path: Path, expected_domain: str, repo_root: Path) -> list[str
     status = fields.get("状态", "").split("|", 1)[0].strip()
     if status and status not in CARD_ALLOWED_STATUS:
         errors.append(f"{path} has unsupported 状态: {status}")
+    if status == "已废弃" and not re.search(r"替代知识|废弃原因|替代", text):
+        errors.append(f"{path} is 已废弃 but has no replacement or deprecation reason")
+    if fields.get("状态", "").startswith("已验证") and not fields.get("来源", "").strip():
+        errors.append(f"{path} is 已验证 but has no 来源")
+    if status == "待确认" and not fields.get("可信度说明", "").strip():
+        errors.append(f"{path} is 待确认 but has no 可信度说明")
     domain = fields.get("所属领域", "")
-    if domain and domain != expected_domain:
-        errors.append(f"{path} 所属领域 must be '{expected_domain}', got '{domain}'")
+    domain_slug = domain_slug_from_label(domain)
+    if domain_slug and domain_slug != expected_domain:
+        errors.append(f"{path} 所属领域 must reference slug '{expected_domain}', got '{domain}'")
     validate_sql_refs(path, text, repo_root, errors)
+    validate_card_refs(path, text, repo_root, errors)
     return errors
 
 
@@ -125,6 +154,7 @@ def validate_domain(domain_dir: Path, repo_root: Path) -> list[str]:
 
     for file_name, text in docs.items():
         validate_sql_refs(domain_dir / file_name, text, repo_root, errors)
+        validate_card_refs(domain_dir / file_name, text, repo_root, errors)
 
     cards_dir = domain_dir / "cards"
     if cards_dir.exists():
@@ -164,6 +194,7 @@ def validate(memory_root: Path) -> list[str]:
 
     for name, text in docs.items():
         validate_sql_refs(memory_root / name, text, repo_root, errors)
+        validate_card_refs(memory_root / name, text, repo_root, errors)
 
     return errors
 

@@ -3,7 +3,7 @@ name: fons4ai-sdd-change
 description: "Fons4AI 受控的 SDD 增量变更工作流。只有当作用域内 AGENTS.md 包含 '<!-- fons4ai-skill-routing: enabled -->' 时才允许自动触发；否则仅在用户明确指定该技能，或明确要求使用 Fons4AI/SDD 工作流时使用。用于对已有 SDD 功能先澄清变更、分析影响、生成 CR，并把可执行增量任务追加到任务规划后停止等待实现确认。"
 ---
 
-# Fons4AI SDD 变更
+# Fons4ai-sdd-change
 
 ## 触发门禁
 
@@ -51,8 +51,9 @@ description: "Fons4AI 受控的 SDD 增量变更工作流。只有当作用域�
    - `changes/CR-*.md`
    - `reports/*.md`
 4. 按变更意图、AC ID、模块、API、领域对象、表/模型名和 SQL 路径搜索相关源码、测试、SQL、规则和知识卡片。
-5. 只读取会影响本次变更的上下文。只有跨领域、S2 或全局约束决策时，才读取项目级知识库总览。
-6. 使用 `assets/templates/change-template.md`。
+5. 按需读取 `.specify/rules/sdd团队协作规范.md`，用于判断标准扩展场景、S2 条件、评审门禁和完成定义。
+6. 只读取会影响本次变更的上下文。只有跨领域、S2 或全局约束决策时，才读取项目级知识库总览。
+7. 使用 `assets/templates/change-template.md`。
 
 ## 变更澄清门禁
 
@@ -79,6 +80,9 @@ description: "Fons4AI 受控的 SDD 增量变更工作流。只有当作用域�
 ## 变更规划流程
 
 1. 确认目标功能和变更意图。
+   - 如果变更属于已有能力的标准化扩展场景，例如新增支付渠道、物流渠道、短信渠道、三方服务渠道、报表类型、审批流、策略类型、Provider、Adapter、Strategy、Handler 或 Connector，必须优先识别已有专业工作流、领域知识卡片或团队规则。
+   - 标准扩展场景不等于全新功能；如果不改变公共抽象、数据模型或公共契约，优先按 S1 Change 处理。
+   - 如果需要改变公共抽象、公共契约、数据结构、资金/安全链路或核心状态流转，升级为 S2 Change。
 2. 执行现状一致性检查：
    - `<功能中文名>-任务规划.md` 是否存在未完成任务。
    - 历史 CR 是否存在未完成增量任务。
@@ -109,6 +113,7 @@ description: "Fons4AI 受控的 SDD 增量变更工作流。只有当作用域�
    - 测试和回归影响。
    - 回滚、兼容、安全、事务和发布风险。
    - 长期知识影响。
+   - 若属于标准扩展场景，补充专业工作流复用分析：可复用工作流/规则/卡片、差异点、禁止修改的公共抽象、必须落入设计和任务的约束。
 7. 确定编号：
    - 扫描 `changes/CR-*.md`，生成下一个连续 CR ID。
    - 扫描 `<功能中文名>-任务规划.md` 现有 `Txxx`，新增任务从最大编号之后继续。
@@ -124,6 +129,7 @@ description: "Fons4AI 受控的 SDD 增量变更工作流。只有当作用域�
     - CR 只记录任务摘要和新增任务 ID。
     - `fons4ai-sdd-implement` 只从 `<功能中文名>-任务规划.md` 执行任务。
     - 每个增量任务必须包含 `AC:`、`Files:`、`Verification:`、`Quality:`、`Done:`。
+    - 如果 CR 引用了专业工作流，必须把关键约束拆入新增任务的 `Quality:`、`Verification:` 或 `Done:`，不得只写“参考某工作流”。
 11. 写入 CR 后运行：
     - `../fons4ai-sdd-tasks/scripts/validate_sdd_artifacts.py --change-file <CR-file>`
 12. 停止在变更规划阶段，提示用户确认执行。

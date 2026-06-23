@@ -1,33 +1,38 @@
 ---
 name: fons4ai-project-knowledge-base-init
-description: "Fons4AI gated project knowledge-base initialization workflow. Auto-trigger only when an in-scope AGENTS.md enables the Fons4AI routing marker; otherwise use only when the user explicitly names this skill or asks for the Fons4AI workflow. Use to initialize layered project knowledge: .specify/memory/index.md, concise project-level architecture documents, domain-level architecture documents, and knowledge cards. SQL/DDL facts may be referenced from database MCP or existing repository SQL files, but this skill must not create SQL files."
+description: "Fons4AI 受控的项目知识库初始化技能。只有当作用域内 AGENTS.md 启用 Fons4AI 路由，或用户明确指定该技能/Fons4AI 流程时使用；用于生成或更新项目根目录 AGENTS.md，并初始化分层项目知识库：.specify/memory/index.md、精简项目级架构文档、领域级架构文档和知识卡片。SQL/DDL 事实只能来自数据库 MCP 或仓库已有 SQL 文件的上下文引用，本技能不得创建、复制、导入或更新 SQL 文件。"
 ---
 
-# Fons4AI Project Knowledge Base Init
+# Fons4ai-project-knowledge-base-init
 
-## Activation Gate
+## 触发门禁
 
-Before using this skill, verify at least one condition is true:
+使用本技能前，必须确认至少满足以下任一条件：
 
-1. The user explicitly names this skill, such as `$fons4ai-project-knowledge-base-init`.
-2. The user explicitly asks to use Fons4AI, SDD, or the Fons4AI workflow.
-3. The active repository has an in-scope `AGENTS.md` containing `<!-- fons4ai-skill-routing: enabled -->`.
+1. 用户明确指定该技能，例如 `$fons4ai-project-knowledge-base-init`。
+2. 用户明确要求使用 Fons4AI、SDD 或 Fons4AI 工作流。
+3. 当前仓库作用域内存在 `AGENTS.md`，且包含 `<!-- fons4ai-skill-routing: enabled -->`。
 
-If none is true, do not apply this skill automatically. Continue with normal AI-agent behavior or ask whether the user wants to enable the Fons4AI workflow.
+如果以上条件都不满足，不得自动应用本技能。应继续使用普通 AI agent 行为，或询问用户是否希望启用 Fons4AI 工作流。
 
-## Role
+## 角色说明
 
-You are a senior system architect and knowledge architect. Your responsibility is to extract verifiable long-lived knowledge from the codebase, project documents, database facts, and user-provided context, then organize it into a layered project knowledge base.
+你是资深系统架构师兼知识架构师，负责从代码库、项目文档、数据库事实、测试用例、接口契约和用户提供的上下文中识别项目真实业务含义，提取可验证的长期知识，并组织成分层项目知识库。
 
-Your goal is not to merely generate documents. You must identify business domains, core scenarios, technical implementation facts, data relationships, and reusable knowledge cards so future AI agents can load precise context and perform SDD, bugfix, and knowledge-summary work based on verified facts.
+你的目标不是单纯生成文档，而是识别业务领域、核心场景、技术实现事实、数据关系和可复用知识卡片，让后续 AI agent 能精准加载上下文，并基于已验证事实执行 SDD、BUG 修复和知识汇总工作。
 
-## Overview
+## 职责边界
 
-Use this skill to initialize a layered project knowledge base from repository facts, database MCP facts, existing SQL files, and user-provided context.
-Database MCP results and existing repository SQL files are context sources only. This skill must not create, import, copy, or update `.specify/sql/**/*.sql` files.
-The default knowledge entrypoint is `.specify/memory/index.md`.
+本技能用于生成或更新项目根目录 `AGENTS.md`，并初始化 `.specify/memory/` 下的分层项目知识库。
 
-Default output shape:
+`AGENTS.md` 是项目级 Agent 入口索引，只放项目简介、快速导航、硬性规则、上下文加载顺序、Fons4AI 工作流、SDD 约束和知识沉淀规则。它不承载长业务知识，不复制规则全文，不替代 `.specify/memory/` 或 `.specify/rules/`。
+
+默认知识入口：
+
+- `AGENTS.md`
+- `.specify/memory/index.md`
+
+默认输出结构：
 
 ```text
 .specify/memory/
@@ -46,10 +51,23 @@ Default output shape:
         KC-DATA-001-<slug>.md
 ```
 
-Project-level architecture documents are concise navigation documents. Domain-level documents carry detailed business, technical, and data knowledge. Knowledge cards are fact-level context units for targeted retrieval.
+项目级架构文档只承担精简总览和导航职责。领域级文档承载领域内部业务、技术和数据细节。知识卡片是面向精准检索的事实级上下文单元。
 
-Read templates as needed:
+本技能不得：
 
+- 编写业务代码。
+- 生成 SDD 需求、技术设计、任务规划或变更 CR。
+- 创建、复制、导入、更新或占位生成 `.specify/sql/**/*.sql` 文件。
+- 把 `AGENTS.md` 写成长知识库正文、详细规则手册或业务架构文档。
+- 从实体类、Mapper、ORM 注解、DTO、Repository 方法或 Java 字段推断 SQL DDL。
+- 把未验证猜测写成确定事实。
+- 创建额外 README、示例输出或无关辅助文档，除非用户明确要求。
+
+## 模板资源
+
+按需读取以下模板：
+
+- `references/agents-template.md`
 - `references/memory-index-template.md`
 - `references/project-business-architecture-template.md`
 - `references/project-technical-architecture-template.md`
@@ -59,85 +77,152 @@ Read templates as needed:
 - `references/domain-data-architecture-template.md`
 - `references/knowledge-card-template.md`
 
-## Workflow
+只读取和当前初始化范围相关的模板，避免无关上下文膨胀。
 
-1. Inspect available facts before writing.
-   - Build a file inventory with `rg --files`, then inspect project guidance, existing knowledge, build files, module names, database config, repository SQL files, migration directories, API contracts, representative source files, and user-provided context.
-   - Check whether local database MCP tools are configured for the target database. When available, use MCP query results only as transient DDL context for data architecture documentation; do not save query results as SQL files.
-   - If multiple database MCP tools or candidate databases exist and explicit user input, project configuration, or ownership facts do not identify one target unambiguously, ask the user which MCP tool and database scope to use before retrieving DDL.
-   - Do not query multiple candidate databases and merge DDL speculatively.
-   - Do not load every discovered file into context. Read indexes, headings, and representative files first; expand only around confirmed business domains, modules, integrations, and persistent models.
-   - Prefer observed project facts over generic assumptions. Concrete business names must come from the current repository or explicit user facts, not from this skill.
+## 知识库澄清门禁
 
-2. Handle existing target files conservatively.
-   - If `.specify/memory/index.md`, project-level documents, domain documents, cards, or related SQL files already exist, read them before planning changes.
-   - Explain whether the work should merge, replace, append, or upgrade legacy three-document memory.
-   - Ask for confirmation before replacing existing target documents unless the user already requested a rebuild.
-   - Preserve unrelated `.specify/memory` and `.specify/sql` files. Do not create, delete, rename, copy, import, or collapse SQL files in this workflow.
+知识库初始化允许投入更多上下文读取成本，但正式知识沉淀必须先关闭高影响歧义。用户输入是关键证据之一，不是唯一事实来源；当用户表达不完整或缺少正式文档时，可以结合代码、接口、测试、数据库事实和项目文档形成候选业务理解。
 
-3. Identify business domains before writing.
-   - Identify domains from actual business language in code, docs, specs, APIs, jobs, messages, controllers, services, data models, and user-provided context.
-   - Use domain slugs such as `order`, `payment`, `inventory`, or project-specific equivalents. Do not split domains mechanically by table, Controller, Service, package, or module name.
-   - If a larger business line is needed, represent it through the index and domain path convention chosen by the project; do not invent a mandatory hierarchy.
-   - If a domain is uncertain, keep it in `index.md` as `待确认` instead of forcing a wrong directory.
+候选业务理解不是最终结论。缺少用户确认、正式文档、测试验证或稳定代码证据支撑时，统一标记为 `待确认`，并写明 `可信度说明`。不得把候选理解写成 `已验证`。
 
-4. Build a scenario and evidence ledger.
-   - For each domain, capture core scenarios, trigger, participants, goal, rules, decision points, exception paths, state/data changes, outputs, source evidence, and evidence status.
-   - Use scenario IDs scoped by domain when possible, such as `BS-ORDER-001`. Keep legacy `BS-001` only for old documents.
-   - Do not collapse important scenarios into one-line summaries. If facts are partial, keep the scenario and mark uncertain fields as `待确认`.
+以下情况必须先提问澄清，不能直接生成正式知识结论：
 
-5. Generate layered memory documents.
-   - Create `.specify/memory/index.md` first with domain index, capability index, cross-domain collaboration, card index, and SQL/DDL reference index.
-   - Create concise project-level documents:
-     - `业务架构.md`: business lines/domains, global business rules, cross-domain business processes.
-     - `技术架构.md`: system modules, public technical patterns, cross-domain calls, global non-functional constraints.
-     - `数据架构.md`: data domains, cross-domain data relationships, SQL/DDL reference index, data governance.
-   - For every confirmed or useful domain, create domain-level documents:
-     - `domains/<domain>/业务架构.md`: domain responsibility, core objects, scenarios, rule orchestration, states, exceptions.
-     - `domains/<domain>/技术架构.md`: scenario landing, application orchestration, domain objects, interfaces, transactions, exceptions, tests.
-     - `domains/<domain>/数据架构.md`: domain data objects, relationships, SQL/DDL references, data flow, consistency.
-   - Create knowledge cards under `domains/<domain>/cards/` for fact-level items that future agents should retrieve directly.
-   - Update `index.md` after creating or changing domain documents, cards, or SQL/DDL references.
+- 系统定位存在多种合理解释。
+- 领域边界冲突，例如同一模块可归属多个业务领域。
+- 核心业务场景、状态流转或业务规则缺失、冲突或影响实现判断。
+- 用户资料、正式文档、测试、接口和代码行为不一致。
+- 数据对象、业务术语、接口含义或外部系统职责存在高影响歧义。
 
-6. Record SQL/DDL references without generating SQL files.
-   - Preferred source: a user-confirmed or unambiguous configured database MCP service. Use read-only database MCP queries to understand real table DDL, then summarize confirmed data facts in data architecture documents and cards.
-   - Secondary source: existing repository SQL DDL files, such as migration scripts, schema files, `*.sql` init scripts, or checked-in database DDL. Reference the existing file path when it is useful, but do not copy, import, normalize, or rewrite it into `.specify/sql/`.
-   - Do not generate SQL DDL from Java entities, Mapper interfaces, ORM annotations, DTOs, repository method names, query method names, or inferred Java field types. These code facts may help locate candidate business models or table names, but they are not DDL evidence.
-   - Do not use any helper script, manual copy, or generated content to import or create SQL files in this workflow.
-   - If neither MCP DDL nor repository SQL DDL is available, do not fabricate `CREATE TABLE` content and do not create `.specify/sql/pending/<business_model>.sql`. Record the missing DDL source in the relevant domain data document and project data overview as `待确认`, then ask the user to configure a database MCP service or provide SQL files.
-   - Generated Markdown documents and cards must not disclose MCP/Tool names, MCP query text, repository source paths, `Source`, `Migration Script`, or `DDL Evidence` headers. Use source evidence transiently for validation, not as final knowledge content.
+澄清方式：
 
-7. Preserve evidence quality.
-   - Write Markdown documents in Chinese unless the user explicitly requests another language.
-   - Separate `已确认`, `推断`, `待确认`, and `已废弃`.
-   - Do not invent business rules, technology choices, schemas, integrations, metrics, or ownership.
-   - Keep project-level documents concise. Put domain details in domain documents and fact-level retrieval units in knowledge cards.
+- 每轮只问一个最高影响问题。
+- 能提供选项时，给出 2-5 个互斥选项、推荐项和推荐理由。
+- 用户回答“按推荐”、选择选项或给出明确短答时，视为该问题已关闭。
+- 最多提出 5 个关键澄清问题；超过后仍未关闭的低影响问题写入 `待确认事项`。
+- 高影响问题未关闭时，不得把相关内容沉淀为 `已验证`，只能生成草案或候选知识，并在索引和相关领域文档中标记 `待确认`。
 
-8. Validate before finishing.
-   - Run `scripts/validate_memory_knowledge.py --memory-root .specify/memory` after memory documents are generated or updated.
-   - Confirm `index.md`, domain directories, domain three-doc sets, card metadata, scenario-to-technical mapping, SQL references, Markdown fences, and absence of mojibake.
-   - Report created or updated Markdown paths, domains discovered, card counts, DDL reference status, main `待确认` items, and validation results. Do not report generated SQL paths because this workflow does not create SQL files.
+优先澄清以下五类问题：
 
-## Knowledge Card Contract
+1. 系统定位：项目面向谁、解决什么核心业务问题。
+2. 领域边界：核心领域如何划分，哪些模块不应归入同一领域。
+3. 核心场景：哪些业务场景是长期知识库必须沉淀的主流程。
+4. 规则语义：关键业务规则、状态含义、异常分支和验收口径如何解释。
+5. 实现差异：代码实现、测试、接口、数据库事实与用户/文档描述不一致时，以什么结论作为候选答案。
 
-Each card must include these header fields:
+## 初始化流程
+
+1. 调研可用事实。
+   - 先用 `rg --files` 建立文件清单。
+   - 再按需读取项目入口说明、已有知识库、构建文件、模块名、数据库配置、仓库 SQL 文件、迁移目录、API 契约、代表性源码、代表性测试和用户提供的上下文。
+   - 检查本地是否配置了面向目标数据库的数据库 MCP 工具。可用时，MCP 查询结果只作为数据架构文档的临时 DDL 上下文，不得保存为 SQL 文件。
+   - 如果存在多个数据库 MCP、候选数据库或数据范围，且用户输入、项目配置和归属事实无法唯一确定目标，必须先询问用户选择 MCP 工具和数据库范围。
+   - 不得查询多个候选数据库后自行合并 DDL。
+   - 不得把所有发现文件都加载进上下文。先读索引、标题和代表性文件，再围绕有证据支撑的业务领域、模块、集成点和持久化模型扩展。
+   - 业务名称、领域名称和场景名称必须来自用户输入、正式文档、接口契约、测试、稳定代码路径、数据库事实或项目已有知识，不得凭空生成。
+   - 当代码能反映业务行为但缺少业务口径时，可以形成候选业务理解；候选结论必须带证据、可信度说明和确认状态。
+
+2. 建立候选业务理解并关闭关键歧义。
+   - 输出内部候选清单：系统定位、业务线、领域边界、核心场景、关键规则、状态流转、数据对象、外部协作和冲突点。
+   - 对每个候选项记录证据类型：用户输入、正式文档、代码事实、测试验证、接口契约、数据库事实或待确认。
+   - 优先处理影响范围最大的歧义；必要时按照“知识库澄清门禁”向用户提问。
+   - 已关闭的问题可写入正式知识；未关闭但有价值的问题写入 `待确认`，并给出推荐处理。
+   - 用户明确要求先生成候选知识库时，相关文档使用 `待确认` 状态，不得冒充已验证事实。
+
+3. 生成或合并 `AGENTS.md`。
+   - 如果根目录不存在 `AGENTS.md`，使用 `references/agents-template.md` 生成轻量入口文档。
+   - 如果已存在 `AGENTS.md`，必须先读取并说明合并策略；覆盖、大幅改写或删除原有规则前必须获得用户确认。
+   - 如果 `.specify/memory/index.md` 已存在，从知识库提取项目简介、导航状态和领域路径。
+   - 如果 `.specify/memory/` 不存在，进入 greenfield/bootstrap 模式：先生成轻量 `AGENTS.md`，知识状态写 `待初始化`，未知项目事实写 `待确认`。
+   - `AGENTS.md` 控制在约 100 行以内，只写顶层约束和导航；详细知识进入 `.specify/memory/`，详细 Agent 规则进入 `.specify/rules/`。
+   - 只有用户明确使用 Fons4AI/SDD 初始化或本技能被显式触发时，才写入 `<!-- fons4ai-skill-routing: enabled -->`。
+
+4. 保守处理已有目标文件。
+   - 如果 `.specify/memory/index.md`、项目级文档、领域文档、知识卡片或相关 SQL 文件已存在，必须先读取后再规划变更。
+   - 说明本次应采用合并、替换、追加，还是升级旧三文档知识库。
+   - 除非用户已明确要求重建，否则替换已有目标文档前必须确认。
+   - 保留无关 `.specify/memory` 和 `.specify/sql` 文件。
+   - 本流程不得创建、删除、重命名、复制、导入或合并 SQL 文件。
+
+5. 先识别业务领域。
+   - 从代码、文档、规格、API、任务、消息、Controller、Service、数据模型和用户上下文中的真实业务语言识别领域。
+   - 领域必须同时维护机器可读标识和中文展示名称：
+     - 领域标识使用英文 slug，例如 `order`、`payment`、`inventory`，用于目录路径和稳定引用。
+     - 领域名称使用中文业务边界名，例如 `订单域`、`支付域`、`库存域`，用于标题、索引和正文展示。
+     - 索引和卡片中推荐写法为 `订单域（order）`，兼顾可读性和可定位性。
+     - 常见领域名示例：`order -> 订单域`、`payment -> 支付域`、`inventory -> 库存域`、`product -> 商品域`、`member -> 会员域`、`settlement -> 结算域`、`refund -> 退款域`、`fulfillment -> 履约域`、`after-sale -> 售后域`。
+   - 不得机械按表、Controller、Service、包名或模块名拆分领域。
+   - 如果需要表示更大的业务线，通过 `index.md` 和项目选择的领域路径约定表达，不强行发明层级。
+   - 如果领域归属不确定，先通过知识库澄清门禁处理；仍无法关闭时，只在 `index.md` 中标记 `待确认`，不得强行创建错误目录。
+
+6. 建立场景与证据账本。
+   - 对每个领域记录核心场景、触发条件、参与方、目标、规则、决策点、异常路径、状态/数据变化、输出、来源证据和证据状态。
+   - 场景编号优先按领域限定，例如 `BS-ORDER-001`。旧文档中的 `BS-001` 只做兼容。
+   - 不得把重要场景压缩成一行摘要。
+   - 事实不完整时保留场景，但把不确定字段标记为 `待确认`。
+
+7. 生成分层知识文档。
+   - 先创建或更新 `.specify/memory/index.md`，包含领域索引、能力索引、跨领域协作、知识卡片索引和 SQL/DDL 参考索引。
+   - 创建精简项目级文档：
+     - `业务架构.md`：业务线/领域、全局业务规则、跨领域业务流程。
+     - `技术架构.md`：系统模块、公共技术模式、跨领域调用、全局非功能约束。
+     - `数据架构.md`：数据域、跨领域数据关系、SQL/DDL 参考索引、数据治理。
+   - 对每个已验证或有价值但待确认的领域创建领域级文档：
+     - `domains/<domain>/业务架构.md`：领域职责、核心对象、场景、规则编排、状态和异常。
+     - `domains/<domain>/技术架构.md`：场景技术落地、应用编排、领域对象、接口、事务、异常和测试。
+     - `domains/<domain>/数据架构.md`：领域数据对象、关系、SQL/DDL 参考、数据流转和一致性。
+   - 在 `domains/<domain>/cards/` 下创建适合直接检索的知识卡片。
+   - 创建或变更领域文档、卡片、SQL/DDL 引用后，必须回写 `index.md`。
+   - 初始化或更新 `index.md` 后，按需回写 `AGENTS.md` 的导航状态，但不得把领域细节复制进 `AGENTS.md`。
+
+8. 记录 SQL/DDL 参考但不生成 SQL 文件。
+   - 首选来源：用户确认或项目配置能唯一识别的只读数据库 MCP。使用 MCP 了解真实表 DDL 后，只把确认的数据事实沉淀到数据架构文档和知识卡片。
+   - 次选来源：仓库已有 SQL DDL 文件，例如迁移脚本、schema 文件、初始化 SQL 或已提交的数据库 DDL。必要时引用已有项目内路径，但不得复制、导入、标准化或重写到 `.specify/sql/`。
+   - 不得从实体类、Mapper、ORM 注解、DTO、Repository 方法名、查询方法名或推断字段类型生成 SQL DDL。这些代码事实只能帮助定位候选业务模型或表名，不能作为 DDL 证据。
+   - 不得通过脚本、手工复制或生成内容导入 SQL 文件。
+   - 如果没有 MCP DDL，也没有仓库 SQL DDL，不得编造 `CREATE TABLE`，也不得创建 `.specify/sql/pending/<business_model>.sql`。应在相关领域数据文档和项目数据总览中标记 `待确认`，并提示用户配置数据库 MCP 或提供 SQL 文件。
+   - 生成的 Markdown 文档和知识卡片不得披露 MCP/Tool 名称、MCP 查询文本、敏感连接信息、`Source`、`Migration Script` 或 `DDL Evidence` 等来源元数据。证据只用于临时验证，不作为最终知识正文暴露。
+   - 可以引用仓库内项目相对路径，例如源码路径、接口路径、项目文档路径或已有 SQL 文件路径；不得写个人本机路径、外部连接地址、账号、令牌或数据库查询文本。
+
+9. 保持证据质量。
+   - Markdown 文档默认使用中文，除非用户明确要求其他语言。
+   - 只使用 `已验证`、`待确认` 和 `已废弃` 作为新知识状态。
+   - 基于代码观察但缺少用户确认、测试验证或正式文档支撑的内容，统一标记为 `待确认`，不得使用 `推断` 作为长期知识状态。
+   - 历史文档中的 `已确认` 仅作为兼容状态读取，后续新建或更新文档不得主动生成。
+   - 不得编造业务规则、技术选型、schema、集成、指标或归属。
+   - 项目级文档保持精简，领域细节写入领域文档，事实级检索内容写入知识卡片。
+
+10. 校验后交付。
+   - 生成或更新知识库文档后，运行 `scripts/validate_memory_knowledge.py --memory-root .specify/memory`。
+   - 如果生成或更新了 `AGENTS.md`，检查它包含 Fons4AI 路由标记、快速导航、硬性规则、上下文加载顺序、SDD 执行门禁和知识沉淀规则，且不超过约 100 行。
+   - 校验 `index.md`、领域目录、领域三文档、知识卡片元数据、业务场景到技术落地的映射、SQL 引用、Markdown 代码块闭合和乱码问题。
+   - 交付时说明创建或更新的 `AGENTS.md`、Markdown 路径、识别出的领域、知识卡片数量、DDL 参考状态、主要 `待确认` 项和校验结果。
+   - 不报告生成的 SQL 路径，因为本技能不创建 SQL 文件。
+
+## 知识卡片契约
+
+每张知识卡片必须包含以下头部字段：
 
 ```md
 > 知识编号：KC-BIZ-001
 > 知识类型：业务场景 | 业务规则 | 状态流转 | 技术流程 | 接口契约 | 数据模型 | 治理规则
-> 所属领域：<domain-slug>
-> 状态：已确认 | 推断 | 待确认 | 已废弃
+> 所属领域：<中文领域名（domain-slug）>
+> 状态：已验证 | 待确认 | 已废弃
 > 来源：<spec/report/code/user/docs>
+> 可信度说明：<用户确认/代码事实/测试验证/正式文档/待确认原因>
 > 关联场景：<BS-xxx | 无>
 > 关联对象：<业务对象/模块/API/表 | 无>
 > 关联代码/接口/SQL：<path or identifier | 无>
 > 更新日期：YYYY-MM-DD
 ```
 
-Use cards for knowledge that future work should retrieve directly: core scenarios, durable business rules, important state transitions, domain technical flows, API contracts, data models, and governance rules.
+适合沉淀为知识卡片的内容包括：核心业务场景、长期业务规则、重要状态流转、领域技术流程、API 契约、数据模型和治理规则。
 
-## Output Contract
+## 输出契约
 
-When no path is specified, create the default knowledge base under `.specify/memory/`.
-Do not create, import, copy, or update SQL files in `.specify/sql/` as part of this skill.
-Do not create extra README files or example outputs unless the user explicitly asks.
+未指定路径时，默认在 `.specify/memory/` 下创建知识库。
+
+本技能可在项目根目录创建或更新 `AGENTS.md`，作为项目级 Agent 入口索引。
+
+本技能不得创建、导入、复制或更新 `.specify/sql/` 下的 SQL 文件。
+
+本技能不得创建额外 README、示例输出或无关辅助文档，除非用户明确要求。

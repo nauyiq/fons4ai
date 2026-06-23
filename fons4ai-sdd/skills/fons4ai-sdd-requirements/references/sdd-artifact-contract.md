@@ -33,6 +33,8 @@ Use `.specify/memory/`, `.specify/sql/`, and `.specify/rules/` as default long-l
 - Project-level `业务架构.md`, `技术架构.md`, and `数据架构.md` are concise global overview documents.
 - Domain-level documents live under `.specify/memory/domains/<domain-slug>/` and carry detailed business, technical, and data knowledge for one domain.
 - Knowledge cards live under `.specify/memory/domains/<domain-slug>/cards/` and store fact-level retrievable knowledge: business scenarios, rules, state transitions, technical flows, interface contracts, data models, and governance rules.
+- Knowledge facts use lifecycle status: `已验证`, `待确认`, or `已废弃`. Only verified facts should be written as durable truth; planned-only or weakly evidenced facts must remain `待确认`.
+- `index.md` is navigation and indexing only. Project-level documents stay concise, domain documents carry detailed context, and knowledge cards carry the smallest retrievable facts.
 - `.specify/sql/**/*.sql` stores one DDL SQL file per database-scoped business model. A file may contain multiple strongly related tables only when they belong to the same database/service and cohesive business model.
 - SQL knowledge should come from real DDL evidence: configured database MCP query results or existing repository SQL DDL files. Entities, ORM metadata, Mapper interfaces, repository methods, and Java field types may locate candidate models, but must not be used to generate `CREATE TABLE`.
 - If multiple database MCP tools or multiple plausible databases are available, ask the user to select the MCP tool/database scope before retrieving DDL unless explicit user input or repository facts identify one unambiguously.

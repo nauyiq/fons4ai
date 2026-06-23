@@ -1,4 +1,5 @@
-openai:
-  display_name: "Fons4AI Bugfix Workflow"
+﻿openai:
+  display_name: "Fons4ai-bugfix-workflow"
   short_description: "Routing-gated Fons4AI bugfix workflow."
   default_prompt: "Use $fons4ai-bugfix-workflow when Fons4AI routing is enabled or explicitly requested to reproduce, diagnose, fix, verify, and document a BUG or regression."
+
