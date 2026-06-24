@@ -1,0 +1,5 @@
+interface:
+  display_name: "Fons4ai-domain-knowledge-modeling"
+  short_description: "对单个、多个或全部领域进行深度知识建模，沉淀变体差异、技术落地和数据生命周期。"
+  default_prompt: "使用 $fons4ai-domain-knowledge-modeling 对已建立知识基线的项目进行领域知识建模；可指定单领域、多领域或全部领域。先读取用户文档、index、discovery 和源码证据，输出领域知识建模确认单，待确认后生成 <领域中文名>业务文档.md、技术文档.md、数据文档.md、证据账本、变体矩阵和知识卡片；没有横向对比或用户确认时，不得把单个实现写成标准流程。"
+

@@ -15,8 +15,21 @@ BAD_TEXT_PATTERNS = tuple(
 )
 PROJECT_FILES = ("index.md", "业务架构.md", "技术架构.md", "数据架构.md")
 DOMAIN_FILES = ("业务架构.md", "技术架构.md", "数据架构.md")
-CARD_REQUIRED_FIELDS = ("知识编号", "知识类型", "所属领域", "状态", "来源", "可信度说明", "关联场景", "关联对象", "关联代码/接口/SQL", "更新日期")
-CARD_ALLOWED_TYPES = {"业务场景", "业务规则", "状态流转", "技术流程", "接口契约", "数据模型", "治理规则"}
+CARD_REQUIRED_FIELDS = (
+    "知识编号",
+    "知识类型",
+    "所属领域",
+    "状态",
+    "来源",
+    "可信度说明",
+    "关联能力",
+    "关联变体",
+    "关联场景",
+    "关联对象",
+    "关联代码/接口/SQL",
+    "更新日期",
+)
+CARD_ALLOWED_TYPES = {"业务场景", "业务规则", "业务变体", "状态流转", "技术流程", "接口契约", "数据模型", "治理规则"}
 # Keep 已确认 for legacy documents; new templates should emit 已验证 / 待确认 / 已废弃.
 CARD_ALLOWED_STATUS = {"已验证", "待确认", "已废弃", "已确认"}
 SQL_PATH_RE = re.compile(r"\.specify/sql/[A-Za-z0-9_./-]+\.sql")
@@ -25,6 +38,12 @@ CARD_PATH_RE = re.compile(r"\.specify/memory/domains/[A-Za-z0-9_-]+/cards/[A-Za-
 SCENARIO_RE = re.compile(r"\bBS-(?:[A-Z0-9]+-)?\d{3}\b")
 HEADER_FIELD_RE = re.compile(r"^>\s*([^：:]+)\s*[：:]\s*(.+?)\s*$", re.MULTILINE)
 DOMAIN_SLUG_IN_LABEL_RE = re.compile(r"[（(]\s*([A-Za-z0-9_-]+)\s*[）)]")
+DOMAIN_REQUIRED_SECTIONS = {
+    "业务架构.md": ("## 4. 核心业务场景", "## 5. 业务能力变体矩阵", "## 6. 共性规则与差异规则"),
+    "技术架构.md": ("## 2. 场景技术落地", "## 5. 能力变体技术落地矩阵"),
+    "数据架构.md": ("## 3. 业务对象生命周期", "## 4. 业务能力变体数据差异"),
+}
+INDEX_REQUIRED_SECTIONS = ("## 4. 核心能力索引", "## 5. 业务能力变体索引")
 
 
 def read(path: Path) -> str:
@@ -48,6 +67,12 @@ def check_markdown(path: Path, text: str, errors: list[str]) -> None:
             errors.append(f"{path} contains mojibake pattern: {pattern}")
     if "推断" in text:
         errors.append(f"{path} must not use 推断 as a knowledge status; use 待确认 with a credibility note")
+
+
+def validate_sections(path: Path, text: str, sections: tuple[str, ...], errors: list[str]) -> None:
+    for section in sections:
+        if section not in text:
+            errors.append(f"{path} is missing required section: {section}")
 
 
 def read_required(path: Path, errors: list[str]) -> str:
@@ -127,6 +152,8 @@ def validate_card(path: Path, expected_domain: str, repo_root: Path) -> list[str
         errors.append(f"{path} is 已验证 but has no 来源")
     if status == "待确认" and not fields.get("可信度说明", "").strip():
         errors.append(f"{path} is 待确认 but has no 可信度说明")
+    if fields.get("知识类型", "").startswith("业务变体") and not fields.get("关联能力", "").strip():
+        errors.append(f"{path} is 业务变体 but has no 关联能力")
     domain = fields.get("所属领域", "")
     domain_slug = domain_slug_from_label(domain)
     if domain_slug and domain_slug != expected_domain:
@@ -143,6 +170,7 @@ def validate_domain(domain_dir: Path, repo_root: Path) -> list[str]:
         text = read_required(domain_dir / file_name, errors)
         if text:
             docs[file_name] = text
+            validate_sections(domain_dir / file_name, text, DOMAIN_REQUIRED_SECTIONS.get(file_name, ()), errors)
 
     business = docs.get("业务架构.md", "")
     technical = docs.get("技术架构.md", "")
@@ -173,6 +201,8 @@ def validate(memory_root: Path) -> list[str]:
             docs[name] = text
 
     index_text = docs.get("index.md", "")
+    if index_text:
+        validate_sections(memory_root / "index.md", index_text, INDEX_REQUIRED_SECTIONS, errors)
     domains = referenced_domains(index_text)
     domains_dir = memory_root / "domains"
     validated_domains: set[str] = set()
