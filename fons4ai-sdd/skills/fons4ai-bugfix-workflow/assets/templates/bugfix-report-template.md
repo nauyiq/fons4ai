@@ -1,6 +1,6 @@
-# BUG 修复报告
+# <BUG中文名>BUG修复报告
 
-> Bug: `<bug-slug>`
+> Bug: `<bug中文名>`
 > Status: Draft | Fixed | Verified
 > Completed: YYYY-MM-DD
 

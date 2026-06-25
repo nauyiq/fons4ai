@@ -52,7 +52,7 @@ def validate(report: Path) -> list[str]:
 
 def main() -> int:
     parser = argparse.ArgumentParser(description="Validate Fons4AI bugfix report")
-    parser.add_argument("--report", required=True, help="Path to specs/bugfixes/<bug-slug>/bugfix-report.md")
+    parser.add_argument("--report", required=True, help="Path to spec/bugfixes/<yyyymmdd>/<bug中文名>-BUG修复报告.md")
     args = parser.parse_args()
 
     report = Path(args.report).resolve()

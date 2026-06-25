@@ -53,6 +53,10 @@ PLAN_REQUIRED_HEADING_GROUPS = (
 KNOWLEDGE_IMPACT_HEADINGS = ("### 10.4 知识同步影响", "## 知识同步清单", "## 知识同步影响", "## Knowledge Impact")
 RISK_ROLLBACK_HEADINGS = ("### 10.3 风险与回滚", "## 10. 验证策略、AC 映射与风险", "## 风险与回滚", "## Risk and Rollback")
 S2_QUALITY_GATE_HEADINGS = ("## S2 质量门禁", "## S2 Quality Gates")
+DATA_IMPACT_HEADINGS = ("### 数据影响判断", "## 数据影响判断", "### Data Impact")
+FIELD_MAPPING_HEADINGS = ("### 4.2 字段映射契约", "### 字段映射契约", "## 字段映射契约", "### Field Mapping Contract")
+DATA_FLOW_HEADINGS = ("### 4.3 数据流设计", "### 数据流设计", "## 数据流设计", "### Data Flow Design")
+DATA_SECURITY_HEADINGS = ("### 4.4 数据安全与合规设计", "### 数据安全与合规设计", "## 数据安全与合规设计", "### Data Security")
 CHANGE_REQUIRED_HEADING_GROUPS = (
     ("变更摘要", ("## 1. 变更摘要", "## 变更摘要")),
     ("影响范围", ("## 4. 影响范围", "## 影响范围", "## 影响分析", "## Impact Analysis")),
@@ -70,12 +74,22 @@ CHANGE_TYPE_RE = re.compile(r"(变更类型|Change Type)\s*[:：]\s*(微调|扩�
 
 DOMAIN_QUALITY_RE = re.compile(r"DDD|domain|领域|充血|贫血|业务规则|应用层", re.IGNORECASE)
 KNOWLEDGE_OR_DDL_TASK_RE = re.compile(
-    r"\.specify/|truth-source|Knowledge|knowledge|知识|DDL|SQL|data-architecture",
+    r"\.specify/|truth-source|Knowledge|knowledge|知识|DDL|SQL|数据文档|数据架构|配置与资源文档",
     re.IGNORECASE,
 )
 RISK_CONTROL_RE = re.compile(
     r"rollback|compatib|regression|permission|security|observability|migration|risk|checklist|"
     r"回滚|兼容|回归|权限|安全|观测|迁移|风险|检查|门禁",
+    re.IGNORECASE,
+)
+DATA_RISK_RE = re.compile(
+    r"字段映射|数据流|外部数据|入库|出库|同步|对账|报表|迁移|金额|日期|状态|流水号|客户标识|敏感数据|脱敏|加密|审计|保留期限|"
+    r"field\s+mapping|data\s+flow|import|export|sync|reconciliation|report|migration|amount|date|status|serial|sensitive",
+    re.IGNORECASE,
+)
+DATA_VERIFICATION_RE = re.compile(
+    r"字段映射|数据口径|样例数据|目标数据|金额单位|日期格式|状态口径|流水号|客户标识|敏感数据|日志脱敏|数据安全|合规|"
+    r"field\s+mapping|sample\s+data|target\s+data|data\s+security",
     re.IGNORECASE,
 )
 
@@ -265,6 +279,15 @@ def validate(feature_dir: Path, strict: bool = False) -> tuple[list[str], list[s
     errors.extend(validate_artifact_readiness(spec_text, str(spec.name)))
     errors.extend(validate_req_ac_mapping(spec_text))
     errors.extend(validate_required_heading_groups(design_text, PLAN_REQUIRED_HEADING_GROUPS, str(design.name)))
+    if not has_any_heading(spec_text, DATA_IMPACT_HEADINGS):
+        errors.append(f"{spec.name} is missing data impact check section")
+    for display_name, headings in (
+        ("字段映射契约", FIELD_MAPPING_HEADINGS),
+        ("数据流设计", DATA_FLOW_HEADINGS),
+        ("数据安全与合规设计", DATA_SECURITY_HEADINGS),
+    ):
+        if not has_any_heading(design_text, headings):
+            errors.append(f"{design.name} is missing data design section '{display_name}'")
 
     for ac_id in ac_ids:
         if ac_id not in design_text:
@@ -288,6 +311,9 @@ def validate(feature_dir: Path, strict: bool = False) -> tuple[list[str], list[s
                 errors.append(f"{ddl_file} is referenced as executable change DDL in {design.name} but not in {tasks.name}")
         if not re.search(r"(执行型变更\s*DDL|Executable\s+change\s+DDL|ALTER\s+TABLE)", tasks_text, re.IGNORECASE):
             errors.append(f"{tasks.name} has no executable change DDL task for the existing-table structural change")
+
+    if DATA_RISK_RE.search(design_text) and not DATA_VERIFICATION_RE.search(tasks_text):
+        errors.append(f"{tasks.name} has no data verification task for triggered data design/governance risk")
 
     if not has_any_heading(design_text, KNOWLEDGE_IMPACT_HEADINGS):
         errors.append(f"{design.name} is missing knowledge impact section")
@@ -403,7 +429,7 @@ def main() -> int:
     parser = argparse.ArgumentParser(description="Validate Fons4AI SDD artifacts")
     parser.add_argument("--feature-dir", help="Path to spec/features/<yyyymmdd> containing *-任务规划.md")
     parser.add_argument("--change-file", help="Path to spec/features/<yyyymmdd>/changes/CR-xxx.md")
-    parser.add_argument("--bugfix-report", help="Path to specs/bugfixes/<bug-slug>/bugfix-report.md")
+    parser.add_argument("--bugfix-report", help="Path to spec/bugfixes/<yyyymmdd>/<bug中文名>-BUG修复报告.md")
     parser.add_argument("--strict", action="store_true", help="Fail modern SDD section omissions instead of warning")
     args = parser.parse_args()
 

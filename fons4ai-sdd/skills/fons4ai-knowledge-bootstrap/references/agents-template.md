@@ -22,6 +22,7 @@
 | 查看知识卡片 | `.specify/memory/domains/<domain-slug>/cards/` | 按需创建 |
 | 查看项目规则 | `.specify/rules/` | 可选生成 |
 | 查看 SDD 产物 | `spec/features/<yyyymmdd>/` | 按需生成 |
+| 查看 BUG 修复报告 | `spec/bugfixes/<yyyymmdd>/<bug中文名>-BUG修复报告.md` | 按需生成 |
 
 ## 硬性规则
 
@@ -37,7 +38,7 @@
 | 阶段 | 推荐技能 | 目的 |
 | --- | --- | --- |
 | 项目知识基线初始化 | `fons4ai-knowledge-bootstrap` | 建立项目级知识入口、领域候选、核心能力和项目级架构文档 |
-| 领域知识建模 | `fons4ai-domain-knowledge-modeling` | 深挖单个或多个领域，沉淀业务场景、能力变体、差异规则、技术落地和数据生命周期 |
+| 领域/能力域知识建模 | `fons4ai-domain-knowledge-modeling` | 深挖单个或多个领域/能力域，沉淀业务场景、适配方案、差异规则、技术落地和数据生命周期 |
 | 知识汇总治理 | `fons4ai-knowledge-summary` | 把已验证变更同步到长期知识库 |
 
 ## Fons4AI 技能路由

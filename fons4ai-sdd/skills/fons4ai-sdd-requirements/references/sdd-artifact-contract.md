@@ -3,7 +3,7 @@
 ## Scope
 
 This contract defines the shared SDD artifact rules for all `fons4ai-sdd-*` skills.
-Feature artifacts use `spec/features/<yyyymmdd>/`. Bugfix artifacts use `specs/bugfixes/`. The default project truth sources are `.specify/memory/` and `.specify/sql/`, but projects may declare additional truth sources. Do not require branch hooks or GitHub issue conversion.
+Feature artifacts use `spec/features/<yyyymmdd>/`. Bugfix artifacts use `spec/bugfixes/<yyyymmdd>/<bug中文名>-BUG修复报告.md`. The default project truth sources are `.specify/memory/` and `.specify/sql/`, but projects may declare additional truth sources. Do not require branch hooks or GitHub issue conversion.
 
 ## Artifact Responsibilities
 
@@ -30,8 +30,12 @@ Requirements and change planning must close blocking ambiguity before formal art
 Use `.specify/memory/`, `.specify/sql/`, and `.specify/rules/` as default long-lived project fact sources when they exist. Also respect other project-declared truth sources such as `docs/`, API documents, product documents, custom rule directories, or external knowledge bases.
 
 - `.specify/memory/index.md` is the default memory entrypoint when present.
-- Project-level `业务架构.md`, `技术架构.md`, and `数据架构.md` are concise global overview documents.
-- Domain-level documents live under `.specify/memory/domains/<domain-slug>/` and carry detailed business, technical, and data knowledge for one domain.
+- Business-system project-level documents are `.specify/memory/项目业务架构文档.md`, `.specify/memory/项目技术架构文档.md`, and `.specify/memory/项目数据架构文档.md`. They are concise global overview documents.
+- Technical framework or infrastructure project-level documents are `.specify/memory/项目技术能力架构文档.md`, `.specify/memory/项目运行架构文档.md`, and `.specify/memory/项目配置与资源架构文档.md`. They are concise global overview documents for technical capability projects.
+- Domain-level documents live under `.specify/memory/domains/<domain-slug>/` as `<领域中文名>业务文档.md`, `<领域中文名>技术文档.md`, and `<领域中文名>数据文档.md`.
+- Capability-level documents live under `.specify/memory/capabilities/<capability-slug>/` as `<能力域中文名>能力文档.md`, `<能力域中文名>运行文档.md`, and `<能力域中文名>配置与资源文档.md`.
+- Business adaptations live under `.specify/memory/domains/<domain-slug>/业务适配矩阵.md` and `.specify/memory/domains/<domain-slug>/adaptations/*.md`.
+- Capability adaptations live under `.specify/memory/capabilities/<capability-slug>/能力适配矩阵.md` and `.specify/memory/capabilities/<capability-slug>/adaptations/*.md`.
 - Knowledge cards live under `.specify/memory/domains/<domain-slug>/cards/` and store fact-level retrievable knowledge: business scenarios, rules, state transitions, technical flows, interface contracts, data models, and governance rules.
 - Knowledge facts use lifecycle status: `已验证`, `待确认`, or `已废弃`. Only verified facts should be written as durable truth; planned-only or weakly evidenced facts must remain `待确认`.
 - `index.md` is navigation and indexing only. Project-level documents stay concise, domain documents carry detailed context, and knowledge cards carry the smallest retrievable facts.
@@ -39,11 +43,11 @@ Use `.specify/memory/`, `.specify/sql/`, and `.specify/rules/` as default long-l
 - SQL knowledge should come from real DDL evidence: configured database MCP query results or existing repository SQL DDL files. Entities, ORM metadata, Mapper interfaces, repository methods, and Java field types may locate candidate models, but must not be used to generate `CREATE TABLE`.
 - If multiple database MCP tools or multiple plausible databases are available, ask the user to select the MCP tool/database scope before retrieving DDL unless explicit user input or repository facts identify one unambiguously.
 - Generated SQL knowledge files keep database/service, business model, included tables, status, update date, and DDL only. They must not contain MCP/Tool identifiers, query text, repository source paths, or provenance headers such as `Source`, `Migration Script`, or `DDL Evidence`.
-- `.specify/rules/` may contain project rules: `code-style-rule.md`, `project-structure-rule.md`, `features-rule.md`, `testing-rule.md`, and `data-ddl-rule.md`.
+- `.specify/rules/` may contain project rules such as `agent运行规则.md`, `代码编写规范.md`, and `sdd团队协作规范.md`.
 - `constitution.md`, when present, is governance context and must not be rewritten by SDD feature skills.
 
-Feature artifacts under `spec/features/<yyyymmdd>/` can cite or be constrained by truth-source facts, but should not silently update knowledge sources. If a feature changes long-lived business, technical, data, governance, or other source-of-truth facts, record a knowledge impact in the SDD artifacts, but do not create SDD task-planning items for knowledge synchronization. Route verified knowledge updates through `fons4ai-knowledge-summary`, which owns updates to affected domain documents, knowledge cards, and `.specify/memory/index.md`.
-If a feature changes concrete persistent data models, record `.specify/sql/` impact as well as the affected domain `数据架构.md` and project data index impact.
+Feature artifacts under `spec/features/<yyyymmdd>/` can cite or be constrained by truth-source facts, but should not silently update knowledge sources. If a feature changes long-lived business, technical, data, governance, adaptation, or other source-of-truth facts, record a knowledge impact in the SDD artifacts, but do not create SDD task-planning items for knowledge synchronization. Route verified knowledge updates through `fons4ai-knowledge-summary`, which owns updates to affected domain documents, capability documents, adaptation artifacts, knowledge cards, and `.specify/memory/index.md`.
+If a feature changes concrete persistent data models, record `.specify/sql/` impact as well as the affected domain `<领域中文名>数据文档.md`, affected capability `<能力域中文名>配置与资源文档.md` when applicable, and project data index impact.
 Incremental CRs must use `长期知识影响` to record source-of-truth impact. They must not create knowledge-sync tasks, knowledge-summary handoff tasks, or `.specify/memory/` editing tasks.
 
 ## Context Loading
@@ -55,7 +59,8 @@ Incremental CRs must use `长期知识影响` to record source-of-truth impact. 
 - Optionally use `scripts/find_relevant_context.py --root <repo-root> <keyword...>` from this skill to get a first-pass candidate list for index, cards, domain memory, SQL, rules, specs, and docs. Treat its output as navigation help, not as verified evidence.
 - For S1, read only relevant rules, knowledge cards, domain documents, related SQL files, and affected code paths.
 - For S2, expand context around the impacted domain, module, contract, security, transaction, or data model, but still avoid unrelated full-document loading. Cross-domain work may require project-level overview sections.
-- For `.specify/sql/`, prefer `index.md`, domain `数据架构.md`, and targeted path search. Read only the database/service and business-model SQL files involved in the work; use `.specify/sql/pending/` when ownership is unknown.
+- For standard-extension work such as adding a payment channel, funding partner, third-party service channel, OSS provider, MQ provider, strategy type, approval flow, or report type, read the relevant adaptation matrix and adaptation detail before designing or implementing. Do not infer a standard flow from a single adaptation object.
+- For `.specify/sql/`, prefer `index.md`, domain `<领域中文名>数据文档.md`, capability `<能力域中文名>配置与资源文档.md`, and targeted path search. Read only the database/service and business-model SQL files involved in the work; use `.specify/sql/pending/` when ownership is unknown.
 - Full scans are appropriate for knowledge-base initialization, rule generation, explicit audits, or broad refactors, but should still start with a file inventory and evidence matrix.
 
 ## Data Model DDL Sync
@@ -63,6 +68,11 @@ Incremental CRs must use `长期知识影响` to record source-of-truth impact. 
 When SDD work adds, removes, renames, or changes a concrete persistent data model, table, column, index, constraint, relationship, or database-specific default:
 
 - `需求说明书.md` records only the business meaning and user-facing impact of data. Keep this section lightweight. Technical data-model, table, column, and DDL impact belong in `<功能中文名>-技术设计说明书.md`.
+- `需求说明书.md` must include a lightweight data-impact check when data may be created, updated, stored, exported, synchronized, reconciled, reported, mapped, or protected. It records business data meaning, source, unit, format, state meaning, and confirmation state, but not table names, column names, DDL paths, modules, classes, or technical architecture.
+- If critical data meaning, field mapping, amount unit, date format, state meaning, serial number source, customer identifier, uniqueness, permission, masking, encryption, audit, retention, deletion, or archival rule is unresolved, the requirement artifact must remain `文档状态：草案-待确认` or the skill must ask the user before downstream design.
+- `<功能中文名>-技术设计说明书.md` must expand triggered data work into data-design and governance decisions: field-mapping contract, data-flow design, data-model/DDL impact, data security, compliance, idempotency, consistency, and verification strategy.
+- Field-mapping contracts are mandatory for file import, API import, data synchronization, reconciliation, reporting, migration, and cross-system data flows. Critical fields such as amount, date, state, serial number, customer identifier, contract number, external identifier, and sensitive fields must not stay `待确认` before implementation.
+- Sensitive data scenarios must define applicable handling for transport security, storage encryption, display/log masking, permissions, audit, retention, deletion, and archival. If not applicable, record `不适用，原因`.
 - `<功能中文名>-技术设计说明书.md` must name each impacted `.specify/sql/<database_or_service>/<business_model>.sql` file and state whether the action is add, update, rename, or no-op.
 - `<功能中文名>-任务规划.md` must include an explicit DDL synchronization task for every impacted SQL file, unless the technical design records a user-approved deferral with owner and reason.
 - `fons4ai-sdd-implement` may create or update `.specify/sql/**/*.sql` only when the selected task names the SQL file or when the implementation reveals a necessary schema change and the user approves updating the task/artifact scope.
@@ -75,7 +85,7 @@ When SDD work adds, removes, renames, or changes a concrete persistent data mode
 - If no repository SQL file exists, query the configured database MCP service for actual DDL. If no MCP DDL and no repository SQL DDL are available, mark SQL evidence as `待确认` and ask for MCP configuration or SQL files instead of fabricating table structure.
 - Use `.specify/sql/pending/<business_model>.sql` only when ownership is unknown or the user explicitly requests a pending placeholder.
 - Never merge DDL from different databases, service-owned schemas, or physical data sources into one SQL knowledge file, even when the tables belong to the same broad business area.
-- Creating or updating SQL knowledge files does not require executing `../fons4ai-project-knowledge-base-init/scripts/validate_sql_knowledge.py`. Use that script only when the user explicitly requests SQL artifact validation or when diagnosing malformed existing SQL knowledge files.
+- Creating or updating SQL knowledge files does not require running a SQL-specific validator by default. Run only the project's current SQL artifact validator or a lightweight format check when the user explicitly requests SQL artifact validation or when diagnosing malformed existing SQL knowledge files.
 
 ## Levels
 
