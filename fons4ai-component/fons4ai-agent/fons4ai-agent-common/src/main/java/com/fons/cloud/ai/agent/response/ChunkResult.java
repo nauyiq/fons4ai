@@ -1,4 +1,4 @@
-package com.fons.cloud.ai.agent.common.response;
+package com.fons.cloud.ai.agent.response;
 
 import lombok.*;
 

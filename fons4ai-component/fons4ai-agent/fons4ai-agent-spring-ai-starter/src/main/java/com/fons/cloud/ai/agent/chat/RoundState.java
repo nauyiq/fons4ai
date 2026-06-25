@@ -1,7 +1,7 @@
 package com.fons.cloud.ai.agent.chat;
 
-import com.fons.cloud.ai.agent.common.constants.RoundMode;
-import com.fons.cloud.ai.agent.common.response.SearchResult;
+import com.fons.cloud.ai.agent.constants.RoundMode;
+import com.fons.cloud.ai.agent.response.WebSearchResult;
 import lombok.Getter;
 import lombok.Setter;
 import org.apache.commons.collections4.CollectionUtils;
@@ -38,7 +38,7 @@ public class RoundState {
     /**
      *
      */
-    private List<SearchResult> searchResults = new ArrayList<>();
+    private List<WebSearchResult> webSearchResults = new ArrayList<>();
 
     /**
      * ThinkTagParser 的 inThink 状态，跨 chunk 追踪 <think/> 标签

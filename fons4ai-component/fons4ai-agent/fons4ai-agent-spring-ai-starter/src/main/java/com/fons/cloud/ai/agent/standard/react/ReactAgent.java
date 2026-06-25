@@ -3,14 +3,14 @@ package com.fons.cloud.ai.agent.standard.react;
 import com.alibaba.fastjson2.JSON;
 import com.alibaba.fastjson2.JSONObject;
 import com.fons.cloud.ai.agent.chat.ChatResponseParseResult;
-import com.fons.cloud.ai.agent.common.constants.AgentMessageType;
-import com.fons.cloud.ai.agent.common.constants.AgentType;
-import com.fons.cloud.ai.agent.common.constants.RoundMode;
-import com.fons.cloud.ai.agent.common.response.ChunkResult;
+import com.fons.cloud.ai.agent.constants.AgentMessageType;
+import com.fons.cloud.ai.agent.constants.AgentType;
+import com.fons.cloud.ai.agent.constants.RoundMode;
+import com.fons.cloud.ai.agent.response.ChunkResult;
 import com.fons.cloud.ai.agent.core.AgentTaskManager;
 import com.fons.cloud.ai.agent.chat.RoundState;
-import com.fons.cloud.ai.agent.prompt.AgentSystemPrompt;
-import com.fons.cloud.ai.agent.prompt.ReactAgentSystemPromptBuilder;
+import com.fons.cloud.ai.agent.infrastructure.prompt.AgentSystemPrompt;
+import com.fons.cloud.ai.agent.infrastructure.prompt.ReactAgentSystemPromptBuilder;
 import com.fons.cloud.ai.agent.standard.BaseAgent;
 import lombok.extern.slf4j.Slf4j;
 import org.apache.commons.collections4.CollectionUtils;
@@ -114,7 +114,7 @@ public class ReactAgent extends BaseAgent {
         // 是否发送最终结果标记位
         AtomicBoolean hasSentFinalResult = new AtomicBoolean(false);
         // 跨轮次执行上下文
-        ReactExecutionContext reactExecutionContext = new ReactExecutionContext();
+        ReactExecutionContext reactExecutionContext = createReactExecutionContext();
         // 执行轮次
         scheduleRound(messages, sink, roundCounter, hasSentFinalResult, reactExecutionContext);
 
@@ -136,6 +136,10 @@ public class ReactAgent extends BaseAgent {
                     this.thinking = reactExecutionContext.thinkingBuffer.toString();
                     this.finalAnswer = reactExecutionContext.finalAnswerBuffer.toString();
                 });
+    }
+
+    protected ReactExecutionContext createReactExecutionContext() {
+        return new ReactExecutionContext();
     }
 
     /**

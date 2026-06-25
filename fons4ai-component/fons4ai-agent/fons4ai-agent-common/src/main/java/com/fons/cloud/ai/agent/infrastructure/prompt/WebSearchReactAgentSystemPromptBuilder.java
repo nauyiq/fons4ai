@@ -1,4 +1,4 @@
-package com.fons.cloud.ai.agent.prompt;
+package com.fons.cloud.ai.agent.infrastructure.prompt;
 
 /**
  * 联网搜索ReactAgent系统提示语构建器

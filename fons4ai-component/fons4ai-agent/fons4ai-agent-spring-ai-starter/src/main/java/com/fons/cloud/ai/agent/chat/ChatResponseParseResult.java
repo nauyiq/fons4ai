@@ -1,7 +1,7 @@
 package com.fons.cloud.ai.agent.chat;
 
 import cn.hutool.core.lang.Assert;
-import com.fons.cloud.ai.agent.common.response.ChunkResult;
+import com.fons.cloud.ai.agent.response.ChunkResult;
 import com.fons.cloud.ai.agent.infrastructure.utils.ThinkMessageParser;
 import com.fons.cloud.common.base.exception.BusinessRuntimeException;
 import com.fons.cloud.common.result.ResultCode;

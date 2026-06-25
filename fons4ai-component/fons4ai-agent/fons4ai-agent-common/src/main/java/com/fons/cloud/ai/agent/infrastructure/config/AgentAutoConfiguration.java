@@ -1,4 +1,4 @@
-package com.fons.cloud.ai.agent.config;
+package com.fons.cloud.ai.agent.infrastructure.config;
 
 import com.fons.cloud.ai.agent.core.AgentTaskManager;
 import org.redisson.api.RedissonClient;

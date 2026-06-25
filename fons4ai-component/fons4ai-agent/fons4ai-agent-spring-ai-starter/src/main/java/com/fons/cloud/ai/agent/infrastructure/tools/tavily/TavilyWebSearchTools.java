@@ -1,4 +1,4 @@
-package com.fons.cloud.ai.agent.infrastructure.tools.websearch;
+package com.fons.cloud.ai.agent.infrastructure.tools.tavily;
 
 import io.modelcontextprotocol.client.McpClient;
 import io.modelcontextprotocol.client.McpSyncClient;

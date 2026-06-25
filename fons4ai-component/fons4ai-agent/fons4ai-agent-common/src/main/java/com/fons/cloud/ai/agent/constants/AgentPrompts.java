@@ -1,4 +1,4 @@
-package com.fons.cloud.ai.agent.common.constants;
+package com.fons.cloud.ai.agent.constants;
 
 import java.time.LocalDateTime;
 

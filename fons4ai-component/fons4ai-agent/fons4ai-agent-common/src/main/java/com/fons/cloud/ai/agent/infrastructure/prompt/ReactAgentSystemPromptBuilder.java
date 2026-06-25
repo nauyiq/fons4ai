@@ -1,4 +1,4 @@
-package com.fons.cloud.ai.agent.prompt;
+package com.fons.cloud.ai.agent.infrastructure.prompt;
 
 /**
  * REACT智能体提示词

@@ -1,4 +1,4 @@
-package com.fons.cloud.ai.agent.infrastructure.tools.websearch;
+package com.fons.cloud.ai.agent.infrastructure.tools.tavily;
 
 import lombok.Getter;
 import lombok.Setter;

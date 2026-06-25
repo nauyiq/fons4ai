@@ -1,9 +1,9 @@
-package com.fons.cloud.ai.agent.common.response;
+package com.fons.cloud.ai.agent.response;
 
 import cn.hutool.core.lang.Assert;
 import com.alibaba.fastjson2.JSON;
 import com.alibaba.fastjson2.JSONObject;
-import com.fons.cloud.ai.agent.common.constants.AgentMessageType;
+import com.fons.cloud.ai.agent.constants.AgentMessageType;
 import com.fons.cloud.common.base.exception.BusinessRuntimeException;
 import com.fons.cloud.common.result.ResultCode;
 import lombok.Getter;
@@ -107,7 +107,7 @@ public class AgentResponse implements Serializable {
 
     public static AgentResponse reference(String content, Integer count) {
         return new Builder()
-                .type(AgentMessageType.RECOMMEND)
+                .type(AgentMessageType.REFERENCE)
                 .content(content)
                 .count(count).build();
     }

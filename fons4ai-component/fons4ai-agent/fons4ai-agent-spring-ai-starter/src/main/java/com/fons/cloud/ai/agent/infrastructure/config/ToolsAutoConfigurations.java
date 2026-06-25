@@ -1,7 +1,7 @@
 package com.fons.cloud.ai.agent.infrastructure.config;
 
-import com.fons.cloud.ai.agent.infrastructure.tools.websearch.TavilyConfigProperties;
-import com.fons.cloud.ai.agent.infrastructure.tools.websearch.TavilyWebSearchTools;
+import com.fons.cloud.ai.agent.infrastructure.tools.tavily.TavilyConfigProperties;
+import com.fons.cloud.ai.agent.infrastructure.tools.tavily.TavilyWebSearchTools;
 import org.springframework.boot.context.properties.EnableConfigurationProperties;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;

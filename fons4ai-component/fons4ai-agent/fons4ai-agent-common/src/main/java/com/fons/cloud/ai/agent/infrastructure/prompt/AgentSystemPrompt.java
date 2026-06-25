@@ -1,6 +1,6 @@
-package com.fons.cloud.ai.agent.prompt;
+package com.fons.cloud.ai.agent.infrastructure.prompt;
 
-import com.fons.cloud.ai.agent.common.constants.AgentPrompts;
+import com.fons.cloud.ai.agent.constants.AgentPrompts;
 import lombok.*;
 
 /**

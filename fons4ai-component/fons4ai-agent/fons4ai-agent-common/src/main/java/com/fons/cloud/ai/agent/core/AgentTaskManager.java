@@ -1,8 +1,8 @@
 package com.fons.cloud.ai.agent.core;
 
 import com.alibaba.fastjson2.JSONObject;
-import com.fons.cloud.ai.agent.common.constants.AgentResultCode;
-import com.fons.cloud.ai.agent.common.constants.AgentType;
+import com.fons.cloud.ai.agent.constants.AgentResultCode;
+import com.fons.cloud.ai.agent.constants.AgentType;
 import com.fons.cloud.common.result.R;
 import lombok.Getter;
 import lombok.Setter;
