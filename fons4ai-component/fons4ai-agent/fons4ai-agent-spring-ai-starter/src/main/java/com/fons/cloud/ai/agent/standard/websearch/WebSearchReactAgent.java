@@ -2,6 +2,7 @@ package com.fons.cloud.ai.agent.standard.websearch;
 
 import com.alibaba.fastjson2.JSON;
 import com.alibaba.fastjson2.JSONObject;
+import com.fons.cloud.ai.agent.chat.ReactExecutionContext;
 import com.fons.cloud.ai.agent.constants.AgentType;
 import com.fons.cloud.ai.agent.core.AgentTaskManager;
 import com.fons.cloud.ai.agent.infrastructure.prompt.AgentSystemPrompt;
@@ -12,6 +13,7 @@ import com.fons.cloud.ai.agent.infrastructure.tool.ToolResultParser;
 import com.fons.cloud.ai.agent.infrastructure.tools.ToolsRegistry;
 import com.fons.cloud.ai.agent.response.WebExtractResult;
 import com.fons.cloud.ai.agent.response.WebSearchResult;
+import com.fons.cloud.ai.agent.standard.hook.AgentChatHook;
 import com.fons.cloud.ai.agent.standard.react.ReactAgent;
 import lombok.extern.slf4j.Slf4j;
 import org.apache.commons.collections4.CollectionUtils;
@@ -103,7 +105,8 @@ public class WebSearchReactAgent extends ReactAgent {
         WebSearchExecutionContext webContext = (WebSearchExecutionContext) context;
         if (webContext.hasSearchResult()) {
             // TODO 暂时只输出搜索结果
-            sink.tryEmitNext(createReferenceResponse(JSON.toJSONString(webContext.searchResults)));
+            this.referenceJson = createReferenceResponse(JSON.toJSONString(webContext.searchResults));
+            sink.tryEmitNext(this.referenceJson);
         }
     }
 
@@ -142,6 +145,7 @@ public class WebSearchReactAgent extends ReactAgent {
         private int maxRounds = 5;
         private boolean useChatMemory;
         private int maxMemoryMessages;
+        private AgentChatHook hook;
 
         public Builder(List<ToolCallback> tools, ChatModel chatModel, AgentTaskManager agentTaskManager, ToolsRegistry toolsRegistry) {
             this.tools = tools;
@@ -176,12 +180,18 @@ public class WebSearchReactAgent extends ReactAgent {
             return this;
         }
 
+        public Builder hook(AgentChatHook hook) {
+            this.hook = hook;
+            return this;
+        }
+
         public WebSearchReactAgent build() {
             WebSearchReactAgent reactAgent = new WebSearchReactAgent(tools, chatModel, agentTaskManager, toolsRegistry);
             if (this.systemPrompt == null) {
                 // 这里赋予新的系统提示语， 把角色定义为专门用于网络搜索的agent
                 this.systemPrompt = WebSearchReactAgentSystemPromptBuilder.build();
             }
+            reactAgent.hook = this.hook;
             reactAgent.systemPrompt = this.systemPrompt;
             reactAgent.advisors = this.advisors;
             reactAgent.maxRounds = this.maxRounds;

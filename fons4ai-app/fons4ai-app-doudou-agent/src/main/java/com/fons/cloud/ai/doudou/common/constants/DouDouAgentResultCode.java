@@ -20,6 +20,7 @@ public enum DouDouAgentResultCode implements Result {
     NOT_FOUND_FILE_IN_OSS("DD200003", "文件不存在"),
     MISSING_FILE_INFO("DD200004", "文件信息缺失"),
     FILE_NOT_READY("DD200005", "文件尚未处理完成"),
+    SESSION_MESSAGE_TYPE_ERROR("DD200006", "会话消息类型错误"),
 
     //  ==================== 认证异常 ====================
 

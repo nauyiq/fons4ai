@@ -2,7 +2,9 @@ package com.fons.cloud.ai.agent.standard.react;
 
 import com.alibaba.fastjson2.JSON;
 import com.alibaba.fastjson2.JSONObject;
+import com.fons.cloud.ai.agent.chat.AgentChatFinalContext;
 import com.fons.cloud.ai.agent.chat.ChatResponseParseResult;
+import com.fons.cloud.ai.agent.chat.ReactExecutionContext;
 import com.fons.cloud.ai.agent.constants.AgentMessageType;
 import com.fons.cloud.ai.agent.constants.AgentType;
 import com.fons.cloud.ai.agent.constants.RoundMode;
@@ -12,6 +14,7 @@ import com.fons.cloud.ai.agent.chat.RoundState;
 import com.fons.cloud.ai.agent.infrastructure.prompt.AgentSystemPrompt;
 import com.fons.cloud.ai.agent.infrastructure.prompt.ReactAgentSystemPromptBuilder;
 import com.fons.cloud.ai.agent.standard.BaseAgent;
+import com.fons.cloud.ai.agent.standard.hook.AgentChatHook;
 import lombok.extern.slf4j.Slf4j;
 import org.apache.commons.collections4.CollectionUtils;
 import org.apache.commons.lang3.StringUtils;
@@ -30,6 +33,7 @@ import reactor.core.scheduler.Schedulers;
 
 import java.util.*;
 import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.atomic.AtomicLong;
@@ -65,6 +69,16 @@ public class ReactAgent extends BaseAgent {
      * 客户端
      */
     protected ChatClient chatClient;
+
+    /**
+     * React 智能体钩子
+     */
+    protected AgentChatHook hook;
+
+    /**
+     * 工具调用结果的参考json
+     */
+    protected String referenceJson;
 
     protected ReactAgent(List<ToolCallback> tools, ChatModel chatModel, AgentTaskManager agentTaskManager) {
         super(AgentType.REACT, chatModel, agentTaskManager);
@@ -135,6 +149,20 @@ public class ReactAgent extends BaseAgent {
                     }
                     this.thinking = reactExecutionContext.thinkingBuffer.toString();
                     this.finalAnswer = reactExecutionContext.finalAnswerBuffer.toString();
+                    log.info("最终思考过程: {}", thinking);
+                    log.info("最终答案: {}", finalAnswer);
+                    stopWatch.stop();
+                    if (hook != null) {
+                        hook.onFinish(AgentChatFinalContext.builder()
+                                        .finalAnswer(this.finalAnswer)
+                                        .thinking(this.thinking)
+                                        .recommendations(this.currentRecommendations)
+                                        .tools(getUsedToolsString())
+                                        .references(this.referenceJson)
+                                        .firstResponseTime(this.firstResponseTime)
+                                        .totalResponseTime(stopWatch.getTime(TimeUnit.MILLISECONDS))
+                                .build());
+                    }
                 });
     }
 
@@ -479,16 +507,6 @@ public class ReactAgent extends BaseAgent {
     }
 
 
-    /**
-     * 跨轮次执行上下文。子类可以扩展该类型以保存领域状态。
-     */
-    public static class ReactExecutionContext {
-        // 最终答案缓冲区
-        private final StringBuilder finalAnswerBuffer = new StringBuilder();
-        // 思考过程缓冲区
-        private final StringBuilder thinkingBuffer = new StringBuilder();
-    }
-
     public static class Builder {
         private final List<ToolCallback> tools;
         private final ChatModel chatModel;
@@ -499,6 +517,7 @@ public class ReactAgent extends BaseAgent {
         private int maxRounds = 5;
         private boolean useChatMemory;
         private int maxMemoryMessages;
+        private AgentChatHook hook;
 
         public Builder(List<ToolCallback> tools, ChatModel chatModel, AgentTaskManager agentTaskManager) {
             this.tools = tools;
@@ -531,12 +550,18 @@ public class ReactAgent extends BaseAgent {
             return this;
         }
 
+        public Builder hook(AgentChatHook hook) {
+            this.hook = hook;
+            return this;
+        }
+
         public ReactAgent build() {
             ReactAgent reactAgent = new ReactAgent(tools, chatModel, agentTaskManager);
             reactAgent.systemPrompt = this.systemPrompt;
             reactAgent.advisors = this.advisors;
             reactAgent.maxRounds = this.maxRounds;
             reactAgent.maxMemoryMessages = this.maxMemoryMessages;
+            reactAgent.hook = this.hook;
             // 初始化
             reactAgent.init(this.useChatMemory);
             return reactAgent;

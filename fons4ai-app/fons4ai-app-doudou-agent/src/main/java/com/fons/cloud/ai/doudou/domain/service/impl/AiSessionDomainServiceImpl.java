@@ -34,6 +34,16 @@ public class AiSessionDomainServiceImpl extends ServiceImpl<AiSessionMapper, AiS
     }
 
     @Override
+    public List<AiSession> queryRecentBySessionId(String sessionId, String userId, Integer maxCount) {
+        LambdaQueryChainWrapper<AiSession> queryChainWrapper = lambdaQuery()
+                .eq(AiSession::getSessionId, sessionId)
+                .eq(AiSession::getUserId, userId)
+                .orderByDesc(AiSession::getCreated)
+                .last("LIMIT " + maxCount);
+        return list(queryChainWrapper);
+    }
+
+    @Override
     public AiSession getLastOneBySessionId(String conversationId, String userId) {
         LambdaQueryChainWrapper<AiSession> wrapper = lambdaQuery().eq(AiSession::getSessionId, conversationId)
                 .eq(AiSession::getUserId, userId)

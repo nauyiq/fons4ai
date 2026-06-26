@@ -29,6 +29,15 @@ public interface AiSessionDomainService extends IService<AiSession> {
     List<AiSession> querySessionsBySessionId(String sessionId, String userId);
 
     /**
+     * 根据会话id查询最近的会话列表， 创建时间倒叙排
+     * @param sessionId
+     * @param userId
+     * @param maxCount
+     * @return
+     */
+    List<AiSession> queryRecentBySessionId(String sessionId, String userId, Integer maxCount);
+
+    /**
      * 根据会话id查询最后一个会话
      * @param conversationId
      * @param userId

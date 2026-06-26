@@ -9,13 +9,27 @@ spring:
     name: doudou-agent
   main:
     allow-bean-definition-overriding: true
-
   config:
     import:
       - classpath:nacos_config.yml
-      - nacos:@profiles.active@.yaml
-      - nacos:redis.yaml
+      - nacos:dev.yaml
       - nacos:datasource-doudou.yaml
+      - nacos:redis.yaml
+  ai:
+    openai:
+      api-key: ${dashscope.key}
+      base-url: https://dashscope.aliyuncs.com/compatible-mode/
+      chat:
+        options:
+          model: deepseek-v4-flash
+          temperature: 0.7
+      embedding:
+        api-key: ${dashscope.key}
+        base-url:  https://dashscope.aliyuncs.com/compatible-mode/
+        options:
+          model: text-embedding-v4
+          dimmension: 1024
+
 
 fons4cloud:
   upload:

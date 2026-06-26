@@ -368,7 +368,17 @@ public abstract class BaseAgent {
 
     }
 
-
+    /**
+     * 获取使用的工具列表字符串
+     *
+     * @return 逗号分隔的工具名称字符串
+     */
+    protected String getUsedToolsString() {
+        if (usedTools == null || usedTools.isEmpty()) {
+            return "";
+        }
+        return String.join(",", usedTools);
+    }
 
     /**
      * 创建text类型响应
