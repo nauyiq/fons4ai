@@ -47,7 +47,7 @@ public class FileApplicationServiceImpl implements FileApplicationService {
     private final DocumentReaderFacade documentReaderFacade;
     private final EmbeddingService embeddingService;
 
-    @Value("${fons4ai.doudou.maxTextLength:20000}")
+    @Value("${sys.doudou.maxTextLength:20000}")
     private Integer maxTextLength;
 
 

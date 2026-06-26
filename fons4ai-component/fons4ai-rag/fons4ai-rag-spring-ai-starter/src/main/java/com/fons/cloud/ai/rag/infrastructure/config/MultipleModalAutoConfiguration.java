@@ -13,7 +13,7 @@ import org.springframework.context.annotation.Configuration;
  */
 @Configuration
 @EnableConfigurationProperties(MultipleModalConfigProperties.class)
-@ConditionalOnProperty(name = "fons4ai.multiple-modal.enabled", havingValue = "true")
+@ConditionalOnProperty(name = "sys.multiple-modal.enabled", havingValue = "true")
 public class MultipleModalAutoConfiguration {
 
     @Bean

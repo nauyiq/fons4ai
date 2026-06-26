@@ -13,7 +13,7 @@ import org.springframework.boot.context.properties.ConfigurationProperties;
 @ToString
 @NoArgsConstructor
 @AllArgsConstructor
-@ConfigurationProperties("fons4ai.rag.vector")
+@ConfigurationProperties("sys.rag.vector")
 public class VectorConfigProperties {
 
     private VectorStoreType type;

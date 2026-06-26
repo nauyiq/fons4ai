@@ -46,6 +46,7 @@ public class TavilyWebSearchTools implements InitializingBean {
 
         HttpClientStreamableHttpTransport transport = HttpClientStreamableHttpTransport
                 .builder(properties.getMcpUrl())
+                .endpoint("/mcp")  // 显式指定 endpoint
                 .requestBuilder(requestBuilder).build();
 
         McpSyncClient mcpSyncClient = McpClient.sync(transport).requestTimeout(Duration.ofSeconds(properties.getRequestTimeoutSeconds())).build();

@@ -18,7 +18,7 @@ import org.springframework.stereotype.Component;
 @Component
 public class DouDouAgentPrompt implements InitializingBean {
 
-    @Value("${fons4ai.doudou.role-definition}")
+    @Value("${sys.doudou.role-definition:''}")
     private String roleDefinition;
 
     private static final String DEFAULT_ROLE_DEFINITION =

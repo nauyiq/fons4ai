@@ -19,7 +19,7 @@ import javax.sql.DataSource;
  * @author hongqy
  */
 @Configuration
-@ConditionalOnProperty(name = "fons4ai.rag.vector.type", havingValue = "PG_VECTOR")
+@ConditionalOnProperty(name = "sys.rag.vector.type", havingValue = "PG_VECTOR")
 @EnableConfigurationProperties(VectorConfigProperties.class)
 public class PgVectorStoreAutoConfiguration {
 

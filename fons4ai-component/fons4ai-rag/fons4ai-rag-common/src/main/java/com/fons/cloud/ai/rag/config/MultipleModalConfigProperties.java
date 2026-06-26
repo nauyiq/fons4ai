@@ -9,7 +9,7 @@ import org.springframework.boot.context.properties.ConfigurationProperties;
  */
 @Getter
 @Setter
-@ConfigurationProperties("fons4ai.multiple-modal")
+@ConfigurationProperties("sys.multiple-modal")
 public class MultipleModalConfigProperties {
 
     private Boolean enabled;

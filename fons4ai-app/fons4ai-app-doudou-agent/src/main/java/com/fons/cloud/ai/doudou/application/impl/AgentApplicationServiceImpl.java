@@ -43,7 +43,7 @@ public class AgentApplicationServiceImpl implements AgentApplicationService {
     /**
      * 加载的最大消息数， 用于记忆管理 不要设置太大防止模型上下文爆炸
      */
-    @Value("${fons4ai.doudou.max-messages:20}")
+    @Value("${sys.doudou.max-messages:20}")
     private Integer maxMessages;
 
     @Override

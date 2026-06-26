@@ -12,7 +12,7 @@ spring:
   config:
     import:
       - classpath:nacos_config.yml
-      - nacos:dev.yaml
+      - nacos:@profiles.active@.yaml
       - nacos:datasource-doudou.yaml
       - nacos:redis.yaml
   ai:
@@ -29,6 +29,11 @@ spring:
         options:
           model: text-embedding-v4
           dimmension: 1024
+
+sys:
+  tavily:
+    api-key: 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  # 记得改成你自己的
+    mcp-url: https://mcp.tavily.com/mcp/
 
 
 fons4cloud:

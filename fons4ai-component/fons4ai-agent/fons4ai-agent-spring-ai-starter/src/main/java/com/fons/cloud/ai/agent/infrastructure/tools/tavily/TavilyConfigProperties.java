@@ -9,7 +9,7 @@ import org.springframework.boot.context.properties.ConfigurationProperties;
  */
 @Getter
 @Setter
-@ConfigurationProperties("fons4ai.tavily")
+@ConfigurationProperties("sys.tavily")
 public class TavilyConfigProperties {
 
     /**
