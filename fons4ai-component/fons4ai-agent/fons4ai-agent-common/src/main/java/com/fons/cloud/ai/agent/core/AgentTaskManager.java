@@ -14,6 +14,7 @@ import org.redisson.api.RedissonClient;
 import org.redisson.client.codec.StringCodec;
 import org.springframework.beans.factory.DisposableBean;
 import org.springframework.beans.factory.InitializingBean;
+import org.springframework.stereotype.Component;
 import reactor.core.Disposable;
 import reactor.core.publisher.Sinks;
 
@@ -33,6 +34,7 @@ import java.util.concurrent.TimeUnit;
  * @author hongqy
  */
 @Slf4j
+@Component
 public class AgentTaskManager implements InitializingBean, DisposableBean {
     private static final String TASK_KEY_PREFIX = "fons4ai-agent:task:";
     private static final String STOP_TOPIC_NAME = "fons4ai-agent:stop";

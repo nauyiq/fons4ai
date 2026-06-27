@@ -14,6 +14,7 @@ spring:
       - classpath:nacos_config.yml
       - nacos:@profiles.active@.yaml
       - nacos:datasource-doudou.yaml
+      - nacos:sys-config.yaml
       - nacos:redis.yaml
   ai:
     openai:
@@ -29,30 +30,4 @@ spring:
         options:
           model: text-embedding-v4
           dimmension: 1024
-
-sys:
-  tavily:
-    api-key: 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  # 记得改成你自己的
-    mcp-url: https://mcp.tavily.com/mcp/
-
-
-fons4cloud:
-  upload:
-    oss:
-      enabled: true
-      provider: minio
-      secret-id: xxxxxx
-      secret-key: xxxxx
-      bucket: doudou
-      endpoint: xxxxx
-
-
-  freemarker:
-    template-loader-path:
-      - classpath:/template/
-    suffix: .ftl
-  mvc:
-    static-path-pattern: /static/*
-
-
 

@@ -6,7 +6,6 @@ import com.fons.cloud.ai.rag.embed.support.PgVectorStoreEmbeddingService;
 import com.zaxxer.hikari.HikariDataSource;
 import org.springframework.ai.chat.model.ChatModel;
 import org.springframework.ai.embedding.EmbeddingModel;
-import org.springframework.boot.autoconfigure.condition.ConditionalOnBean;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnMissingBean;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.boot.context.properties.EnableConfigurationProperties;
@@ -19,12 +18,11 @@ import javax.sql.DataSource;
  * @author hongqy
  */
 @Configuration
-@ConditionalOnProperty(name = "sys.rag.vector.type", havingValue = "PG_VECTOR")
+@ConditionalOnProperty(name = "sys.rag.vector.type", havingValue = "PG_VECTOR", matchIfMissing = true)
 @EnableConfigurationProperties(VectorConfigProperties.class)
 public class PgVectorStoreAutoConfiguration {
 
     @Bean
-    @ConditionalOnMissingBean
     public DataSource pgVectorDataSource(VectorConfigProperties properties) {
         // TODO 后续可优化连接池创建参数
         HikariDataSource ds = new HikariDataSource();
@@ -47,7 +45,6 @@ public class PgVectorStoreAutoConfiguration {
 
     @Bean
     @ConditionalOnMissingBean
-    @ConditionalOnBean({ChatModel.class, EmbeddingModel.class})
     public EmbeddingService embeddingService(ChatModel chatModel, VectorConfigProperties properties, DynamicPgVectorStoreFactory dynamicPgVectorStoreFactory) {
         return new PgVectorStoreEmbeddingService(chatModel, properties, dynamicPgVectorStoreFactory);
     }

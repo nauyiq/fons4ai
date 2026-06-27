@@ -47,6 +47,12 @@
 
         <dependency>
             <groupId>com.fons.cloud</groupId>
+            <artifactId>fons4cloud-common-cache</artifactId>
+            <version>${revision}</version>
+        </dependency>
+
+        <dependency>
+            <groupId>com.fons.cloud</groupId>
             <artifactId>fons4cloud-common-skywalking</artifactId>
             <version>${revision}</version>
         </dependency>
