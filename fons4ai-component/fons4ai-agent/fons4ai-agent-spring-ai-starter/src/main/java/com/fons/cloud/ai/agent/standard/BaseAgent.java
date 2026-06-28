@@ -212,7 +212,10 @@ public abstract class BaseAgent {
      * @param toolName 工具名称
      */
     protected void recordUsedTool(String toolName) {
-        if (usedTools != null && toolName != null) {
+        if (usedTools == null) {
+            usedTools = new HashSet<>();
+        }
+        if (toolName != null) {
             usedTools.add(toolName);
         }
     }

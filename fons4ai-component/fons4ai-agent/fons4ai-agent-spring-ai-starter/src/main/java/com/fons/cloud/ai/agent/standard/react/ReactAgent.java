@@ -278,7 +278,7 @@ public class ReactAgent extends BaseAgent {
     private void finishRound(List<Message> messages, Sinks.Many<String> sink, RoundState roundState, AtomicLong roundCounter, AtomicBoolean hasSentFinalResult, ReactExecutionContext executionContext) {
         if (roundState.getMode() != RoundMode.TOOL_CALL) {
             // 非工具调用时则结束轮次
-            log.info("会话[{}]执行最后轮次处理, 最后轮次输出类型为{}, 轮次:{}", currentConversationId, roundState.getMode(), roundCounter);
+            log.info("会话[{}]执行最后轮次处理, 轮次:{}", currentConversationId, roundCounter);
             // 设置结束标记
             hasSentFinalResult.set(true);
             // 发送最后的响应, 包括拓展输出的搜索内容或者生成推荐答案
@@ -320,7 +320,7 @@ public class ReactAgent extends BaseAgent {
 
         for (AssistantMessage.ToolCall toolCall : toolCalls) {
             Schedulers.boundedElastic().schedule(() -> {
-                if (!hasSentFinalResult.get()) {
+                if (hasSentFinalResult.get()) {
                     completeToolCall(completedCount, toolCalls.size(), responseMap, toolCalls, messages, onComplete);
                     return;
                 }

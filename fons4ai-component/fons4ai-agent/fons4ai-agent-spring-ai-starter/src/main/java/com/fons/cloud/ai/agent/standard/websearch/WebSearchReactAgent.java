@@ -191,8 +191,8 @@ public class WebSearchReactAgent extends ReactAgent {
                 // 这里赋予新的系统提示语， 把角色定义为专门用于网络搜索的agent
                 this.systemPrompt = WebSearchReactAgentSystemPromptBuilder.build();
             }
-            reactAgent.hook = this.hook;
             reactAgent.systemPrompt = this.systemPrompt;
+            reactAgent.hook = this.hook;
             reactAgent.advisors = this.advisors;
             reactAgent.maxRounds = this.maxRounds;
             reactAgent.maxMemoryMessages = this.maxMemoryMessages;

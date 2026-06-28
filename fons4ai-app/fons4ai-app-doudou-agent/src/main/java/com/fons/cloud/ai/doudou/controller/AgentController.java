@@ -1,5 +1,6 @@
 package com.fons.cloud.ai.doudou.controller;
 
+import cn.hutool.core.lang.UUID;
 import com.fons.cloud.ai.doudou.application.AgentApplicationService;
 import com.fons.cloud.ai.doudou.common.dto.ChatRequest;
 import com.fons.cloud.auth.utils.AuthUtils;
@@ -27,8 +28,11 @@ public class AgentController {
     @Operation(summary = "智能问答", description = "接收用户查询并返回流式响应，使用联网搜索获取信息")
     @GetMapping(value = "/chat/stream", produces = MediaType.TEXT_EVENT_STREAM_VALUE)
     public Flux<String> chatStream(String query, String conversationId) {
-        if (StringUtils.isAnyBlank(query, conversationId)) {
+        if (StringUtils.isBlank(query)) {
             return Flux.error(new IllegalArgumentException("查询参数不能为空"));
+        }
+        if (StringUtils.isBlank(conversationId)) {
+            conversationId = UUID.randomUUID().toString();
         }
         Long userId = AuthUtils.getCurrentUserId();
         return agentApplicationService.chatStream(ChatRequest.builder()

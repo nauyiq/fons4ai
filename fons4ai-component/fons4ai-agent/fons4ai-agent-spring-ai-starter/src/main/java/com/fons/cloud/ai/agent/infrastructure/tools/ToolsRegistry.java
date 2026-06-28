@@ -33,7 +33,15 @@ public class ToolsRegistry implements SmartInitializingSingleton {
      * @param toolCallbacks
      */
     public void register(ToolCallback[] toolCallbacks) {
-        this.register(toolCallbacks, null);
+        this.register(toolCallbacks, "");
+    }
+
+    public void register(ToolCallback[] toolCallbacks, ToolProvider toolProvider) {
+        for (ToolCallback tool : toolCallbacks) {
+            String name = tool.getToolDefinition().name();
+            String inputSchema = tool.getToolDefinition().inputSchema();
+            registerTool(name, inputSchema, toolProvider);
+        }
     }
 
     /**
@@ -85,7 +93,8 @@ public class ToolsRegistry implements SmartInitializingSingleton {
      * @return
      */
     public ToolProvider getToolProvider(String toolName) {
-        return providers.get(toolName);
+        ToolMeta toolMeta = getToolMeta(toolName);
+        return providers.get(toolMeta.providerName());
     }
 
     private void registerTool(String toolName, String inputSchema, ToolProvider provider) {

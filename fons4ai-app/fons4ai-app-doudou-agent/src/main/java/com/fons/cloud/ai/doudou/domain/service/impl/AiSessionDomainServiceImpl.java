@@ -1,6 +1,8 @@
 package com.fons.cloud.ai.doudou.domain.service.impl;
 
+import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
 import com.baomidou.mybatisplus.core.metadata.IPage;
+import com.baomidou.mybatisplus.core.toolkit.Wrappers;
 import com.baomidou.mybatisplus.extension.conditions.query.LambdaQueryChainWrapper;
 import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
 import com.baomidou.mybatisplus.extension.service.impl.ServiceImpl;
@@ -35,17 +37,18 @@ public class AiSessionDomainServiceImpl extends ServiceImpl<AiSessionMapper, AiS
 
     @Override
     public List<AiSession> queryRecentBySessionId(String sessionId, String userId, Integer maxCount) {
-        LambdaQueryChainWrapper<AiSession> queryChainWrapper = lambdaQuery()
+        LambdaQueryWrapper<AiSession> wrapper = Wrappers.lambdaQuery(AiSession.class)
                 .eq(AiSession::getSessionId, sessionId)
                 .eq(AiSession::getUserId, userId)
                 .orderByDesc(AiSession::getCreated)
                 .last("LIMIT " + maxCount);
-        return list(queryChainWrapper);
+        return list(wrapper);
     }
 
     @Override
     public AiSession getLastOneBySessionId(String conversationId, String userId) {
-        LambdaQueryChainWrapper<AiSession> wrapper = lambdaQuery().eq(AiSession::getSessionId, conversationId)
+        LambdaQueryWrapper<AiSession> wrapper = Wrappers.lambdaQuery(AiSession.class)
+                .eq(AiSession::getSessionId, conversationId)
                 .eq(AiSession::getUserId, userId)
                 .last("LIMIT 1");
         return getOne(wrapper);

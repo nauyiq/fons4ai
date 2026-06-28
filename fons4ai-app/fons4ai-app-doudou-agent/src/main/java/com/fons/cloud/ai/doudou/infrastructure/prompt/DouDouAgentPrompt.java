@@ -18,7 +18,7 @@ import org.springframework.stereotype.Component;
 @Component
 public class DouDouAgentPrompt implements InitializingBean {
 
-    @Value("${sys.doudou.role-definition:''}")
+    @Value("${sys.doudou.role-definition:}")
     private String roleDefinition;
 
     private static final String DEFAULT_ROLE_DEFINITION =
@@ -47,13 +47,12 @@ public class DouDouAgentPrompt implements InitializingBean {
 
     @Override
     public void afterPropertiesSet() throws Exception {
-        String roleDefinition = this.roleDefinition;
-        if (StringUtils.isBlank(roleDefinition)) {
+        if (StringUtils.isBlank(this.roleDefinition)) {
             log.info("使用系统默认角色定义提示词");
-            roleDefinition = DEFAULT_ROLE_DEFINITION;
+            this.roleDefinition = DEFAULT_ROLE_DEFINITION;
         }
         this.systemPrompt = AgentSystemPrompt.builder()
-                .roleDefinition(roleDefinition)
+                .roleDefinition(this.roleDefinition)
                 .toolCallingRules(ReactAgentSystemPromptBuilder.DEFAULT_TOOL_CALL_DEFINITION)
                 .finalAnswerRules(ReactAgentSystemPromptBuilder.DEFAULT_FINAL_ANSWER_RULES)
                 .outputSpecifications(ReactAgentSystemPromptBuilder.DEFAULT_OUTPUT_SPECIFICATIONS)

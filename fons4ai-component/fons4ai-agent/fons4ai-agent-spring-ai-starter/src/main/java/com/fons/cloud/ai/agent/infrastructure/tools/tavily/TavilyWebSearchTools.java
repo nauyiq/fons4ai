@@ -1,5 +1,6 @@
 package com.fons.cloud.ai.agent.infrastructure.tools.tavily;
 
+import com.fons.cloud.ai.agent.infrastructure.tools.ToolsRegistry;
 import io.modelcontextprotocol.client.McpClient;
 import io.modelcontextprotocol.client.McpSyncClient;
 import io.modelcontextprotocol.client.transport.HttpClientStreamableHttpTransport;
@@ -33,6 +34,11 @@ public class TavilyWebSearchTools implements InitializingBean {
      */
     private final TavilyConfigProperties properties;
 
+    /**
+     * 工具注册表
+     */
+    private final ToolsRegistry toolsRegistry;
+
 
     @Override
     public void afterPropertiesSet() throws Exception {
@@ -53,6 +59,9 @@ public class TavilyWebSearchTools implements InitializingBean {
         SyncMcpToolCallbackProvider provider = SyncMcpToolCallbackProvider.builder().mcpClients(mcpSyncClient).build();
         this.toolCallbacks = provider.getToolCallbacks();
 
+        // 将工具注册到工具注册表
+        toolsRegistry.register(toolCallbacks, new TavilySearchProvider());
         log.info("初始化Tavily网页搜索回调完成，工具数量: {}", this.toolCallbacks.length);
+
     }
 }
