@@ -1,4 +1,0 @@
-interface:
-  display_name: "Fons4ai-sdd-requirements"
-  short_description: "受路由门禁控制，先澄清需求，再生成 SDD 需求说明书。"
-  default_prompt: "Use $fons4ai-sdd-requirements to clarify a feature request first, stop on blocking ambiguity, and create spec/features/<yyyymmdd>/<功能中文名>-需求说明书.md only after REQ/AC semantics are clear."

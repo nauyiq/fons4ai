@@ -1,4 +1,0 @@
-interface:
-  display_name: "Fons4ai-knowledge-bootstrap"
-  short_description: "建立项目级知识基线，支持业务系统、技术框架/基础设施项目和混合项目，逐问逐答确认后生成知识入口和项目级架构文档。"
-  default_prompt: "使用 $fons4ai-knowledge-bootstrap 建立项目知识基线：先读取用户文档、代码、接口、测试和配置，识别项目类型、项目定位、业务领域或技术能力域、核心能力、对象/资源、调用链和适配风险；正式生成前必须在对话中逐个提出阻塞性确认问题，默认一次只问一个问题，用户回答后再问下一个；业务系统生成 AGENTS.md、.specify/memory/index.md、项目业务架构文档.md、项目技术架构文档.md、项目数据架构文档.md；技术框架/基础设施项目生成 AGENTS.md、.specify/memory/index.md、项目技术能力架构文档.md、项目运行架构文档.md、项目配置与资源架构文档.md；可按需生成 .specify/memory/bootstrap/<yyyymmdd>-基线分析报告.md，不得把单个实现方、流程、组件或配置样例写成标准。"

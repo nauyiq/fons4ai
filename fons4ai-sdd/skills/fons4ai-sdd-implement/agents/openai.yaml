@@ -1,4 +1,0 @@
-interface:
-  display_name: "Fons4AI SDD 实现"
-  short_description: "受控执行 SDD 任务规划，必须有最新用户执行确认；未指定任务 ID 时执行全部未完成任务。"
-  default_prompt: "仅当 Fons4AI 路由启用或用户明确指定，并且最新用户消息确认执行时，使用 $fons4ai-sdd-implement。按任务规划执行；未指定任务 ID 时执行全部未完成任务。"

@@ -1,4 +1,0 @@
-interface:
-  display_name: "Fons4AI-sdd-design"
-  short_description: "受控的 Fons4AI SDD 技术设计说明书生成流程。"
-  default_prompt: "Use $fons4ai-sdd-design when Fons4AI routing is enabled or explicitly requested to research the codebase and create spec/features/<yyyymmdd>/<功能中文名>-技术设计说明书.md with key rule sketches, state transitions, lightweight SQL/DDL impact, contracts, and verification strategy."

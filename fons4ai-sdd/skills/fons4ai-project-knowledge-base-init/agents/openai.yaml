@@ -1,4 +1,0 @@
-interface:
-  display_name: "Fons4ai-project-knowledge-base-init"
-  short_description: "生成项目 AGENTS.md，并初始化包含领域、场景、能力变体和差异规则的分层知识库。"
-  default_prompt: "当 Fons4AI 路由启用或用户明确指定时，使用 $fons4ai-project-knowledge-base-init 生成或更新项目根目录 AGENTS.md，并初始化 .specify/memory 分层项目知识库；可结合代码、文档、接口、测试和用户上下文形成候选业务理解，重点识别领域、核心场景、业务能力变体、共性/差异规则和扩展边界；高影响歧义必须先澄清，MCP DDL 或仓库已有 SQL 只能作为上下文参考，不得创建、复制、导入或更新 SQL 文件。"

@@ -1,4 +1,0 @@
-interface:
-  display_name: "Fons4ai-generate-project-rules"
-  short_description: "生成受控的项目 Agent 运行规则、代码规范和 SDD 团队协作规范。"
-  default_prompt: "当 Fons4AI 路由启用或用户明确指定时，使用 $fons4ai-generate-project-rules 生成 .specify/rules/agent运行规则.md；用户要求代码规则时生成 .specify/rules/代码编写规范.md，要求企业级 SDD 团队治理时生成 .specify/rules/sdd团队协作规范.md。MCP 默认只写通用边界，只有存在项目级配置或用户明确要求时才生成 MCP 工具清单。"

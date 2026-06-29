@@ -10,17 +10,11 @@
         <relativePath>../pom.xml</relativePath>
     </parent>
 
-    <artifactId>fons4ai-component</artifactId>
+    <artifactId>fons4ai-rag</artifactId>
     <packaging>pom</packaging>
     <modules>
-        <module>fons4ai-rag</module>
-        <module>fons4ai-agent</module>
+        <module>fons4ai-rag-common</module>
+        <module>fons4ai-rag-spring-ai-starter</module>
     </modules>
-
-    <properties>
-        <maven.compiler.source>21</maven.compiler.source>
-        <maven.compiler.target>21</maven.compiler.target>
-        <project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
-    </properties>
 
 </project>

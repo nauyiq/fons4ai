@@ -19,9 +19,9 @@
     <description>AI FRAMEWORK</description>
 
     <modules>
-        <module>fons4ai-component</module>
         <module>fons4ai-app</module>
-        <module>fons4ai-sdd</module>
+        <module>fons4ai-agent</module>
+        <module>fons4ai-rag</module>
     </modules>
 
     <properties>
@@ -42,15 +42,6 @@
 
     <dependencyManagement>
         <dependencies>
-            <!-- spring boot -->
-            <dependency>
-                <groupId>org.springframework.boot</groupId>
-                <artifactId>spring-boot-dependencies</artifactId>
-                <version>${springboot.version}</version>
-                <type>pom</type>
-                <scope>import</scope>
-            </dependency>
-
             <!-- spring alibaba ai -->
             <dependency>
                 <groupId>com.alibaba.cloud.ai</groupId>
@@ -85,6 +76,17 @@
                 <artifactId>spring-ai-starter-mcp-client</artifactId>
                 <version>${spring.ai.version}</version>
             </dependency>
+            <dependency>
+                <groupId>org.springframework.ai</groupId>
+                <artifactId>spring-ai-starter-mcp-server-webmvc</artifactId>
+                <version>${spring.ai.version}</version>
+            </dependency>
+            <dependency>
+                <groupId>org.springframework.ai</groupId>
+                <artifactId>spring-ai-starter-mcp-server-webflux</artifactId>
+                <version>${spring.ai.version}</version>
+            </dependency>
+
 
             <!-- LangChain4j -->
             <dependency>
@@ -107,17 +109,6 @@
                 <version>${spring.ai.version}</version>
             </dependency>
 
-            <dependency>
-                <groupId>org.springframework.ai</groupId>
-                <artifactId>spring-ai-starter-mcp-server-webmvc</artifactId>
-                <version>${spring.ai.version}</version>
-            </dependency>
-
-            <dependency>
-                <groupId>org.springframework.ai</groupId>
-                <artifactId>spring-ai-starter-mcp-server-webflux</artifactId>
-                <version>${spring.ai.version}</version>
-            </dependency>
         </dependencies>
     </dependencyManagement>
 
