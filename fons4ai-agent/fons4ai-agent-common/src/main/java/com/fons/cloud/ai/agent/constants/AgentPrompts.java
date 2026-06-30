@@ -18,6 +18,14 @@ public interface AgentPrompts {
             """.formatted(LocalDateTime.now());
 
     /**
+     * 通用系统时间提示 英文
+     */
+    String SYSTEM_TIME_PROMPT_EN = """
+            ## Current system time
+            %s
+            """.formatted(LocalDateTime.now());
+
+    /**
      * 系统推荐问题提示词
      */
     String SYSTEM_RECOMMEND_PROMPT =

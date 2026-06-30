@@ -37,6 +37,7 @@ public interface DocumentReaderStrategy {
         Assert.notNull(request, () -> BusinessRuntimeException.of(RagResultCode.INVALID_DOCUMENT_FILES.getCode(), "DocumentReaderContext should not be null"));
         // 当前策略的文档类型
         DocumentType documentType = documentType();
+        if (documentType == null) { return false; }
         // 请求的文档类型是否匹配当前策略的文档类型
         return documentType.match(request.getFileType());
     }

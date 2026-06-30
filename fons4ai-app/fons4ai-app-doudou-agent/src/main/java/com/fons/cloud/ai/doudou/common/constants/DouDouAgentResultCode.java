@@ -12,7 +12,8 @@ import lombok.Getter;
 public enum DouDouAgentResultCode implements Result {
 
     //  ==================== 参数异常 ====================
-
+    FILE_ID_IS_EMPTY("DD100001", "文件ID不能为空"),
+    USER_ID_IS_EMPTY("DD100002", "用户ID不能为空"),
 
     //  ==================== 数据异常 ====================
     NOT_FOUND_SESSION("DD200001", "会话不存在"),

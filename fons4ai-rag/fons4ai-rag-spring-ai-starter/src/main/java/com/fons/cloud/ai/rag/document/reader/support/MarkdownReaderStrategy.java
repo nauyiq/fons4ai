@@ -38,6 +38,6 @@ public class MarkdownReaderStrategy extends AbstractDocumentReaderStrategy {
 
     @Override
     public DocumentType documentType() {
-        return null;
+        return DocumentType.MARKDOWN;
     }
 }

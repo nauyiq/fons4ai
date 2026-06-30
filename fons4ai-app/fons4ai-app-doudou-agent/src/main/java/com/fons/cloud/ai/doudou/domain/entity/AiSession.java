@@ -4,8 +4,9 @@ import com.baomidou.mybatisplus.annotation.IdType;
 import com.baomidou.mybatisplus.annotation.TableField;
 import com.baomidou.mybatisplus.annotation.TableId;
 import com.baomidou.mybatisplus.annotation.TableName;
-import com.fons.cloud.ai.agent.constants.AgentType;
+import com.fons.cloud.ai.doudou.common.constants.DouDouAgentType;
 import com.fons.cloud.ai.doudou.common.dto.ChatRequest;
+import com.fons.cloud.ai.doudou.common.dto.FileChatRequest;
 import com.fons.cloud.db.mybatisplus.BaseEntity;
 import lombok.*;
 
@@ -98,9 +99,19 @@ public class AiSession extends BaseEntity {
     @TableField("recommend")
     private String recommend;
 
-    public static AiSession createReact(ChatRequest request) {
+    public static AiSession create(ChatRequest request) {
         return AiSession.builder()
-                .agentType(AgentType.REACT.getType())
+                .agentType(DouDouAgentType.REACT.getType())
+                .question(request.getQuestion())
+                .sessionId(request.getConversationId())
+                .userId(request.getUserId())
+                .build();
+    }
+
+    public static AiSession create(FileChatRequest request) {
+        return AiSession.builder()
+                .agentType(DouDouAgentType.FILE.getType())
+                .fileId(request.getFileId())
                 .question(request.getQuestion())
                 .sessionId(request.getConversationId())
                 .userId(request.getUserId())

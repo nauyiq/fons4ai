@@ -1,5 +1,7 @@
 package com.fons.cloud.ai.doudou.domain.service.impl;
 
+import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
+import com.baomidou.mybatisplus.core.toolkit.Wrappers;
 import com.baomidou.mybatisplus.extension.conditions.query.LambdaQueryChainWrapper;
 import com.baomidou.mybatisplus.extension.service.impl.ServiceImpl;
 import com.fons.cloud.ai.doudou.domain.entity.AiFileInfo;
@@ -14,8 +16,15 @@ import org.springframework.stereotype.Service;
 public class AiFileInfoDomainServiceImpl extends ServiceImpl<AiFileInfoMapper, AiFileInfo> implements AiFileInfoDomainService {
 
     @Override
-    public AiFileInfo getByFileId(String fileId, String userId) {
-        LambdaQueryChainWrapper<AiFileInfo> wrapper = lambdaQuery()
+    public AiFileInfo getByFileId(String fileId) {
+        LambdaQueryWrapper<AiFileInfo> wrapper = Wrappers.lambdaQuery(AiFileInfo.class)
+                .eq(AiFileInfo::getFileId, fileId);
+        return getOne(wrapper);
+    }
+
+    @Override
+    public AiFileInfo getByFileIdAndUserId(String fileId, String userId) {
+        LambdaQueryWrapper<AiFileInfo> wrapper = Wrappers.lambdaQuery(AiFileInfo.class)
                 .eq(AiFileInfo::getFileId, fileId)
                 .eq(AiFileInfo::getUserId, userId);
         return getOne(wrapper);

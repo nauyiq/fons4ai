@@ -11,8 +11,15 @@ public interface AiFileInfoDomainService extends IService<AiFileInfo> {
     /**
      * 根据文件id获取文件信息
      * @param fileId
+     * @return
+     */
+    AiFileInfo getByFileId(String fileId);
+
+    /**
+     * 根据文件id获取文件信息
+     * @param fileId
      * @param userId
      * @return
      */
-    AiFileInfo getByFileId(String fileId, String userId);
+    AiFileInfo getByFileIdAndUserId(String fileId, String userId);
 }

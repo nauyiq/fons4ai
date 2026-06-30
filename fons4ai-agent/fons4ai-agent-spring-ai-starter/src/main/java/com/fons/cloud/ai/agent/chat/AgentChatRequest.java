@@ -4,6 +4,7 @@ import com.fons.cloud.common.request.BaseRequest;
 import lombok.*;
 
 import java.util.List;
+import java.util.Map;
 
 /**
  * @author hongqy
@@ -25,6 +26,11 @@ public class AgentChatRequest extends BaseRequest {
      * 消息/提示词/问题
      */
     private String question;
+
+    /**
+     * 拓展参数
+     */
+    private Map<String, String> params;
 
     /**
      * 历史消息列表

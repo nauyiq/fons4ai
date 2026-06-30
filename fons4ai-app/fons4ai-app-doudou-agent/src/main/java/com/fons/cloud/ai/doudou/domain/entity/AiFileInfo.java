@@ -10,6 +10,7 @@ import com.fons.cloud.ai.doudou.common.constants.FileStatus;
 import com.fons.cloud.ai.doudou.common.dto.UploadFileInfoRequest;
 import com.fons.cloud.db.mybatisplus.BaseEntity;
 import lombok.*;
+import org.apache.commons.lang3.StringUtils;
 
 /**
  * 文件元数据表
@@ -95,6 +96,8 @@ public class AiFileInfo extends BaseEntity {
     public void setExtractedText(int maxLength, String extractedText) {
         if (extractedText.length() > maxLength) {
             this.extractedText = extractedText.substring(0, maxLength) + "\n\n... (内容已截断，文件过长)";
+        } else {
+            this.extractedText = extractedText;
         }
     }
 
@@ -104,6 +107,7 @@ public class AiFileInfo extends BaseEntity {
                 .userId(request.getUserId())
                 .fileName(request.getFileName())
                 .fileSize(request.getFileSize())
+                .fileType(FileNameUtil.extName(request.getFileName()))
                 .status(FileStatus.PROCESSING)
                 .embed(false)
                 .build();
@@ -121,4 +125,17 @@ public class AiFileInfo extends BaseEntity {
         // 大文件需要向量化
         return this.fileSize > maxTextLength;
     }
+
+    public String getFileContent() {
+        if (this.status != FileStatus.SUCCESS) {
+            return "文件尚未处理完成，当前状态: " + this.status;
+        }
+
+        if (StringUtils.isBlank(this.extractedText)) {
+            return "该文件没有可识别的内容";
+        }
+
+        return this.extractedText;
+    }
+
 }

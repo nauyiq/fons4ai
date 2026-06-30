@@ -1,22 +1,24 @@
 package com.fons.cloud.ai.agent.standard.react;
 
+import cn.hutool.core.util.StrUtil;
 import com.alibaba.fastjson2.JSON;
 import com.alibaba.fastjson2.JSONObject;
 import com.fons.cloud.ai.agent.chat.AgentChatFinalContext;
 import com.fons.cloud.ai.agent.chat.ChatResponseParseResult;
 import com.fons.cloud.ai.agent.chat.ReactExecutionContext;
+import com.fons.cloud.ai.agent.chat.RoundState;
 import com.fons.cloud.ai.agent.constants.AgentMessageType;
 import com.fons.cloud.ai.agent.constants.AgentType;
 import com.fons.cloud.ai.agent.constants.RoundMode;
-import com.fons.cloud.ai.agent.response.ChunkResult;
 import com.fons.cloud.ai.agent.core.AgentTaskManager;
-import com.fons.cloud.ai.agent.chat.RoundState;
-import com.fons.cloud.ai.agent.infrastructure.prompt.AgentSystemPrompt;
-import com.fons.cloud.ai.agent.infrastructure.prompt.ReactAgentSystemPromptBuilder;
+import com.fons.cloud.ai.agent.infrastructure.prompt.ReactAgentSystemPrompt;
+import com.fons.cloud.ai.agent.infrastructure.prompt.builder.ReactAgentSystemPromptBuilder;
+import com.fons.cloud.ai.agent.response.ChunkResult;
 import com.fons.cloud.ai.agent.standard.BaseAgent;
 import com.fons.cloud.ai.agent.standard.hook.AgentChatHook;
 import lombok.extern.slf4j.Slf4j;
 import org.apache.commons.collections4.CollectionUtils;
+import org.apache.commons.collections4.MapUtils;
 import org.apache.commons.lang3.StringUtils;
 import org.springframework.ai.chat.client.ChatClient;
 import org.springframework.ai.chat.client.advisor.api.Advisor;
@@ -85,12 +87,6 @@ public class ReactAgent extends BaseAgent {
         this.tools = tools;
     }
 
-    protected ReactAgent(AgentType agentType, List<ToolCallback> tools, ChatModel chatModel, AgentTaskManager agentTaskManager) {
-        super(agentType, chatModel, agentTaskManager);
-        this.tools = tools;
-    }
-
-
     protected void init(boolean initChatMemory) {
         log.info("开始初始化ReactAgent...");
         ToolCallingChatOptions toolCallingChatOptions = ToolCallingChatOptions.builder()
@@ -122,6 +118,12 @@ public class ReactAgent extends BaseAgent {
         messages.addFirst(createSystemMessage());
         // 添加用户提示词
         messages.add(createUserMessage());
+        // 添加用户参数提示词 一半用于工具的参数传输
+        if (MapUtils.isNotEmpty(currentParams)) {
+            currentParams.forEach((key, value) -> {
+                messages.add(createUserParamMessage(key, value));
+            });
+        }
 
         // 迭代轮次
         AtomicLong roundCounter = new AtomicLong(0);
@@ -165,6 +167,8 @@ public class ReactAgent extends BaseAgent {
                     }
                 });
     }
+
+
 
     protected ReactExecutionContext createReactExecutionContext() {
         return new ReactExecutionContext();
@@ -494,7 +498,17 @@ public class ReactAgent extends BaseAgent {
             log.info("使用react默认系统提示词");
             systemPrompt = ReactAgentSystemPromptBuilder.build();
         }
-        return new SystemMessage(systemPrompt.getPrompt());
+        return new SystemMessage(systemPrompt.getSystemPrompt());
+    }
+
+    /**
+     * 创建用户参数消息， 用于传递用户参数（通常作用于工具入参）
+     * @param key
+     * @param value
+     * @return
+     */
+    private UserMessage createUserParamMessage(String key, String value) {
+        return new UserMessage(StrUtil.format("<{}>{}</{}>", key, value, key));
     }
 
     private String createToolError(String message) {
@@ -513,7 +527,7 @@ public class ReactAgent extends BaseAgent {
         private final AgentTaskManager agentTaskManager;
 
         private List<Advisor> advisors;
-        private AgentSystemPrompt systemPrompt;
+        private ReactAgentSystemPrompt systemPrompt;
         private int maxRounds = 5;
         private boolean useChatMemory;
         private int maxMemoryMessages;
@@ -530,7 +544,7 @@ public class ReactAgent extends BaseAgent {
             return this;
         }
 
-        public Builder systemPrompt(AgentSystemPrompt systemPrompt) {
+        public Builder systemPrompt(ReactAgentSystemPrompt systemPrompt) {
             this.systemPrompt = systemPrompt;
             return this;
         }

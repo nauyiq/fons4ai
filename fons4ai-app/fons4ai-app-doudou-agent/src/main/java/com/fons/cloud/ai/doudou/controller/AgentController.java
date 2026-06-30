@@ -3,6 +3,7 @@ package com.fons.cloud.ai.doudou.controller;
 import cn.hutool.core.lang.UUID;
 import com.fons.cloud.ai.doudou.application.AgentApplicationService;
 import com.fons.cloud.ai.doudou.common.dto.ChatRequest;
+import com.fons.cloud.ai.doudou.common.dto.FileChatRequest;
 import com.fons.cloud.auth.utils.AuthUtils;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.tags.Tag;
@@ -35,10 +36,28 @@ public class AgentController {
             conversationId = UUID.randomUUID().toString();
         }
         Long userId = AuthUtils.getCurrentUserId();
-        return agentApplicationService.chatStream(ChatRequest.builder()
+        return agentApplicationService.searchChatStream(ChatRequest.builder()
                         .question(query)
                         .conversationId(conversationId)
                         .userId(String.valueOf(userId))
+                .build());
+    }
+
+    @GetMapping(value = "/file/stream", produces = MediaType.TEXT_EVENT_STREAM_VALUE)
+    @Operation(summary = "文件问答", description = "接收用户查询并返回流式响应，基于上传的文件内容进行问答")
+    public Flux<String> chatStream(String query, String fileId, String conversationId) {
+        if (StringUtils.isAnyBlank(query, fileId)) {
+            return Flux.error(new IllegalArgumentException("查询参数不能为空"));
+        }
+        if (StringUtils.isBlank(conversationId)) {
+            conversationId = UUID.randomUUID().toString();
+        }
+        Long userId = AuthUtils.getCurrentUserId();
+        return agentApplicationService.fileChatStream(FileChatRequest.builder()
+                .question(query)
+                .fileId(fileId)
+                .conversationId(conversationId)
+                .userId(String.valueOf(userId))
                 .build());
     }
 

@@ -1,4 +1,4 @@
-package com.fons.cloud.ai.agent.constants;
+package com.fons.cloud.ai.doudou.common.constants;
 
 import lombok.AllArgsConstructor;
 import lombok.Getter;
@@ -8,9 +8,11 @@ import lombok.Getter;
  */
 @Getter
 @AllArgsConstructor
-public enum AgentType {
+public enum DouDouAgentType {
 
     REACT("react"),
+
+    FILE("file"),
 
 
 
@@ -18,6 +20,7 @@ public enum AgentType {
 
     private final String type;
 
+    ;
 
 
 }

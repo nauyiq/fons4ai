@@ -6,9 +6,9 @@ import com.fons.cloud.ai.agent.chat.AiChatMessage;
 import com.fons.cloud.ai.agent.constants.AgentPrompts;
 import com.fons.cloud.ai.agent.constants.AgentResultCode;
 import com.fons.cloud.ai.agent.constants.AgentType;
-import com.fons.cloud.ai.agent.response.AgentResponse;
 import com.fons.cloud.ai.agent.core.AgentTaskManager;
-import com.fons.cloud.ai.agent.infrastructure.prompt.AgentSystemPrompt;
+import com.fons.cloud.ai.agent.infrastructure.prompt.ConstructSystemPrompt;
+import com.fons.cloud.ai.agent.response.AgentResponse;
 import com.fons.cloud.common.base.exception.BusinessRuntimeException;
 import com.fons.cloud.common.result.R;
 import jakarta.validation.constraints.NotNull;
@@ -57,7 +57,7 @@ public abstract class BaseAgent {
     /**
      * 系统提示词
      */
-    protected AgentSystemPrompt systemPrompt;
+    protected ConstructSystemPrompt systemPrompt;
 
     /**
      * 任务管理器
@@ -112,6 +112,12 @@ public abstract class BaseAgent {
     protected String currentQuestion;
 
     /**
+     * 当前请求拓展参数
+     */
+    @Getter
+    protected Map<String, String> currentParams;
+
+    /**
      * 当前推荐答案
      */
     @Getter
@@ -128,7 +134,6 @@ public abstract class BaseAgent {
      */
     @Getter
     protected String finalAnswer;
-
 
 
 
@@ -162,6 +167,7 @@ public abstract class BaseAgent {
         clearUsedTools();
         currentConversationId = conversationId;
         currentQuestion = question;
+        currentParams = request.getParams();
         if (useChatMemory()) {
             if (CollectionUtils.isNotEmpty(request.getHistoryMessages())) {
                 // 持久化历史消息到会话记忆

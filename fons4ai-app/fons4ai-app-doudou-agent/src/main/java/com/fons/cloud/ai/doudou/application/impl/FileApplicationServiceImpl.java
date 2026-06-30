@@ -53,7 +53,7 @@ public class FileApplicationServiceImpl implements FileApplicationService {
 
     @Override
     public R<FileInfoVO> getFileInfo(String userId, String fileId) {
-        AiFileInfo fileInfo = fileInfoDomainService.getByFileId(fileId, userId);
+        AiFileInfo fileInfo = fileInfoDomainService.getByFileIdAndUserId(fileId, userId);
         if (fileInfo == null) {
             return R.failed(DouDouAgentResultCode.NOT_FOUND_AI_FILE_INFO);
         }
@@ -72,6 +72,7 @@ public class FileApplicationServiceImpl implements FileApplicationService {
             log.info("开始处理AI文件上传, fileId: {}, filename: {}, size: {}", aiFileInfo.getFileId(), request.getFileName(), request.getFileSize());
             OssUploadRequest ossUploadRequest = OssUploadRequest.builder()
                     .scene(SCENE)
+                    .filename(request.getFileName())
                     .accessUniqueId(aiFileInfo.getFileId())
                     .inputStream(request.getInputStream())
                     .build();
@@ -90,7 +91,7 @@ public class FileApplicationServiceImpl implements FileApplicationService {
                     .userId(aiFileInfo.getUserId())
                     .fileName(aiFileInfo.getFileName())
                     .fileType(aiFileInfo.getFileType())
-                    .inputStream(request.getInputStream())
+                    .inputStream(null)
                     .embedding(needEmbedding)
                     // 以文件ID作为元数据进行传输
                     .metadata(Map.of("fileId", aiFileInfo.getFileId()))
@@ -113,6 +114,7 @@ public class FileApplicationServiceImpl implements FileApplicationService {
         } catch (Exception e) {
             // 文件上传失败 则把文件信息更新为失败
             aiFileInfo.setStatus(FileStatus.FAILED);
+            fileInfoDomainService.updateById(aiFileInfo);
             log.error("AI文件上传失败, {}", e.getMessage(), e);
             try {
                 if (response != null) {
@@ -135,7 +137,7 @@ public class FileApplicationServiceImpl implements FileApplicationService {
         InputStream inputStream = request.getInputStream();
         if (inputStream == null) {
             // 通过oss获取文件
-            AiFileInfo fileInfo = fileInfoDomainService.getByFileId(request.getFileId(), request.getUserId());
+            AiFileInfo fileInfo = fileInfoDomainService.getByFileIdAndUserId(request.getFileId(), request.getUserId());
             if (fileInfo == null) {
                 return R.failed(DouDouAgentResultCode.NOT_FOUND_AI_FILE_INFO);
             }
@@ -195,7 +197,7 @@ public class FileApplicationServiceImpl implements FileApplicationService {
 
     @Override
     public R<Void> deleteFile(String userId, String fileId) {
-        AiFileInfo fileInfo = fileInfoDomainService.getByFileId(fileId, userId);
+        AiFileInfo fileInfo = fileInfoDomainService.getByFileIdAndUserId(fileId, userId);
         if (fileInfo == null) {
             return R.failed(DouDouAgentResultCode.NOT_FOUND_AI_FILE_INFO);
         }

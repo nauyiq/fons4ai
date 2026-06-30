@@ -1,12 +1,10 @@
-package com.fons.cloud.ai.agent.standard.websearch;
+package com.fons.cloud.ai.agent.standard.react.websearch;
 
 import com.alibaba.fastjson2.JSON;
 import com.alibaba.fastjson2.JSONObject;
 import com.fons.cloud.ai.agent.chat.ReactExecutionContext;
-import com.fons.cloud.ai.agent.constants.AgentType;
 import com.fons.cloud.ai.agent.core.AgentTaskManager;
-import com.fons.cloud.ai.agent.infrastructure.prompt.AgentSystemPrompt;
-import com.fons.cloud.ai.agent.infrastructure.prompt.WebSearchReactAgentSystemPromptBuilder;
+import com.fons.cloud.ai.agent.infrastructure.prompt.ReactAgentSystemPrompt;
 import com.fons.cloud.ai.agent.infrastructure.tool.ToolMeta;
 import com.fons.cloud.ai.agent.infrastructure.tool.ToolProvider;
 import com.fons.cloud.ai.agent.infrastructure.tool.ToolResultParser;
@@ -36,7 +34,7 @@ public class WebSearchReactAgent extends ReactAgent {
     private final ToolsRegistry toolsRegistry;
 
     protected WebSearchReactAgent(List<ToolCallback> tools, ChatModel chatModel, AgentTaskManager agentTaskManager, ToolsRegistry toolsRegistry) {
-        super(AgentType.WEB_SEARCH, tools, chatModel, agentTaskManager);
+        super(tools, chatModel, agentTaskManager);
         this.toolsRegistry = toolsRegistry;
     }
 
@@ -141,7 +139,7 @@ public class WebSearchReactAgent extends ReactAgent {
         private final ToolsRegistry toolsRegistry;
 
         private List<Advisor> advisors;
-        private AgentSystemPrompt systemPrompt;
+        private ReactAgentSystemPrompt systemPrompt;
         private int maxRounds = 5;
         private boolean useChatMemory;
         private int maxMemoryMessages;
@@ -160,7 +158,7 @@ public class WebSearchReactAgent extends ReactAgent {
             return this;
         }
 
-        public Builder systemPrompt(AgentSystemPrompt systemPrompt) {
+        public Builder systemPrompt(ReactAgentSystemPrompt systemPrompt) {
             this.systemPrompt = systemPrompt;
             return this;
         }
@@ -187,10 +185,6 @@ public class WebSearchReactAgent extends ReactAgent {
 
         public WebSearchReactAgent build() {
             WebSearchReactAgent reactAgent = new WebSearchReactAgent(tools, chatModel, agentTaskManager, toolsRegistry);
-            if (this.systemPrompt == null) {
-                // 这里赋予新的系统提示语， 把角色定义为专门用于网络搜索的agent
-                this.systemPrompt = WebSearchReactAgentSystemPromptBuilder.build();
-            }
             reactAgent.systemPrompt = this.systemPrompt;
             reactAgent.hook = this.hook;
             reactAgent.advisors = this.advisors;
