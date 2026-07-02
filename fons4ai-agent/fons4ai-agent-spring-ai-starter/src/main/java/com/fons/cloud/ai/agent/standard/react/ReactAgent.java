@@ -5,7 +5,7 @@ import com.alibaba.fastjson2.JSON;
 import com.alibaba.fastjson2.JSONObject;
 import com.fons.cloud.ai.agent.chat.AgentChatFinalContext;
 import com.fons.cloud.ai.agent.chat.ChatResponseParseResult;
-import com.fons.cloud.ai.agent.chat.ReactExecutionContext;
+import com.fons.cloud.ai.agent.chat.AgentExecutionContext;
 import com.fons.cloud.ai.agent.chat.RoundState;
 import com.fons.cloud.ai.agent.constants.AgentMessageType;
 import com.fons.cloud.ai.agent.constants.AgentType;
@@ -130,13 +130,13 @@ public class ReactAgent extends BaseAgent {
         // 是否发送最终结果标记位
         AtomicBoolean hasSentFinalResult = new AtomicBoolean(false);
         // 跨轮次执行上下文
-        ReactExecutionContext reactExecutionContext = createReactExecutionContext();
+        AgentExecutionContext agentExecutionContext = createReactExecutionContext();
         // 执行轮次
-        scheduleRound(messages, sink, roundCounter, hasSentFinalResult, reactExecutionContext);
+        scheduleRound(messages, sink, roundCounter, hasSentFinalResult, agentExecutionContext);
 
         return sink.asFlux()
                 // 对每一次输出结果进行收集
-                .doOnNext(chunk -> collectResponse(chunk, reactExecutionContext))
+                .doOnNext(chunk -> collectResponse(chunk, agentExecutionContext))
                 // 流被取消时的处理
                 .doOnCancel(() -> {
                     hasSentFinalResult.set(true);
@@ -149,8 +149,8 @@ public class ReactAgent extends BaseAgent {
                     if (StringUtils.isNotBlank(currentConversationId)) {
                         agentTaskManager.stopTask(currentConversationId);
                     }
-                    this.thinking = reactExecutionContext.thinkingBuffer.toString();
-                    this.finalAnswer = reactExecutionContext.finalAnswerBuffer.toString();
+                    this.thinking = agentExecutionContext.thinkingBuffer.toString();
+                    this.finalAnswer = agentExecutionContext.finalAnswerBuffer.toString();
                     log.info("最终思考过程: {}", thinking);
                     log.info("最终答案: {}", finalAnswer);
                     stopWatch.stop();
@@ -170,8 +170,8 @@ public class ReactAgent extends BaseAgent {
 
 
 
-    protected ReactExecutionContext createReactExecutionContext() {
-        return new ReactExecutionContext();
+    protected AgentExecutionContext createReactExecutionContext() {
+        return new AgentExecutionContext();
     }
 
     /**
@@ -179,7 +179,7 @@ public class ReactAgent extends BaseAgent {
      * @param chunk
      * @param context
      */
-    private void collectResponse(String chunk, ReactExecutionContext context) {
+    private void collectResponse(String chunk, AgentExecutionContext context) {
         recordFirstResponse();
         try {
             JSONObject json = JSON.parseObject(chunk);
@@ -201,9 +201,9 @@ public class ReactAgent extends BaseAgent {
      * @param sink                  消息发布者
      * @param roundCounter          当前轮次执行次数
      * @param hasSentFinalResult    是否发送最终结果标记位
-     * @param executionContext 跨轮次执行上下文
+     * @param agentExecutionContext 跨轮次执行上下文
      */
-    private void scheduleRound(List<Message> messages, Sinks.Many<String> sink, AtomicLong roundCounter, AtomicBoolean hasSentFinalResult, ReactExecutionContext executionContext) {
+    private void scheduleRound(List<Message> messages, Sinks.Many<String> sink, AtomicLong roundCounter, AtomicBoolean hasSentFinalResult, AgentExecutionContext agentExecutionContext) {
         // 轮次+1
         roundCounter.incrementAndGet();
         // 初始化轮次执行状态
@@ -217,7 +217,7 @@ public class ReactAgent extends BaseAgent {
                 // 处理数据块
                 .doOnNext(chunk -> processChunk(chunk, sink, roundState))
                 // 处理轮次完成
-                .doOnComplete(() -> finishRound(messages, sink, roundState, roundCounter, hasSentFinalResult, executionContext))
+                .doOnComplete(() -> finishRound(messages, sink, roundState, roundCounter, hasSentFinalResult, agentExecutionContext))
                 // 异常处理
                 .doOnError(err -> {
                     if (!hasSentFinalResult.get()) {
@@ -277,16 +277,16 @@ public class ReactAgent extends BaseAgent {
      * @param roundState            轮次执行状态
      * @param roundCounter          第几轮次
      * @param hasSentFinalResult    是否发送最终结果标记位
-     * @param executionContext      跨轮次执行上下文
+     * @param agentExecutionContext      跨轮次执行上下文
      */
-    private void finishRound(List<Message> messages, Sinks.Many<String> sink, RoundState roundState, AtomicLong roundCounter, AtomicBoolean hasSentFinalResult, ReactExecutionContext executionContext) {
+    private void finishRound(List<Message> messages, Sinks.Many<String> sink, RoundState roundState, AtomicLong roundCounter, AtomicBoolean hasSentFinalResult, AgentExecutionContext agentExecutionContext) {
         if (roundState.getMode() != RoundMode.TOOL_CALL) {
             // 非工具调用时则结束轮次
             log.info("会话[{}]执行最后轮次处理, 轮次:{}", currentConversationId, roundCounter);
             // 设置结束标记
             hasSentFinalResult.set(true);
             // 发送最后的响应, 包括拓展输出的搜索内容或者生成推荐答案
-            emitFinalResponses(sink, roundState.getTextBuffer().toString(), executionContext);
+            emitFinalResponses(sink, roundState.getTextBuffer().toString(), agentExecutionContext);
             // 结束轮次
             sink.tryEmitComplete();
         } else {
@@ -295,13 +295,13 @@ public class ReactAgent extends BaseAgent {
             // 判断是否达到最大轮次 如果是的话强制输出答案
             if (roundCounter.get() >= maxRounds) {
                 log.info("会话[{}]达到最大轮次{}，强制输出答案", currentConversationId, maxRounds);
-                forceFinalStream(messages, sink, hasSentFinalResult, executionContext);
+                forceFinalStream(messages, sink, hasSentFinalResult, agentExecutionContext);
             } else {
                 // 调用工具
-                executeToolCalls(sink, roundState.getToolCalls(), messages, hasSentFinalResult, executionContext, () -> {
+                executeToolCalls(sink, roundState.getToolCalls(), messages, hasSentFinalResult, agentExecutionContext, () -> {
                     if (!hasSentFinalResult.get()) {
                         // 还未到最终轮次，则继续下一轮次
-                        scheduleRound(messages, sink, roundCounter, hasSentFinalResult, executionContext);
+                        scheduleRound(messages, sink, roundCounter, hasSentFinalResult, agentExecutionContext);
                     }
                 });
             }
@@ -315,10 +315,10 @@ public class ReactAgent extends BaseAgent {
      * @param toolCalls
      * @param messages
      * @param hasSentFinalResult
-     * @param executionContext
+     * @param agentExecutionContext
      * @param onComplete
      */
-    protected void executeToolCalls(Sinks.Many<String> sink, List<AssistantMessage.ToolCall> toolCalls, List<Message> messages, AtomicBoolean hasSentFinalResult, ReactExecutionContext executionContext, Runnable onComplete) {
+    protected void executeToolCalls(Sinks.Many<String> sink, List<AssistantMessage.ToolCall> toolCalls, List<Message> messages, AtomicBoolean hasSentFinalResult, AgentExecutionContext agentExecutionContext, Runnable onComplete) {
         AtomicInteger completedCount = new AtomicInteger(0);
         Map<String, ToolResponseMessage.ToolResponse> responseMap = new ConcurrentHashMap<>();
 
@@ -341,13 +341,13 @@ public class ReactAgent extends BaseAgent {
 
                 try {
                     // 调用工具之前
-                    beforeToolCall(sink, toolCall, executionContext);
+                    beforeToolCall(sink, toolCall, agentExecutionContext);
                     // 工具执行结果
                     Object result = callback.call(argsJson);
                     String resultText = Objects.toString(result, "");
                     recordUsedTool(toolName);
                     // 调用工具之后
-                    afterToolCall(toolCall, resultText, executionContext);
+                    afterToolCall(toolCall, resultText, agentExecutionContext);
 
                     responseMap.put(toolCall.id(), new ToolResponseMessage.ToolResponse(
                             toolCall.id(), toolName, resultText));
@@ -386,7 +386,7 @@ public class ReactAgent extends BaseAgent {
      * 保留拓展该类的能力
      */
     protected void beforeToolCall(Sinks.Many<String> sink, AssistantMessage.ToolCall toolCall,
-                                  ReactExecutionContext context) {
+                                  AgentExecutionContext context) {
     }
 
     /**
@@ -394,7 +394,7 @@ public class ReactAgent extends BaseAgent {
      * 保留拓展该类的能力
      */
     protected void afterToolCall(AssistantMessage.ToolCall toolCall, String result,
-                                 ReactExecutionContext context) {
+                                 AgentExecutionContext context) {
     }
 
     /**
@@ -414,9 +414,9 @@ public class ReactAgent extends BaseAgent {
      * @param messages
      * @param sink
      * @param hasSentFinalResult
-     * @param executionContext
+     * @param agentExecutionContext
      */
-    protected void forceFinalStream(List<Message> messages, Sinks.Many<String> sink, AtomicBoolean hasSentFinalResult, ReactExecutionContext executionContext) {
+    protected void forceFinalStream(List<Message> messages, Sinks.Many<String> sink, AtomicBoolean hasSentFinalResult, AgentExecutionContext agentExecutionContext) {
         List<Message> finalMessages = new ArrayList<>();
         finalMessages.add(createSystemMessage());
         for (Message message : messages) {
@@ -443,7 +443,7 @@ public class ReactAgent extends BaseAgent {
                 .publishOn(Schedulers.boundedElastic())
                 .doOnNext(chunk -> processChunk(chunk, sink, state))
                 .doOnComplete(() -> {
-                    emitFinalResponses(sink, state.getTextBuffer().toString(), executionContext);
+                    emitFinalResponses(sink, state.getTextBuffer().toString(), agentExecutionContext);
                     hasSentFinalResult.set(true);
                     sink.tryEmitComplete();
                 })
@@ -464,7 +464,7 @@ public class ReactAgent extends BaseAgent {
      * @param finalText 响应内容
      * @param context   跨轮次执行上下文
      */
-    private void emitFinalResponses(Sinks.Many<String> sink, String finalText, ReactExecutionContext context) {
+    private void emitFinalResponses(Sinks.Many<String> sink, String finalText, AgentExecutionContext context) {
         // 拓展消息生成
         emitAdditionalFinalResponses(sink, finalText, context);
         if (enableRecommendations) {
@@ -484,7 +484,7 @@ public class ReactAgent extends BaseAgent {
      * @param finalText
      * @param context
      */
-    protected void emitAdditionalFinalResponses(Sinks.Many<String> sink, String finalText, ReactExecutionContext context) {
+    protected void emitAdditionalFinalResponses(Sinks.Many<String> sink, String finalText, AgentExecutionContext context) {
 
     }
 

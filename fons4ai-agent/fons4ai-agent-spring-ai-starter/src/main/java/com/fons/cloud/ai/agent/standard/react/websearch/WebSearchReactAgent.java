@@ -2,7 +2,7 @@ package com.fons.cloud.ai.agent.standard.react.websearch;
 
 import com.alibaba.fastjson2.JSON;
 import com.alibaba.fastjson2.JSONObject;
-import com.fons.cloud.ai.agent.chat.ReactExecutionContext;
+import com.fons.cloud.ai.agent.chat.AgentExecutionContext;
 import com.fons.cloud.ai.agent.core.AgentTaskManager;
 import com.fons.cloud.ai.agent.infrastructure.prompt.ReactAgentSystemPrompt;
 import com.fons.cloud.ai.agent.infrastructure.tool.ToolMeta;
@@ -45,7 +45,7 @@ public class WebSearchReactAgent extends ReactAgent {
      * @param context
      */
     @Override
-    protected void beforeToolCall(Sinks.Many<String> sink, AssistantMessage.ToolCall toolCall, ReactExecutionContext context) {
+    protected void beforeToolCall(Sinks.Many<String> sink, AssistantMessage.ToolCall toolCall, AgentExecutionContext context) {
         // 工具名
         String name = toolCall.name();
         // 工具参数
@@ -67,9 +67,9 @@ public class WebSearchReactAgent extends ReactAgent {
      * @param context
      */
     @Override
-    protected void afterToolCall(AssistantMessage.ToolCall toolCall, String result, ReactExecutionContext context) {
+    protected void afterToolCall(AssistantMessage.ToolCall toolCall, String result, AgentExecutionContext context) {
         // 跨轮次上下文
-        WebSearchExecutionContext webContext = (WebSearchExecutionContext) context;
+        WebSearchAgentExecutionContext webContext = (WebSearchAgentExecutionContext) context;
         // 工具名
         String name = toolCall.name();
         // 获取工具解析器
@@ -99,8 +99,8 @@ public class WebSearchReactAgent extends ReactAgent {
      * @param context
      */
     @Override
-    protected void emitAdditionalFinalResponses(Sinks.Many<String> sink, String finalText, ReactExecutionContext context) {
-        WebSearchExecutionContext webContext = (WebSearchExecutionContext) context;
+    protected void emitAdditionalFinalResponses(Sinks.Many<String> sink, String finalText, AgentExecutionContext context) {
+        WebSearchAgentExecutionContext webContext = (WebSearchAgentExecutionContext) context;
         if (webContext.hasSearchResult()) {
             // TODO 暂时只输出搜索结果
             this.referenceJson = createReferenceResponse(JSON.toJSONString(webContext.searchResults));
@@ -109,14 +109,14 @@ public class WebSearchReactAgent extends ReactAgent {
     }
 
     @Override
-    protected ReactExecutionContext createReactExecutionContext() {
-        return new WebSearchExecutionContext();
+    protected AgentExecutionContext createReactExecutionContext() {
+        return new WebSearchAgentExecutionContext();
     }
 
     /**
      * websearchagent 跨轮次执行上下文。
      */
-    private static class WebSearchExecutionContext extends ReactExecutionContext {
+    private static class WebSearchAgentExecutionContext extends AgentExecutionContext {
         /** 搜索结果列表（对应 tavily-search 等搜索工具） */
         List<WebSearchResult> searchResults = new ArrayList<>();
         /** 提取结果列表（对应 tavily-extract 等内容提取工具） */

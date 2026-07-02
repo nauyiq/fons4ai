@@ -13,7 +13,8 @@ import com.fons.cloud.ai.doudou.common.dto.ChatRequest;
 import com.fons.cloud.ai.doudou.common.dto.FileChatRequest;
 import com.fons.cloud.ai.doudou.domain.entity.AiSession;
 import com.fons.cloud.ai.doudou.domain.service.AiSessionDomainService;
-import com.fons.cloud.ai.doudou.infrastructure.prompt.DouDouAgentPrompt;
+import com.fons.cloud.ai.doudou.infrastructure.prompt.FileAgentPrompt;
+import com.fons.cloud.ai.doudou.infrastructure.prompt.WebSearchAgentPrompt;
 import com.fons.cloud.ai.doudou.infrastructure.tools.file.FileContentToolService;
 import com.fons.cloud.common.base.exception.BusinessRuntimeException;
 import com.fons.cloud.common.result.ResultCode;
@@ -61,7 +62,7 @@ public class AgentApplicationServiceImpl implements AgentApplicationService {
         // 构建网络搜索的agent
         WebSearchReactAgent agent = new WebSearchReactAgent.Builder(Arrays.stream(tavilyWebSearchTools.getToolCallbacks()).toList(), chatModel, agentTaskManager, toolsRegistry)
                 // 系统提示词
-                .systemPrompt(DouDouAgentPrompt.getWebSearchAgentSystemPrompt())
+                .systemPrompt(WebSearchAgentPrompt.defaultPrompt())
                 // 使用记忆
                 .useChatMemory(true)
                 // 钩子函数
@@ -89,7 +90,7 @@ public class AgentApplicationServiceImpl implements AgentApplicationService {
         // 构建文件RAG搜索的agent
         ReactAgent agent = ReactAgent.builder(Arrays.asList(ToolCallbacks.from(fileContentToolService)), chatModel, agentTaskManager)
                 // 系统提示词
-                .systemPrompt(DouDouAgentPrompt.getFileAgentSystemPrompt())
+                .systemPrompt(FileAgentPrompt.defaultPrompt())
                 // 使用记忆
                 .useChatMemory(true)
                 // 钩子函数

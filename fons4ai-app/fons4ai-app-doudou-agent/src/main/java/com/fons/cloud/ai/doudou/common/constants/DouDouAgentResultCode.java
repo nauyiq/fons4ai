@@ -36,7 +36,8 @@ public enum DouDouAgentResultCode implements Result {
 
 
     //  ==================== 系统异常 ====================
-
+    PPT_STATUS_STRATEGY_MISSING("DD999991", "PPT生成数据差异"),
+    PPT_STATUS_UPDATE_FAILED("DD999992", "PPT状态更新异常"),
 
     ;
 

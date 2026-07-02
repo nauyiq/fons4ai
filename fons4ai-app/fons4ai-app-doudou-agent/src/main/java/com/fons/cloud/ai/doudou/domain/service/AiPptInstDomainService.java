@@ -7,4 +7,12 @@ import com.fons.cloud.ai.doudou.domain.entity.AiPptInst;
  * @author hongqy
  */
 public interface AiPptInstDomainService extends IService<AiPptInst> {
+
+    /**
+     * 根据conversationId获取最后一个AiPptInst记录
+     * @param conversationId
+     * @return
+     */
+    AiPptInst getLastPptInst(String conversationId);
+
 }
