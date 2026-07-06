@@ -68,13 +68,13 @@ public class InformationSearchStrategy extends AbstractPPTStateAgentStrategy {
     private static final String PROMPT_TEMPLATE =
             """
              ## 任务
-            根据以下PPT主题，使用tavily搜索工具收集相关信息，并整理成简洁但是全面的总结。
+            根据以下PPT主题，使用搜索工具收集相关信息，并整理成简洁但是全面的总结。
             
             ## PPT主题
             %s
             
             ## 输出要求
-                1. 使用tavily搜索工具查找相关信息
+                1. 使用搜索工具查找相关信息
                 2. 收集与主题相关的背景信息、关键数据、典型案例等
                 3. 整理搜索结果，提供有价值的背景信息，方便后续生成大纲时使用
                 4. 输出简洁的总结，不要包含过多无关信息

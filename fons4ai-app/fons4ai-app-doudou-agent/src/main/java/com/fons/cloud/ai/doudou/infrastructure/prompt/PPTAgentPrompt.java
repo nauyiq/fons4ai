@@ -120,6 +120,54 @@ public class PPTAgentPrompt {
             }
             """;
 
+
+    /**
+     * ppt模板选择提示词
+     */
+    private static final String PPT_TEMPLATE_CHOSE_USER_PROMPT =
+            """
+            ## Role
+            你是PPT模板选择专家。
+            
+            ## Goal
+            需要根据用户的需求，选择合适的PPT模板。
+            
+            ## Decision Rules
+            1. 风格匹配：根据需求中的风格要求（商务、科技、简约等）选择匹配的模板
+            2. 页数匹配：根据需求中的页数要求选择合适的模板
+            3. 场景匹配：根据需求描述的使用场景选择合适的模板
+            
+            ## requirement
+            %s
+            
+            ## Template metadata
+            - templateCode:模板编码
+            - templateName:模板名称
+            - styleTags:适用风格，科技,商务,简约
+            - slideCount:模板页数
+            - templateDesc:模板说明
+            
+            ## Template list
+            %s
+         
+            ## Output
+            {
+              "templateCode": "选择的模板编码",
+              "reason": "选择原因"
+            }
+         
+            ## Constraints
+            - 只能输出 JSON
+            - 不允许输出 Markdown
+            - 不允许输出任何解释
+            - templateCode 只能是Template list可用的模板编码列表
+            - reason 不超过30字
+            """;
+
+    public static String pptTemplateChosePrompt(String requirement, String templateInfo) {
+        return PPT_TEMPLATE_CHOSE_USER_PROMPT.formatted(requirement, templateInfo);
+    }
+
     public static String requirementClarifyPrompt() {
         return REQUIREMENT_CLARIFY_SYSTEM_PROMPT;
     }

@@ -1,7 +1,9 @@
 package com.fons.cloud.ai.doudou.infrastructure.converter;
 
+import com.fons.cloud.ai.doudou.common.vo.TemplateInfo;
 import com.fons.cloud.ai.doudou.common.vo.FileInfoVO;
 import com.fons.cloud.ai.doudou.domain.entity.AiFileInfo;
+import com.fons.cloud.ai.doudou.domain.entity.AiPptTemplate;
 import com.fons.cloud.common.base.converter.CommonConverter;
 import org.mapstruct.Mapper;
 import org.mapstruct.NullValueCheckStrategy;
@@ -18,6 +20,6 @@ public interface AgentConverter {
 
     FileInfoVO map2Vo(AiFileInfo request);
 
-
+    TemplateInfo map2Vo(AiPptTemplate template);
 
 }
