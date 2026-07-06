@@ -21,13 +21,13 @@ public enum PptInstStatus {
      */
     SEARCH("SEARCH", "信息收集"),
     /**
-     * 大纲生成
-     */
-    OUTLINE("OUTLINE", "大纲生成"),
-    /**
      * 模板选择
      */
     TEMPLATE("TEMPLATE", "模板选择"),
+    /**
+     * 大纲生成
+     */
+    OUTLINE("OUTLINE", "大纲生成"),
     /**
      * Schema生成
      */
