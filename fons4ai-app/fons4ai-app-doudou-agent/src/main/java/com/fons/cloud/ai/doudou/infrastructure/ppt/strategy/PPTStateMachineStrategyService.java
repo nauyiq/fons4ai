@@ -69,9 +69,6 @@ public class PPTStateMachineStrategyService {
         AiPptInst inst = context.getInst();
         log.info("PPT状态机执行失败策略: {}", inst.getStatusEnum());
         try {
-            if (inst.getStatusEnum() != PptInstStatus.FAILED) {
-                inst.setStatusEnum(PptInstStatus.FAILED);
-            }
             boolean nextResult = aiPptInstDomainService.updateById(inst);
             Assert.isTrue(nextResult, () -> new BusinessRuntimeException(DouDouAgentResultCode.PPT_STATUS_UPDATE_FAILED));
 

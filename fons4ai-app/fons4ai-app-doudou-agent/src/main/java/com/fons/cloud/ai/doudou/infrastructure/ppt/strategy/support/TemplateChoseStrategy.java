@@ -50,15 +50,12 @@ public class TemplateChoseStrategy extends AbstractPPTStateAgentStrategy {
             TemplateSelectionResult selectionResult = converter.convert(result);
             Assert.notNull(selectionResult, "PPT模板选择结果为空, result:{}", result);
             log.info("PPT模板选择结果, code:{}, reason:{}", selectionResult.getTemplateCode(), selectionResult.getReason());
-            // 保存模板信息
-            inst.setTemplateCode(selectionResult.getTemplateCode());
             sink.tryEmitNext(createThinkingResponse("✅ 模板设计完成，开始生成大纲\n"));
-            executeNext(ctx);
+            executeNext(ctx, inst::setTemplateCode, selectionResult.getTemplateCode());
         } catch (Exception e) {
             log.error("PPT模板选择异常", e);
             // 失败时不回退状态，只更新错误信息，转到 FAILED
-            inst.setErrorMsg("模板选择失败: " + e.getMessage());
-            executeFailed(ctx);
+            executeFailed(ctx, "模板选择失败: " + e.getMessage());
         }
     }
 

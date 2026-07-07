@@ -51,23 +51,20 @@ public class RequirementClarifyStrategy extends AbstractPPTStateAgentStrategy {
                     log.info("需求分析完成: {}", responseBuffer);
                     // 信息完整， 继续下一步
                     String requirement = responseBuffer.toString();
-                    inst.setStatusEnum(nextStatus());
                     inst.setRequirement(requirement);
                     if (shouldContinueToNextStep(requirement)) {
-                        executeNext(ctx);
+                        executeNext(ctx, inst::setRequirement, requirement);
                     } else {
-                        // 信息不完整， 转至失败
-                        inst.setErrorMsg("需要补充信息：\n" + requirement);
                         // 添加AGENT回复到上下文中
                         ctx.getMessages().add(new AssistantMessage(requirement));
-                        executeFailed(ctx);
+                        // 信息不完整， 转至失败 保存信息
+                        executeFailed(ctx, "需要补充信息：\n" + requirement);
                     }
                 })
                 .doOnError(err -> {
                     log.error("需求分析异常", err);
                     // 失败时不回退状态，只更新错误信息，转到 FAILED
-                    inst.setErrorMsg("需求分析失败：\n" + err.getMessage());
-                    executeFailed(ctx);
+                    executeFailed(ctx, "需求分析失败：\n" + err.getMessage());
                 })
                 .subscribeOn(Schedulers.boundedElastic())
                 .subscribe();

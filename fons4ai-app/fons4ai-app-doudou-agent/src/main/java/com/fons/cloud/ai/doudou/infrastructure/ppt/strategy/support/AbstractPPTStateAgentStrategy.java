@@ -7,6 +7,8 @@ import com.fons.cloud.ai.doudou.common.constants.PptInstStatus;
 import com.fons.cloud.ai.doudou.infrastructure.ppt.strategy.PPTStateAgentStrategy;
 import com.fons.cloud.ai.doudou.infrastructure.ppt.strategy.PPTStateAgentStrategyContext;
 import com.fons.cloud.ai.doudou.infrastructure.ppt.strategy.PPTStateMachineStrategyService;
+import com.fons.cloud.util.concurrent.pc.Consumer;
+import lombok.SneakyThrows;
 import lombok.extern.slf4j.Slf4j;
 import reactor.core.Disposable;
 
@@ -62,20 +64,39 @@ public abstract class AbstractPPTStateAgentStrategy implements PPTStateAgentStra
      * 执行下一个策略
      * @param ctx
      */
-    protected void executeNext(PPTStateAgentStrategyContext ctx) {
+    @SneakyThrows
+    protected void executeNext(PPTStateAgentStrategyContext ctx, Consumer<String> function, String resultContent)  {
+        function.accept(resultContent);
         pptStateMachineStrategyService.executeNext(ctx, nextStatus());
     }
+
 
     /**
      * 执行失败策略
      * @param ctx
      */
-    protected void executeFailed(PPTStateAgentStrategyContext ctx) {
+    protected void executeFailed(PPTStateAgentStrategyContext ctx, String errorMsg) {
+        ctx.getInst().setErrorMsg(errorMsg);
         pptStateMachineStrategyService.executeFailed(ctx);
     }
 
+    /**
+     * 执行失败策略并设置状态
+     * @param ctx
+     */
+    protected void executeFailedStatus(PPTStateAgentStrategyContext ctx, String errorMsg) {
+        ctx.getInst().setErrorMsg(errorMsg);
+        ctx.getInst().setStatus(PptInstStatus.FAILED.getCode());
+        pptStateMachineStrategyService.executeFailed(ctx);
+    }
+
+    /**
+     * 设置停止任务
+     * @param conversationId
+     * @param disposable
+     */
     protected void setDisposable(String conversationId, Disposable disposable) {
-        agentTaskManager.stopTask(conversationId);
+        agentTaskManager.setDisposable(conversationId, disposable);
     }
 
     /**
@@ -139,16 +160,5 @@ public abstract class AbstractPPTStateAgentStrategy implements PPTStateAgentStra
         return true;
     }
 
-    protected enum ExecutionState {
-
-        NEXT,
-
-        SUCCESS,
-
-        FAILED,
-
-        ;
-
-    }
 
 }

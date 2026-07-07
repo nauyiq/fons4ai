@@ -22,6 +22,7 @@ public enum DouDouAgentResultCode implements Result {
     MISSING_FILE_INFO("DD200004", "文件信息缺失"),
     FILE_NOT_READY("DD200005", "文件尚未处理完成"),
     SESSION_MESSAGE_TYPE_ERROR("DD200006", "会话消息类型错误"),
+    PPT_TEMPLATE_NOT_EXIST("DD200007", "PPT模板不存在"),
 
     //  ==================== 认证异常 ====================
 

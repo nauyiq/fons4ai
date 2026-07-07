@@ -41,15 +41,13 @@ public class InformationSearchStrategy extends AbstractPPTStateAgentStrategy {
                 .doOnComplete(() -> {
                     log.info("信息收集完成，结果长度: {}", searchResultBuffer.length());
                     sink.tryEmitNext(createThinkingResponse("\n✅相关信息收集完成，开始选择模板\n"));
-                    inst.setSearchInfo(searchResultBuffer.toString());
                     // 执行下一步
-                    executeNext(ctx);
+                    executeNext(ctx, inst::setSearchInfo, searchResultBuffer.toString());
                 })
                 .doOnError(err -> {
                     log.error("信息收集异常", err);
                     // 失败时不回退状态，只更新错误信息，转到 FAILED
-                    inst.setErrorMsg("信息收集失败：\n" + err.getMessage());
-                    executeFailed(ctx);
+                    executeFailed(ctx, "信息收集失败：\n" + err.getMessage());
                 }).subscribeOn(Schedulers.boundedElastic()).subscribe();
 
         // 保存 disposable 到任务管理器，用于停止任务

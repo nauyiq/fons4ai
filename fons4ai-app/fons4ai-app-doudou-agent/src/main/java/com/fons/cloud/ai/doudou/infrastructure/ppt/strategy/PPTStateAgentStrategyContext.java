@@ -30,6 +30,16 @@ public class PPTStateAgentStrategyContext extends AgentExecutionContext {
     private AiPptInst inst;
 
     /**
+     * 是否修改操作
+     */
+    private boolean modify;
+
+    /**
+     * 修改请求
+     */
+    private String modifyRequest;
+
+    /**
      * 用户问题
      */
     private String question;
