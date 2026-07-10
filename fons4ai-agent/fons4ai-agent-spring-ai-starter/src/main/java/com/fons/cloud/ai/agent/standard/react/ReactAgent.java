@@ -174,26 +174,6 @@ public class ReactAgent extends BaseAgent {
         return new AgentExecutionContext();
     }
 
-    /**
-     * 采集每一块的数据
-     * @param chunk
-     * @param context
-     */
-    private void collectResponse(String chunk, AgentExecutionContext context) {
-        recordFirstResponse();
-        try {
-            JSONObject json = JSON.parseObject(chunk);
-            String type = json.getString("type");
-            if (AgentMessageType.TEXT.getCode().equals(type)) {
-                context.finalAnswerBuffer.append(json.getString("content"));
-            } else if (AgentMessageType.THINKING.getCode().equals(type)) {
-                context.thinkingBuffer.append(json.getString("content"));
-            }
-        } catch (Exception e) {
-            context.finalAnswerBuffer.append(chunk);
-        }
-
-    }
 
     /**
      * 开始执行轮次

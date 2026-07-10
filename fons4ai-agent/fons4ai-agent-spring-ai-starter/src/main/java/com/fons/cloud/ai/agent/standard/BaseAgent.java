@@ -1,8 +1,11 @@
 package com.fons.cloud.ai.agent.standard;
 
 import com.alibaba.fastjson2.JSON;
+import com.alibaba.fastjson2.JSONObject;
 import com.fons.cloud.ai.agent.chat.AgentChatRequest;
+import com.fons.cloud.ai.agent.chat.AgentExecutionContext;
 import com.fons.cloud.ai.agent.chat.AiChatMessage;
+import com.fons.cloud.ai.agent.constants.AgentMessageType;
 import com.fons.cloud.ai.agent.constants.AgentPrompts;
 import com.fons.cloud.ai.agent.constants.AgentResultCode;
 import com.fons.cloud.ai.agent.constants.AgentType;
@@ -387,6 +390,27 @@ public abstract class BaseAgent {
             return "";
         }
         return String.join(",", usedTools);
+    }
+
+    /**
+     * 采集每一块的数据
+     * @param chunk
+     * @param context
+     */
+    protected void collectResponse(String chunk, AgentExecutionContext context) {
+        recordFirstResponse();
+        try {
+            JSONObject json = JSON.parseObject(chunk);
+            String type = json.getString("type");
+            if (AgentMessageType.TEXT.getCode().equals(type)) {
+                context.finalAnswerBuffer.append(json.getString("content"));
+            } else if (AgentMessageType.THINKING.getCode().equals(type)) {
+                context.thinkingBuffer.append(json.getString("content"));
+            }
+        } catch (Exception e) {
+            context.finalAnswerBuffer.append(chunk);
+        }
+
     }
 
     /**

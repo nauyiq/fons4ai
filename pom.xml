@@ -19,7 +19,6 @@
     <description>AI FRAMEWORK</description>
 
     <modules>
-        <module>fons4ai-app</module>
         <module>fons4ai-agent</module>
         <module>fons4ai-rag</module>
     </modules>
