@@ -6,7 +6,7 @@ import com.fons.cloud.ai.agent.chat.AgentChatRequest;
 import com.fons.cloud.ai.agent.chat.AgentExecutionContext;
 import com.fons.cloud.ai.agent.chat.AiChatMessage;
 import com.fons.cloud.ai.agent.constants.AgentMessageType;
-import com.fons.cloud.ai.agent.constants.AgentPrompts;
+import com.fons.cloud.ai.agent.constants.prompt.AgentPrompts;
 import com.fons.cloud.ai.agent.constants.AgentResultCode;
 import com.fons.cloud.ai.agent.constants.AgentType;
 import com.fons.cloud.ai.agent.core.AgentTaskManager;
@@ -118,7 +118,7 @@ public abstract class BaseAgent {
      * 当前请求拓展参数
      */
     @Getter
-    protected Map<String, String> currentParams;
+    protected Map<String, String> toolsParams;
 
     /**
      * 当前推荐答案
@@ -170,7 +170,7 @@ public abstract class BaseAgent {
         clearUsedTools();
         currentConversationId = conversationId;
         currentQuestion = question;
-        currentParams = request.getParams();
+        toolsParams = request.getParams();
         if (useChatMemory()) {
             if (CollectionUtils.isNotEmpty(request.getHistoryMessages())) {
                 // 持久化历史消息到会话记忆

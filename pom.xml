@@ -20,10 +20,16 @@
 
     <modules>
         <module>fons4ai-agent</module>
+        <module>fons4ai-tool</module>
         <module>fons4ai-rag</module>
+        <module>fons4ai-ai-capability</module>
     </modules>
 
     <properties>
+        <maven.compiler.source>21</maven.compiler.source>
+        <maven.compiler.target>21</maven.compiler.target>
+        <project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
+
         <!-- 框架依赖统一版本 -->
         <revision>1.0.0</revision>
         <fons4cloud-revision>1.0.0</fons4cloud-revision>

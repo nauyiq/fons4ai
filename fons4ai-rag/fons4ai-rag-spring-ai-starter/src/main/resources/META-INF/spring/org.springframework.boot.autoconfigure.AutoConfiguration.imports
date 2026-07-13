@@ -1,3 +1,2 @@
 com.fons.cloud.ai.rag.infrastructure.config.DocumentReaderAutoConfiguration
 com.fons.cloud.ai.rag.infrastructure.config.PgVectorStoreAutoConfiguration
-com.fons.cloud.ai.rag.infrastructure.config.MultipleModalAutoConfiguration

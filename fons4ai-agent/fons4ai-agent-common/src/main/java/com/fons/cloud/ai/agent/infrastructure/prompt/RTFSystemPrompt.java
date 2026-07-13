@@ -1,6 +1,6 @@
 package com.fons.cloud.ai.agent.infrastructure.prompt;
 
-import com.fons.cloud.ai.agent.constants.AgentPrompts;
+import com.fons.cloud.ai.agent.constants.prompt.AgentPrompts;
 import lombok.*;
 
 /**
@@ -33,7 +33,7 @@ public class RTFSystemPrompt implements ConstructSystemPrompt {
     @Override
     public String toString() {
         return role + "\n\n" +
-                AgentPrompts.SYSTEM_TIME_PROMPT + "\n\n" +
+                AgentPrompts.getSystemTimePrompt() + "\n\n" +
                 task + "\n\n" +
                 format;
     }

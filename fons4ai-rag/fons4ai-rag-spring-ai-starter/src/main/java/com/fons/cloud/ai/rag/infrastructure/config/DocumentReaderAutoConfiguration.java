@@ -1,11 +1,14 @@
 package com.fons.cloud.ai.rag.infrastructure.config;
 
+import com.fons.cloud.ai.capability.multimodal.ImageRecognitionService;
 import com.fons.cloud.ai.rag.document.reader.DocumentReaderFacade;
 import com.fons.cloud.ai.rag.document.reader.DocumentReaderStrategy;
 import com.fons.cloud.ai.rag.document.reader.support.*;
-import com.fons.cloud.ai.rag.infrastructure.multiplemodal.MultipleModalChatModel;
+import org.springframework.boot.autoconfigure.condition.ConditionalOnBean;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
+
+import java.util.List;
 
 /**
  * @author hongqy
@@ -39,13 +42,14 @@ public class DocumentReaderAutoConfiguration {
     }
 
     @Bean
-    public DocumentReaderStrategy imageReaderStrategy(MultipleModalChatModel multipleModalChatModel) {
-        return new ImageReadStrategy(multipleModalChatModel);
+    @ConditionalOnBean(ImageRecognitionService.class)
+    public DocumentReaderStrategy imageReaderStrategy(ImageRecognitionService imageRecognitionService) {
+        return new ImageReadStrategy(imageRecognitionService);
     }
 
     @Bean
-    DocumentReaderFacade documentReaderFacade() {
-        return new DocumentReaderFacade();
+    DocumentReaderFacade documentReaderFacade(List<DocumentReaderStrategy> strategies) {
+        return new DocumentReaderFacade(strategies);
     }
 
 

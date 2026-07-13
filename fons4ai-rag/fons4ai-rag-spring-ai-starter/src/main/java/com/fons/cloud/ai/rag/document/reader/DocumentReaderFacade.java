@@ -2,14 +2,12 @@ package com.fons.cloud.ai.rag.document.reader;
 
 import cn.hutool.core.lang.Assert;
 import cn.hutool.core.map.MapUtil;
-import cn.hutool.extra.spring.SpringUtil;
 import com.fons.cloud.ai.rag.common.constants.DocumentType;
 import com.fons.cloud.ai.rag.common.constants.RagResultCode;
 import com.fons.cloud.ai.rag.common.request.DocumentReaderRequest;
 import com.fons.cloud.common.base.exception.BusinessRuntimeException;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.ai.document.Document;
-import org.springframework.beans.factory.SmartInitializingSingleton;
 import org.springframework.stereotype.Component;
 
 import java.util.List;
@@ -20,7 +18,7 @@ import java.util.Map;
  */
 @Slf4j
 @Component
-public class DocumentReaderFacade implements SmartInitializingSingleton {
+public class DocumentReaderFacade {
     private final Map<DocumentType, DocumentReaderStrategy> strategies;
 
     public DocumentReaderFacade() {
@@ -48,7 +46,7 @@ public class DocumentReaderFacade implements SmartInitializingSingleton {
                 }
             }
             // 2. 执行策略
-            Assert.notNull(usingStrategy, "Not found strategy for document type: " + usingStrategy.documentType());
+            Assert.notNull(usingStrategy, "Not found strategy for document type: " + documentType);
             log.info("Using strategy [{}] to read document, request:{}", usingStrategy.documentType(), request);
             return usingStrategy.read(request);
         } catch (BusinessRuntimeException e) {
@@ -60,18 +58,4 @@ public class DocumentReaderFacade implements SmartInitializingSingleton {
         }
     }
 
-
-    @Override
-    public void afterSingletonsInstantiated() {
-        Map<String, DocumentReaderStrategy> beans = SpringUtil.getBeansOfType(DocumentReaderStrategy.class);
-        if (MapUtil.isNotEmpty(beans)) {
-            for (DocumentReaderStrategy strategy : beans.values()) {
-                if (!strategies.containsKey(strategy.documentType())) {
-                    strategies.put(strategy.documentType(), strategy);
-                }
-            }
-        }
-
-
-    }
 }

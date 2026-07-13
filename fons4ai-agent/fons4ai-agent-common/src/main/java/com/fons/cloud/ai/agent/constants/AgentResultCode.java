@@ -17,8 +17,6 @@ public enum AgentResultCode implements Result {
     //  ==================== 数据异常 ====================
     AGENT_CHAT_MEMORY_NOT_INIT("AG200001", "agent记忆未初始化"),
     NOT_SUPPORT_MESSAGE_TYPE_FOR_PERSISTENT("AG200002", "不支持的消息类型"),
-    NOT_SUPPORT_IMAGE_GEN_PROVIDER("AG200003", "不支持的图片生成提供者"),
-
     //  ==================== 认证异常 ====================
 
     //  ==================== 文件/oss异常 ====================

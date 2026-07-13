@@ -1,9 +1,11 @@
 package com.fons.cloud.ai.agent.infrastructure.prompt;
 
-import com.fons.cloud.ai.agent.constants.AgentPrompts;
+import com.fons.cloud.ai.agent.constants.prompt.AgentPrompts;
 import lombok.Getter;
 import lombok.Setter;
 import lombok.experimental.SuperBuilder;
+
+import static com.fons.cloud.ai.agent.constants.prompt.ReactAgentSystemPromptConstants.*;
 
 /**
  * react智能体的结构化系统提示词
@@ -54,11 +56,24 @@ public class ReactAgentSystemPrompt implements ConstructSystemPrompt {
         return this.toString();
     }
 
+    public static ReactAgentSystemPrompt defaultPrompt() {
+        return ReactAgentSystemPrompt.builder()
+                .role(DEFAULT_ROLE)
+                .goal(DEFAULT_GOAL)
+                .workflow(DEFAULT_WORKFLOW)
+                .toolUsageRule(DEFAULT_TOOL_USAGE_RULE)
+                .constraints(DEFAULT_CONSTRAINTS)
+                .errorHandling(DEFAULT_ERROR_HANDLING)
+                .format(DEFAULT_OUTPUT_FORMAT)
+                .build();
+    }
+
+
     @Override
     public String toString() {
         return role + "\n\n" +
                 goal + "\n\n" +
-                AgentPrompts.SYSTEM_TIME_PROMPT_EN + "\n\n" +
+                AgentPrompts.getSystemTimePromptEn() + "\n\n" +
                 workflow + "\n\n" +
                 toolUsageRule + "\n\n" +
                 constraints + "\n\n" +
@@ -72,9 +87,5 @@ public class ReactAgentSystemPrompt implements ConstructSystemPrompt {
         return this.toString();
     }
 
-    public static void main(String[] args) {
-        ReactAgentSystemPrompt prompt = com.fons.cloud.ai.agent.infrastructure.prompt.builder.ReactAgentSystemPromptBuilder.build();
-        System.out.println(prompt);
-    }
 
 }

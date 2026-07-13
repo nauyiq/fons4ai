@@ -1,92 +1,53 @@
 package com.fons.cloud.ai.agent.infrastructure.prompt;
 
+import lombok.*;
+
+import static com.fons.cloud.ai.agent.constants.prompt.PlanExecutorSystemPromptConstants.*;
+
 /**
  * @author hongqy
  */
+@Getter
+@Setter
+@Builder
+@NoArgsConstructor
+@AllArgsConstructor
 public class PlanExecuteSystemPrompt {
 
     /**
-     * 需求澄清提示词
+     * 生成执行计划提示词
      */
-    public static final String REQUIREMENT_CLARIFY_PROMPT = """
-            ## 角色
-            
-            你是【Deep Research 需求分析专家】。
-            
-            ## 核心任务
-            
-            仅判断用户提出的问题是否具备开展深度研究的基本条件。
-            
-            你不负责回答用户问题，不输出研究结论，也不展开具体分析。
-            
-            ## 判断原则
-            
-            优先判断为“可以开始研究”。
-            
-            只要能够从用户问题中合理识别研究对象、研究主题或研究方向，就应直接开始研究，不要因缺少次要信息而追问。
-            
-            ## 可以开始研究
-            
-            满足以下任一条件即可：
-            
-            * 研究对象、事件、产品、技术或问题基本明确
-            * 用户提出了明确的研究主题
-            * 用户要求进行分析、调研、评估、比较或生成报告
-            * 虽然部分信息缺失，但可以合理推断研究方向
-            * 可以通过后续搜索逐步缩小研究范围
-            
-            以下信息缺失时，不得阻止研究：
-            
-            * 报告用途
-            * 目标受众
-            * 输出格式
-            * 报告篇幅
-            * 是否需要对比
-            * 技术实现细节
-            * 时间范围
-            * 地域范围
-            
-            除非这些信息会导致研究对象或研究方向完全不同。
-            
-            ## 需要补充信息
-            
-            仅在以下情况下要求用户补充：
-            
-            * 无法确定研究对象
-            * 核心概念存在明显歧义
-            * 用户描述过于宽泛，无法判断研究主题
-            * 存在多个完全不同的理解方向，且无法合理选择
-            * 缺少关键信息将导致无法开展有效检索
-            
-            ## 输出要求
-            
-            * 总字数不超过120字
-            * 只能输出以下两种格式之一
-            * 不得回答原问题
-            * 不得解释判断规则
-            * 不得输出额外内容
-            
-            ### 信息充足时
-            
-            【开始研究】
-            研究方向：用一句话概括需要研究的对象、主题和核心问题。
-            
-            ### 信息不足时
-            
-            【需要补充信息】
-            
-            1. 提出1—3个影响研究方向的关键澄清问题。
-            
-            ## 强制约束
-            
-            * 能合理推断时，必须选择【开始研究】
-            * 不得为了完善报告而过度追问
-            * 澄清问题必须与研究对象或核心范围直接相关
-            * 不得询问用途、受众、格式等非必要信息
-            
-            """;
+    private String planPrompt;
 
+    /**
+     * 执行工具提示词（React 执行器）
+     */
+    private String executePrompt;
 
+    /**
+     * 任务批判提示词
+     */
+    private String critiquePrompt;
+
+    /**
+     * 上下文压缩提示词
+     */
+    private String compressPrompt;
+
+    /**
+     * 最终总结提示词
+     */
+    private String summarizePrompt;
+
+    public static PlanExecuteSystemPrompt defaultPrompt() {
+        return PlanExecuteSystemPrompt.builder()
+                .planPrompt(GENERATION_PLAN_PROMPT)
+                .executePrompt(EXECUTE)
+                .critiquePrompt(CRITIQUE)
+                .compressPrompt(COMPRESS)
+                .summarizePrompt(SUMMARIZE)
+                .build();
+    }
 
 
 }

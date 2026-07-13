@@ -5,14 +5,14 @@ import com.alibaba.fastjson2.JSONObject;
 import com.fons.cloud.ai.agent.chat.AgentExecutionContext;
 import com.fons.cloud.ai.agent.core.AgentTaskManager;
 import com.fons.cloud.ai.agent.infrastructure.prompt.ReactAgentSystemPrompt;
-import com.fons.cloud.ai.agent.infrastructure.tool.ToolMeta;
-import com.fons.cloud.ai.agent.infrastructure.tool.ToolProvider;
-import com.fons.cloud.ai.agent.infrastructure.tool.ToolResultParser;
-import com.fons.cloud.ai.agent.infrastructure.tools.ToolsRegistry;
-import com.fons.cloud.ai.agent.response.WebExtractResult;
-import com.fons.cloud.ai.agent.response.WebSearchResult;
 import com.fons.cloud.ai.agent.standard.hook.AgentChatHook;
 import com.fons.cloud.ai.agent.standard.react.ReactAgent;
+import com.fons.cloud.ai.tool.model.ToolMeta;
+import com.fons.cloud.ai.tool.model.WebExtractResult;
+import com.fons.cloud.ai.tool.model.WebSearchResult;
+import com.fons.cloud.ai.tool.registry.ToolRegistry;
+import com.fons.cloud.ai.tool.spi.ToolProvider;
+import com.fons.cloud.ai.tool.spi.ToolResultParser;
 import lombok.extern.slf4j.Slf4j;
 import org.apache.commons.collections4.CollectionUtils;
 import org.apache.commons.lang3.StringUtils;
@@ -31,9 +31,9 @@ import java.util.List;
  */
 @Slf4j
 public class WebSearchReactAgent extends ReactAgent {
-    private final ToolsRegistry toolsRegistry;
+    private final ToolRegistry toolsRegistry;
 
-    protected WebSearchReactAgent(List<ToolCallback> tools, ChatModel chatModel, AgentTaskManager agentTaskManager, ToolsRegistry toolsRegistry) {
+    protected WebSearchReactAgent(List<ToolCallback> tools, ChatModel chatModel, AgentTaskManager agentTaskManager, ToolRegistry toolsRegistry) {
         super(tools, chatModel, agentTaskManager);
         this.toolsRegistry = toolsRegistry;
     }
@@ -136,7 +136,7 @@ public class WebSearchReactAgent extends ReactAgent {
         private final List<ToolCallback> tools;
         private final ChatModel chatModel;
         private final AgentTaskManager agentTaskManager;
-        private final ToolsRegistry toolsRegistry;
+        private final ToolRegistry toolsRegistry;
 
         private List<Advisor> advisors;
         private ReactAgentSystemPrompt systemPrompt;
@@ -145,7 +145,7 @@ public class WebSearchReactAgent extends ReactAgent {
         private int maxMemoryMessages;
         private AgentChatHook hook;
 
-        public Builder(List<ToolCallback> tools, ChatModel chatModel, AgentTaskManager agentTaskManager, ToolsRegistry toolsRegistry) {
+        public Builder(List<ToolCallback> tools, ChatModel chatModel, AgentTaskManager agentTaskManager, ToolRegistry toolsRegistry) {
             this.tools = tools;
             this.chatModel = chatModel;
             this.agentTaskManager = agentTaskManager;

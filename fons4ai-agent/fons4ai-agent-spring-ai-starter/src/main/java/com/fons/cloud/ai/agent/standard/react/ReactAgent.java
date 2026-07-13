@@ -2,17 +2,15 @@ package com.fons.cloud.ai.agent.standard.react;
 
 import cn.hutool.core.util.StrUtil;
 import com.alibaba.fastjson2.JSON;
-import com.alibaba.fastjson2.JSONObject;
 import com.fons.cloud.ai.agent.chat.AgentChatFinalContext;
 import com.fons.cloud.ai.agent.chat.ChatResponseParseResult;
 import com.fons.cloud.ai.agent.chat.AgentExecutionContext;
 import com.fons.cloud.ai.agent.chat.RoundState;
-import com.fons.cloud.ai.agent.constants.AgentMessageType;
 import com.fons.cloud.ai.agent.constants.AgentType;
 import com.fons.cloud.ai.agent.constants.RoundMode;
 import com.fons.cloud.ai.agent.core.AgentTaskManager;
 import com.fons.cloud.ai.agent.infrastructure.prompt.ReactAgentSystemPrompt;
-import com.fons.cloud.ai.agent.infrastructure.prompt.builder.ReactAgentSystemPromptBuilder;
+import com.fons.cloud.ai.agent.constants.prompt.ReactAgentSystemPromptConstants;
 import com.fons.cloud.ai.agent.response.ChunkResult;
 import com.fons.cloud.ai.agent.standard.BaseAgent;
 import com.fons.cloud.ai.agent.standard.hook.AgentChatHook;
@@ -118,9 +116,9 @@ public class ReactAgent extends BaseAgent {
         messages.addFirst(createSystemMessage());
         // 添加用户提示词
         messages.add(createUserMessage());
-        // 添加用户参数提示词 一半用于工具的参数传输
-        if (MapUtils.isNotEmpty(currentParams)) {
-            currentParams.forEach((key, value) -> {
+        // 添加用户参数提示词 用于工具的参数传输
+        if (MapUtils.isNotEmpty(toolsParams)) {
+            toolsParams.forEach((key, value) -> {
                 messages.add(createUserParamMessage(key, value));
             });
         }
@@ -476,7 +474,7 @@ public class ReactAgent extends BaseAgent {
     private SystemMessage createSystemMessage() {
         if (systemPrompt == null) {
             log.info("使用react默认系统提示词");
-            systemPrompt = ReactAgentSystemPromptBuilder.build();
+            systemPrompt = ReactAgentSystemPrompt.defaultPrompt();
         }
         return new SystemMessage(systemPrompt.getSystemPrompt());
     }
