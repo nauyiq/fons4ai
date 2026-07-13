@@ -22,7 +22,7 @@
         <module>fons4ai-agent</module>
         <module>fons4ai-tool</module>
         <module>fons4ai-rag</module>
-        <module>fons4ai-ai-capability</module>
+        <module>fons4ai-capability</module>
     </modules>
 
     <properties>

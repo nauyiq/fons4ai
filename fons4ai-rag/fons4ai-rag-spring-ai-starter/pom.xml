@@ -21,7 +21,7 @@
 
         <dependency>
             <groupId>com.fons.cloud.ai</groupId>
-            <artifactId>fons4ai-ai-capability-common</artifactId>
+            <artifactId>fons4ai-capability-common</artifactId>
             <version>${revision}</version>
         </dependency>
 
