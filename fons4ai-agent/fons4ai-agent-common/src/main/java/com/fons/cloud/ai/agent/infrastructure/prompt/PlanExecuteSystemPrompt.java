@@ -15,6 +15,16 @@ import static com.fons.cloud.ai.agent.constants.prompt.PlanExecutorSystemPromptC
 public class PlanExecuteSystemPrompt {
 
     /**
+     * 需求澄清提示词
+     */
+    private String clarifyPrompt;
+
+    /**
+     * 研究主题生成提示词
+     */
+    private String topicGenerationPrompt;
+
+    /**
      * 生成执行计划提示词
      */
     private String planPrompt;
@@ -41,6 +51,8 @@ public class PlanExecuteSystemPrompt {
 
     public static PlanExecuteSystemPrompt defaultPrompt() {
         return PlanExecuteSystemPrompt.builder()
+                .clarifyPrompt(REQUIREMENT_CLARIFY_PROMPT)
+                .topicGenerationPrompt(RESEARCH_TOPIC_GENERATION_PROMPT)
                 .planPrompt(GENERATION_PLAN_PROMPT)
                 .executePrompt(EXECUTE)
                 .critiquePrompt(CRITIQUE)

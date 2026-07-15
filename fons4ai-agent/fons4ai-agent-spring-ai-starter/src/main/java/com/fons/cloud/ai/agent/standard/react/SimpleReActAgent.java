@@ -1,4 +1,4 @@
-package com.fons.cloud.ai.agent.standard.deepresearch;
+package com.fons.cloud.ai.agent.standard.react;
 
 import cn.hutool.core.lang.Assert;
 import com.fons.cloud.common.base.exception.SystemIntervalException;

@@ -3,7 +3,10 @@ package com.fons.cloud.ai.tool.registry;
 import com.fons.cloud.ai.tool.constants.ToolCategory;
 import com.fons.cloud.ai.tool.model.ToolMeta;
 import com.fons.cloud.ai.tool.spi.ToolProvider;
+import lombok.extern.slf4j.Slf4j;
 import org.apache.commons.lang3.StringUtils;
+import org.apache.commons.logging.Log;
+import org.apache.commons.logging.LogFactory;
 import org.springframework.ai.tool.ToolCallback;
 
 import java.util.Collection;
@@ -15,6 +18,7 @@ import java.util.Map;
  *
  * @author hongqy
  */
+@Slf4j
 public class ToolsRegistry implements ToolRegistry {
 
     private final Map<String, ToolProvider> providers = new HashMap<>();
@@ -96,11 +100,17 @@ public class ToolsRegistry implements ToolRegistry {
         return providers.get(toolMeta.providerName());
     }
 
+    @Override
+    public ToolProvider getToolProvider(ToolMeta toolMeta) {
+        return providers.get(toolMeta.providerName());
+    }
+
     private void registerTool(String toolName, ToolProvider provider) {
         if (provider == null) {
             toolMetaMap.put(toolName, new ToolMeta(toolName, "unknown", ToolCategory.UNKNOWN));
             return;
         }
+        log.info("registering tool, toolName:{}, providerName:{}", toolName, provider.getProviderName());
         ToolCategory toolCategory = provider.resolveCategory(toolName);
         toolMetaMap.put(toolName, new ToolMeta(toolName, provider.getProviderName(), toolCategory));
     }

@@ -25,4 +25,12 @@ public interface ToolRegistry {
      * @return 工具提供者，不存在时返回 null
      */
     ToolProvider getToolProvider(String toolName);
+
+    /**
+     * 根据工具元数据查询提供者。
+     *
+     * @param toolMeta 工具元数据
+     * @return 工具提供者，不存在时返回 null
+     */
+    ToolProvider getToolProvider(ToolMeta toolMeta);
 }

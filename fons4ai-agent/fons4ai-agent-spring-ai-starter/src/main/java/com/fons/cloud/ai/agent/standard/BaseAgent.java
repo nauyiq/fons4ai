@@ -138,6 +138,10 @@ public abstract class BaseAgent {
     @Getter
     protected String finalAnswer;
 
+    /**
+     *  向 sink 发送消息时的同步锁
+     */
+    protected final Object emitLock = new Object();
 
 
     /**
@@ -221,11 +225,13 @@ public abstract class BaseAgent {
      * @param toolName 工具名称
      */
     protected void recordUsedTool(String toolName) {
-        if (usedTools == null) {
-            usedTools = new HashSet<>();
-        }
-        if (toolName != null) {
-            usedTools.add(toolName);
+        synchronized (emitLock) {
+            if (usedTools == null) {
+                usedTools = new HashSet<>();
+            }
+            if (toolName != null) {
+                usedTools.add(toolName);
+            }
         }
     }
 
@@ -386,10 +392,12 @@ public abstract class BaseAgent {
      * @return 逗号分隔的工具名称字符串
      */
     protected String getUsedToolsString() {
-        if (usedTools == null || usedTools.isEmpty()) {
-            return "";
+        synchronized (emitLock) {
+            if (usedTools == null || usedTools.isEmpty()) {
+                return "";
+            }
+            return String.join(",", usedTools);
         }
-        return String.join(",", usedTools);
     }
 
     /**
@@ -411,6 +419,31 @@ public abstract class BaseAgent {
             context.finalAnswerBuffer.append(chunk);
         }
 
+    }
+
+    /**
+     * 发送响应
+     * @param content 内容
+     * @param type    响应类型
+     */
+    protected void emit(String content, AgentMessageType type) {
+        if (StringUtils.isBlank(content)) {
+            log.warn("无法发送空内容");
+            return;
+        }
+        if (sink == null) {
+            return;
+        }
+        synchronized (emitLock) {
+            switch (type) {
+                case TEXT -> sink.tryEmitNext(createTextResponse(content));
+                case THINKING -> sink.tryEmitNext(createThinkingResponse(content));
+                case REFERENCE -> sink.tryEmitNext(createReferenceResponse(content));
+                case RECOMMEND -> sink.tryEmitNext(createRecommendResponse(content));
+                case ERROR -> sink.tryEmitNext(createErrorResponse(content));
+                default -> throw new IllegalArgumentException("未知的响应类型: " + type);
+            }
+        }
     }
 
     /**
@@ -449,4 +482,12 @@ public abstract class BaseAgent {
      * @return
      */
     protected String createRecommendResponse(String content) {return AgentResponse.recommend(content).toJson();}
+
+    /**
+     * 创建error类型响应
+     *
+     * @param content 内容
+     * @return JSON格式的响应字符串
+     */
+    protected String createErrorResponse(String content) {return AgentResponse.error(content).toJson();}
 }

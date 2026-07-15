@@ -24,6 +24,10 @@ public record ToolMeta(String toolName, String providerName, ToolCategory catego
         return UNKNOWN_META;
     }
 
+    public boolean isWebTool() {
+        return category == ToolCategory.SEARCH || category ==  ToolCategory.EXTRACT;
+    }
+
     public boolean isSearch() {
         return category == ToolCategory.SEARCH;
     }

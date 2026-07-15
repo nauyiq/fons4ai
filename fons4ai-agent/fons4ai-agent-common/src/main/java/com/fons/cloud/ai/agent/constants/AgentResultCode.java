@@ -17,6 +17,7 @@ public enum AgentResultCode implements Result {
     //  ==================== 数据异常 ====================
     AGENT_CHAT_MEMORY_NOT_INIT("AG200001", "agent记忆未初始化"),
     NOT_SUPPORT_MESSAGE_TYPE_FOR_PERSISTENT("AG200002", "不支持的消息类型"),
+    AGENT_TASK_ALREADY_CLOSE("AG200003", "任务已关闭"),
     //  ==================== 认证异常 ====================
 
     //  ==================== 文件/oss异常 ====================
