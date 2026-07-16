@@ -14,7 +14,7 @@ import com.alibaba.cloud.ai.graph.state.strategy.ReplaceStrategy;
 import com.alibaba.cloud.ai.graph.streaming.OutputType;
 import com.alibaba.cloud.ai.graph.streaming.StreamingOutput;
 import com.alibaba.fastjson2.JSON;
-import com.fons.cloud.ai.agent.chat.AgentChatFinalContext;
+import com.fons.cloud.ai.agent.chat.AgentChatRequest;
 import com.fons.cloud.ai.agent.constants.AgentMessageType;
 import com.fons.cloud.ai.agent.constants.AgentResultCode;
 import com.fons.cloud.ai.agent.constants.AgentType;
@@ -23,8 +23,9 @@ import com.fons.cloud.ai.agent.core.AgentTaskManager;
 import com.fons.cloud.ai.agent.infrastructure.prompt.PlanExecuteSystemPrompt;
 import com.fons.cloud.ai.agent.infrastructure.utils.ThinkMessageParser;
 import com.fons.cloud.ai.agent.standard.BaseAgent;
+import com.fons.cloud.ai.agent.standard.runtime.AgentRunContext;
 import com.fons.cloud.ai.agent.standard.deepresearch.model.*;
-import com.fons.cloud.ai.agent.standard.hook.AgentChatHook;
+import com.fons.cloud.ai.agent.infrastructure.hook.AgentChatHook;
 import com.fons.cloud.ai.tool.model.ToolMeta;
 import com.fons.cloud.ai.tool.model.WebToolResult;
 import com.fons.cloud.ai.tool.registry.ToolRegistry;
@@ -44,15 +45,18 @@ import org.springframework.ai.converter.BeanOutputConverter;
 import org.springframework.ai.tool.ToolCallback;
 import org.springframework.core.ParameterizedTypeReference;
 import reactor.core.Disposable;
-import reactor.core.publisher.Flux;
 import reactor.core.scheduler.Schedulers;
 
 import java.util.*;
+import java.time.Duration;
 import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.CancellationException;
 import java.util.concurrent.CopyOnWriteArrayList;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
+import java.util.concurrent.ExecutionException;
 import java.util.concurrent.TimeUnit;
+import java.util.concurrent.TimeoutException;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.stream.Collectors;
 
@@ -83,12 +87,13 @@ import static com.alibaba.cloud.ai.graph.action.AsyncNodeAction.node_async;
  * @author hongqy
  */
 @Slf4j
-public class PlanExecuteAgent extends BaseAgent {
+public class PlanExecuteAgent extends BaseAgent implements AutoCloseable {
 
     private static final int DEFAULT_MAX_ROUNDS = 5;
     private static final int DEFAULT_MAX_TOOL_RETRIES = 2;
     private static final int DEFAULT_MAX_CONCURRENT_TASKS = 4;
     private static final int DEFAULT_CONTEXT_CHAR_LIMIT = 50000;
+    private static final Duration DEFAULT_TASK_TIMEOUT = Duration.ofMinutes(10);
 
     /**
      * 可执行的工具列表
@@ -108,7 +113,7 @@ public class PlanExecuteAgent extends BaseAgent {
     /**
      * 计划执行系统提示词
      */
-    private PlanExecuteSystemPrompt prompt = PlanExecuteSystemPrompt.defaultPrompt();
+    private PlanExecuteSystemPrompt prompt;
 
     /**
      * 工具并发执行的线程池（同一 order 的任务并行执行）
@@ -121,11 +126,6 @@ public class PlanExecuteAgent extends BaseAgent {
     private boolean ownsToolExecutor;
 
     /**
-     * 图运行配置（threadId 等，用于 checkpoint）
-     */
-    private RunnableConfig runnableConfig;
-
-    /**
      * 工具注册表
      */
     private ToolRegistry toolRegistry;
@@ -136,29 +136,15 @@ public class PlanExecuteAgent extends BaseAgent {
     private int contextCharLimit = DEFAULT_CONTEXT_CHAR_LIMIT;
 
     /**
+     * 单个执行波次的最长等待时间，超时后会取消尚未完成的任务。
+     */
+    private Duration taskTimeout = DEFAULT_TASK_TIMEOUT;
+
+    /**
      * 图状态检查点持久化（可选）。恢复策略由调用方和图框架配置共同决定。
      */
     private BaseCheckpointSaver checkpointSaver;
 
-    /**
-     * 上次的 OverAllState
-     */
-    private OverAllState lastOverAllState;
-
-    /**
-     * 是否正在思考中
-     */
-    private AtomicBoolean summaryInThink = new AtomicBoolean(false);
-
-    /**
-     * 钩子函数
-     */
-    protected AgentChatHook hook;
-
-    /**
-     * 参考引用
-     */
-    private String references;
 
     /**
      * 构造方法
@@ -199,6 +185,7 @@ public class PlanExecuteAgent extends BaseAgent {
         private int maxRounds = DEFAULT_MAX_ROUNDS;
         private int maxToolRetries = DEFAULT_MAX_TOOL_RETRIES;
         private int contextCharLimit = DEFAULT_CONTEXT_CHAR_LIMIT;
+        private Duration taskTimeout = DEFAULT_TASK_TIMEOUT;
         private int maxConcurrentTasks = DEFAULT_MAX_CONCURRENT_TASKS;
         private ExecutorService toolExecutor;
         private BaseCheckpointSaver checkpointSaver;
@@ -235,6 +222,14 @@ public class PlanExecuteAgent extends BaseAgent {
 
         public Builder contextCharLimit(int contextCharLimit) {
             this.contextCharLimit = requirePositive(contextCharLimit, "contextCharLimit");
+            return this;
+        }
+
+        public Builder taskTimeout(Duration taskTimeout) {
+            if (taskTimeout == null || taskTimeout.isZero() || taskTimeout.isNegative()) {
+                throw new IllegalArgumentException("taskTimeout must be positive");
+            }
+            this.taskTimeout = taskTimeout;
             return this;
         }
 
@@ -280,6 +275,7 @@ public class PlanExecuteAgent extends BaseAgent {
             agent.maxRounds = maxRounds;
             agent.maxToolRetries = maxToolRetries;
             agent.contextCharLimit = contextCharLimit;
+            agent.taskTimeout = taskTimeout;
             agent.toolRegistry = toolRegistry;
             agent.checkpointSaver = checkpointSaver;
             agent.hook = hook;
@@ -309,73 +305,59 @@ public class PlanExecuteAgent extends BaseAgent {
     }
 
     @Override
-    public Flux<String> streamExecute() {
-        summaryInThink.set(false);
-        lastOverAllState = null;
-        references = null;
-        // 是否使用会话记忆
-        boolean useChatMemory = useChatMemory();
-        List<Message> messages = useChatMemory ? loadHistoryMessages(currentConversationId, true, true) : Collections.synchronizedList(new ArrayList<>());
-        // 添加用户提示词
-        messages.add(createUserMessage());
+    protected AgentRunContext createRunContext(AgentChatRequest request, String runId) {
+        return new PlanExecuteRunContext(agentType, request, runId);
+    }
 
-        // 初始化上下文
-        DeepResearchExecuteContext ctx = new DeepResearchExecuteContext(currentConversationId, currentQuestion, messages);
-        Map<String, Object> state = PlanExecuteGraph.initState(ctx);
-        runnableConfig = RunnableConfig.builder()
-                // runnableConfig 中的 threadId 用于 checkpoint 持久化
-                .threadId("PLAN-EXECUTE-AGENT:" + currentConversationId)
-                .build();
-
-        try {
-            // 开始编译图
-            CompiledGraph graph = buildGraph(ctx);
-            // 启动图的流式执行：传入初始状态和运行配置
-            // graph.stream() 返回 Flux<NodeOutput>，每当一个节点产出时都会回调
-            Disposable graphDisposable = graph.stream(state, runnableConfig)
-                    .subscribeOn(Schedulers.boundedElastic())
-                    .doOnNext(this::handleGraphOutput)
-                    .doOnComplete(() -> handleGraphComplete(ctx))
-                    .doOnError((error) -> handleGraphError(error, ctx))
-                    .subscribe();
-            // 注册到任务管理器
-            agentTaskManager.setDisposable(currentConversationId, graphDisposable);
-        } catch (Exception e) {
-           handleGraphError(e, ctx);
+    /**
+     * 为单次请求创建并启动状态图。Agent 只保存共享配置，图运行态全部写入请求上下文。
+     */
+    @Override
+    protected Disposable streamExecute(AgentRunContext baseContext) {
+        PlanExecuteRunContext runContext = (PlanExecuteRunContext) baseContext;
+        boolean memoryEnabled = useChatMemory();
+        List<Message> messages = memoryEnabled
+                ? loadHistoryMessages(runContext, true, true)
+                : Collections.synchronizedList(new ArrayList<>());
+        if (!memoryEnabled) {
+            messages.add(createUserMessage(runContext));
         }
 
-        // 订阅流
-        return sink.asFlux()
-                .doOnNext(chunk -> collectResponse(chunk, ctx))
-                .doOnCancel(() -> {
-                    ctx.getFinished().set(true);
-                    agentTaskManager.stopTask(currentConversationId);
-                })
-                .doFinally(signalType -> {
-                    this.thinking = ctx.thinkingBuffer.toString();
-                    this.finalAnswer = ctx.finalAnswerBuffer.toString();
-                    log.info("最终思考过程: {}", thinking);
-                    log.info("最终答案: {}", finalAnswer);
-                    // 统一关闭资源
-                    ctx.getFinished().set(true);
-                    if (ownsToolExecutor && toolExecutor != null) {
-                        toolExecutor.shutdownNow();
-                    }
-                    agentTaskManager.stopTask(currentConversationId);
-                    releaseCheckpoint();
-                    stopWatch.stop();
-                    if (hook != null) {
-                        hook.onFinish(AgentChatFinalContext.builder()
-                                .finalAnswer(this.finalAnswer)
-                                .thinking(this.thinking)
-                                .recommendations(this.currentRecommendations)
-                                .tools(getUsedToolsString())
-                                .references(this.references)
-                                .firstResponseTime(this.firstResponseTime)
-                                .totalResponseTime(stopWatch.getTime(TimeUnit.MILLISECONDS))
-                                .build());
-                    }
-                });
+        DeepResearchExecuteContext ctx = new DeepResearchExecuteContext(
+                runContext, runContext.getConversationId(), runContext.getQuestion(), messages);
+        runContext.setDeepResearchContext(ctx);
+        RunnableConfig runnableConfig = RunnableConfig.builder()
+                .threadId("PLAN-EXECUTE-AGENT:" + runContext.getConversationId() + ":" + runContext.getRunId())
+                .build();
+        runContext.setRunnableConfig(runnableConfig);
+
+        try {
+            CompiledGraph graph = buildGraph(ctx);
+            Disposable graphDisposable = graph.stream(PlanExecuteGraph.initState(ctx), runnableConfig)
+                    .subscribeOn(Schedulers.boundedElastic())
+                     .doOnNext(output -> handleGraphOutput(runContext, output))
+                     .doOnComplete(() -> handleGraphComplete(runContext, ctx))
+                     .doOnError(error -> handleGraphError(runContext, error, ctx))
+                    // doFinally 在 Graph 完成、失败或取消信号真正传播后执行，避免运行中提前释放 checkpoint。
+                    .doFinally(signalType -> releaseCheckpoint(runContext))
+                     .subscribe();
+            bindDisposable(runContext, graphDisposable);
+            return graphDisposable;
+         } catch (Exception error) {
+             handleGraphError(runContext, error, ctx);
+            // Graph 尚未形成订阅时不会触发 doFinally，由同步失败路径负责释放。
+            releaseCheckpoint(runContext);
+             return null;
+         }
+    }
+
+    @Override
+    protected void onRunCancelled(AgentRunContext baseContext) {
+        PlanExecuteRunContext context = (PlanExecuteRunContext) baseContext;
+        DeepResearchExecuteContext deepContext = context.getDeepResearchContext();
+        if (deepContext != null) {
+            deepContext.getFinished().set(true);
+        }
     }
 
 
@@ -390,8 +372,8 @@ public class PlanExecuteAgent extends BaseAgent {
      *
      * 处理 summarize 节点的流式文本：
      */
-    private void handleGraphOutput(NodeOutput nodeOutput) {
-        lastOverAllState = nodeOutput.state();
+    private void handleGraphOutput(PlanExecuteRunContext runContext, NodeOutput nodeOutput) {
+        runContext.setLastOverAllState(nodeOutput.state());
         if (!(nodeOutput instanceof StreamingOutput<?> streaming) || !nodeOutput.node().equals(PlanExecuteGraph.Node.SUMMARIZER.getNode())) {
             return;
         }
@@ -413,16 +395,18 @@ public class PlanExecuteAgent extends BaseAgent {
             String reasoning = (String) message.getMetadata().get("reasoningContent");
             String text = message.getText();
             if (StringUtils.isNotBlank(reasoning)) {
-                emit(reasoning, AgentMessageType.THINKING);
+                emit(runContext, reasoning, AgentMessageType.THINKING);
             }
             if (StringUtils.isNotBlank(text)) {
-                emit(text, AgentMessageType.TEXT);
+                emit(runContext, text, AgentMessageType.TEXT);
             }
         } else {
-            ThinkMessageParser.ParseResult result = ThinkMessageParser.parse(message.getText(), summaryInThink.get());
-            summaryInThink.set(result.inThink());
+            ThinkMessageParser.ParseResult result = ThinkMessageParser.parse(
+                    message.getText(), runContext.getSummaryInThink().get());
+            runContext.getSummaryInThink().set(result.inThink());
             for (ThinkMessageParser.Segment segment : result.segments()) {
-                emit(segment.content(), segment.thinking() ? AgentMessageType.THINKING : AgentMessageType.TEXT);
+                emit(runContext, segment.content(),
+                        segment.thinking() ? AgentMessageType.THINKING : AgentMessageType.TEXT);
             }
         }
 
@@ -432,40 +416,43 @@ public class PlanExecuteAgent extends BaseAgent {
      * 处理图节点的完成事件。
      * 当图的执行完成时，StateGraph 引擎会回调此方法。
      */
-    private void handleGraphComplete(DeepResearchExecuteContext ctx) {
+    private void handleGraphComplete(PlanExecuteRunContext runContext, DeepResearchExecuteContext ctx) {
         if (ctx.isStop()) {
             return;
         }
 
         // 需要用户补充消息
-        boolean clarifyRequired = lastOverAllState != null && ctx.clarifyRequired(lastOverAllState);
+        OverAllState lastState = runContext.getLastOverAllState();
+        boolean clarifyRequired = lastState != null && ctx.clarifyRequired(lastState);
 
-        if (!clarifyRequired && ctx.finalAnswerBuffer.isEmpty() && lastOverAllState != null) {
+        if (!clarifyRequired && ctx.finalAnswerBuffer.isEmpty() && lastState != null) {
             // 获取最后的答案
-            Object answer = ctx.finalAnswer(lastOverAllState);
+            Object answer = ctx.finalAnswer(lastState);
             if (answer instanceof Message message && StringUtils.isNotBlank(message.getText())) {
                 String finalAnswer = ThinkMessageParser.stripThinkTags(message.getText());
                 ctx.finalAnswerBuffer.append(finalAnswer);
-                emit(finalAnswer, AgentMessageType.TEXT);
+                emit(runContext, finalAnswer, AgentMessageType.TEXT);
             } else if (answer != null) {
                 String finalAnswer = ThinkMessageParser.stripThinkTags(answer.toString());
                 ctx.finalAnswerBuffer.append(finalAnswer);
-                emit(finalAnswer, AgentMessageType.TEXT);
+                emit(runContext, finalAnswer, AgentMessageType.TEXT);
             }
         }
 
-        if (!clarifyRequired && lastOverAllState != null) {
-            List<WebToolResult> references = ctx.references(lastOverAllState);
+        if (!clarifyRequired && lastState != null) {
+            List<WebToolResult> references = ctx.references(lastState);
             if (CollectionUtils.isNotEmpty(references)) {
                 // 去重后输出引用消息
                 List<WebToolResult> deduplicateReferences = deduplicateReferences(references);
-                this.references =  JSON.toJSONString(deduplicateReferences);
-                emit(this.references, AgentMessageType.REFERENCE);
+                String referenceJson = JSON.toJSONString(deduplicateReferences);
+                runContext.setReferences(referenceJson);
+                emit(runContext, referenceJson, AgentMessageType.REFERENCE);
             }
 
             if (!ctx.finalAnswerBuffer.isEmpty()) {
-                currentRecommendations = generateRecommendations(ctx.finalAnswerBuffer.toString());
-                emit(currentRecommendations, AgentMessageType.RECOMMEND);
+                String recommendations = generateRecommendations(runContext, ctx.finalAnswerBuffer.toString());
+                runContext.setRecommendations(recommendations);
+                emit(runContext, recommendations, AgentMessageType.RECOMMEND);
             }
         }
 
@@ -474,15 +461,19 @@ public class PlanExecuteAgent extends BaseAgent {
 
 
 
-    private void handleGraphError(Throwable error, DeepResearchExecuteContext ctx) {
+    private void handleGraphError(PlanExecuteRunContext runContext, Throwable error,
+                                  DeepResearchExecuteContext ctx) {
         if (ctx.isStop()) {
-            log.info("PlanExecuteAgent execution stopped: {}", error.getMessage());
+            log.info("PlanExecuteAgent execution stopped, conversationId={}, runId={}",
+                    runContext.getConversationId(), runContext.getRunId());
             complete(ctx);
             return;
         }
-        log.error("PlanExecuteAgent graph execution failed", error);
-        emit((Objects.toString(error.getMessage(), "Agent execution failed")), AgentMessageType.ERROR);
-        complete(ctx);
+        log.error("PlanExecuteAgent graph execution failed, conversationId={}, runId={}, errorType={}",
+                runContext.getConversationId(), runContext.getRunId(), error.getClass().getName());
+        emit(runContext, Objects.toString(error.getMessage(), "Agent execution failed"), AgentMessageType.ERROR);
+        ctx.getFinished().set(true);
+        failRun(runContext, error);
     }
 
 
@@ -609,7 +600,7 @@ public class PlanExecuteAgent extends BaseAgent {
         if (ctx.isClose()) {
             throw BusinessRuntimeException.of(AgentResultCode.AGENT_TASK_ALREADY_CLOSE);
         }
-        emit("🔍 正在分析您的需求...\n", AgentMessageType.THINKING);
+        emit(ctx, "🔍 正在分析您的需求...\n", AgentMessageType.THINKING);
 
         // 构建消息列表
         List<Message> messages = new ArrayList<>();
@@ -619,16 +610,16 @@ public class PlanExecuteAgent extends BaseAgent {
         // 调用 LLM 进行需求澄清
         String clarifyOutput = chatModel.call(new Prompt(messages)).getResult().getOutput().getText();
         clarifyOutput = StringUtils.isBlank(clarifyOutput) ? "" : ThinkMessageParser.stripThinkTags(clarifyOutput);
-        emit(clarifyOutput, AgentMessageType.THINKING);
-        emit("\n✅ 需求分析完成\n", AgentMessageType.THINKING);
+        emit(ctx, clarifyOutput, AgentMessageType.THINKING);
+        emit(ctx, "\n✅ 需求分析完成\n", AgentMessageType.THINKING);
 
         // 判断是否需要补充信息
         boolean needMoreInformation = ctx.needMoreInformation(clarifyOutput);
         if (needMoreInformation) {
             String pauseMessage = "⏸【暂停深入研究】" + clarifyOutput.replace("【需要补充信息】", "").trim();
-            emit(pauseMessage, AgentMessageType.TEXT);
+            emit(ctx, pauseMessage, AgentMessageType.TEXT);
         } else {
-            emit("✅ 信息充足，准备生成研究主题\n", AgentMessageType.THINKING);
+            emit(ctx, "✅ 信息充足，准备生成研究主题\n", AgentMessageType.THINKING);
         }
         return state.updateState(Map.of(PlanExecuteGraph.State.CLARIFICATION_REQUIRED.getState(), needMoreInformation));
     }
@@ -645,7 +636,7 @@ public class PlanExecuteAgent extends BaseAgent {
         if (ctx.isClose()) {
             throw BusinessRuntimeException.of(AgentResultCode.AGENT_TASK_ALREADY_CLOSE);
         }
-        emit("\n📋 正在生成研究主题...\n", AgentMessageType.THINKING);
+        emit(ctx, "\n📋 正在生成研究主题...\n", AgentMessageType.THINKING);
 
         List<Message> messages = new ArrayList<>();
         messages.add(new SystemMessage(AgentPrompts.getSystemTimePrompt() + "\n\n" + prompt.getTopicGenerationPrompt()));
@@ -655,8 +646,8 @@ public class PlanExecuteAgent extends BaseAgent {
         String topicOutput = chatModel.call(new Prompt(messages)).getResult().getOutput().getText();
         topicOutput = StringUtils.isBlank(topicOutput) ? "" : ThinkMessageParser.stripThinkTags(topicOutput);
 
-        emit(topicOutput, AgentMessageType.THINKING);
-        emit("\n✅ 研究主题已生成\n\n", AgentMessageType.THINKING);
+        emit(ctx, topicOutput, AgentMessageType.THINKING);
+        emit(ctx, "\n✅ 研究主题已生成\n\n", AgentMessageType.THINKING);
 
         return state.updateState(Map.of(PlanExecuteGraph.State.REFINED_TOPIC.getState(), topicOutput));
     }
@@ -674,8 +665,8 @@ public class PlanExecuteAgent extends BaseAgent {
             throw BusinessRuntimeException.of(AgentResultCode.AGENT_TASK_ALREADY_CLOSE);
         }
         int round = ctx.getRound(state) + 1;
-        emit("\n🔄 第 " + round + " 轮研究开始\n", AgentMessageType.THINKING);
-        emit("📋 正在生成执行计划...\n", AgentMessageType.THINKING);
+        emit(ctx, "\n🔄 第 " + round + " 轮研究开始\n", AgentMessageType.THINKING);
+        emit(ctx, "📋 正在生成执行计划...\n", AgentMessageType.THINKING);
 
         BeanOutputConverter<List<PlanTask>> converter = new BeanOutputConverter<>(new ParameterizedTypeReference<>() {
         });
@@ -715,13 +706,13 @@ public class PlanExecuteAgent extends BaseAgent {
                 .map(PlanTask::order)
                 .collect(Collectors.toCollection(TreeSet::new))
                 .stream().toList();
-        emit("\n✅ 执行计划已生成，共 " + executable.size() + " 个任务\n", AgentMessageType.THINKING);
+        emit(ctx, "\n✅ 执行计划已生成，共 " + executable.size() + " 个任务\n", AgentMessageType.THINKING);
 
         if (CollectionUtils.isNotEmpty(executable)) {
             StringBuilder planText = new StringBuilder("\n📋 执行计划表：\n");
             executable.forEach(task -> planText.append(String.format("  🟠 %s \n", task.instruction())));
-            emit(planText.toString(), AgentMessageType.THINKING);
-            emit("\n--- 开始执行任务 ---\n\n", AgentMessageType.THINKING);
+            emit(ctx, planText.toString(), AgentMessageType.THINKING);
+            emit(ctx, "\n--- 开始执行任务 ---\n\n", AgentMessageType.THINKING);
         }
 
         Map<String, Object> updates = new HashMap<>();
@@ -768,11 +759,10 @@ public class PlanExecuteAgent extends BaseAgent {
         String dependencyContext = buildDependencyContext(previousWaveResults);
 
         // 线程池执行任务
-        List<CompletableFuture<TaskExecution>> futureList = executeTasks.stream().map(task -> CompletableFuture.supplyAsync(() -> executeTasks(ctx, task, dependencyContext), toolExecutor)).toList();
-        // 等待所有任务完成
-        CompletableFuture.allOf(futureList.toArray(new CompletableFuture[0])).join();
-        // 提取所有任务的执行结果
-        List<TaskExecution> executions = futureList.stream().map(CompletableFuture::join).toList();
+        List<CompletableFuture<TaskExecution>> futureList = executeTasks.stream()
+                .map(task -> submitTask(ctx, task, dependencyContext))
+                .toList();
+        List<TaskExecution> executions = awaitTaskExecutions(executeTasks, futureList);
 
         if (ctx.isClose()) {
             throw BusinessRuntimeException.of(AgentResultCode.AGENT_TASK_ALREADY_CLOSE);
@@ -796,7 +786,7 @@ public class PlanExecuteAgent extends BaseAgent {
             ctx.addMessage(result);
         }
 
-        emit("\n--- 当前任务波次执行完成 ---\n\n", AgentMessageType.THINKING);
+        emit(ctx, "\n--- 当前任务波次执行完成 ---\n\n", AgentMessageType.THINKING);
 
         Map<String, Object> updates = new HashMap<>();
         updates.put(PlanExecuteGraph.State.PENDING_ORDERS.getState(), pendingOrders);
@@ -813,7 +803,7 @@ public class PlanExecuteAgent extends BaseAgent {
         if (ctx.isClose()) {
             throw BusinessRuntimeException.of(AgentResultCode.AGENT_TASK_ALREADY_CLOSE);
         }
-        emit("\n🔍 正在评估当前研究结果...\n", AgentMessageType.THINKING);
+        emit(ctx, "\n🔍 正在评估当前研究结果...\n", AgentMessageType.THINKING);
         BeanOutputConverter<CritiqueResult> converter = new BeanOutputConverter<>(new ParameterizedTypeReference<>() {
         });
         List<PlanTask> currentPlan = ctx.planTasks(state);
@@ -843,17 +833,21 @@ public class PlanExecuteAgent extends BaseAgent {
             critiqueResult = converter.convert(text);
         }
 
+        String finalizationStatus;
         if (critiqueResult.passed()) {
-            emit("\n✅ 研究结果评估通过，准备生成最终报告\n", AgentMessageType.THINKING);
+            finalizationStatus = "已完成研究评审，可以基于工具结果生成最终回答。";
+            emit(ctx, "\n✅ 研究结果评估通过，准备生成最终报告\n", AgentMessageType.THINKING);
         } else {
-            emit("\n⚠️ 研究结果评估未通过，原因分析：" + critiqueResult.feedback() + "\n", AgentMessageType.THINKING);
+            finalizationStatus = "研究评审未通过，最终回答必须明确说明以下未解决项：" + critiqueResult.feedback();
+            emit(ctx, "\n⚠️ 研究结果评估未通过，原因分析：" + critiqueResult.feedback() + "\n", AgentMessageType.THINKING);
             ctx.addMessage(new AssistantMessage("【Critique Feedback】\n" + critiqueResult.feedback()));
             if (ctx.getRound(state) < maxRounds) {
-                emit("\n--- 准备进入下一轮迭代 ---\n", AgentMessageType.THINKING);
+                emit(ctx, "\n--- 准备进入下一轮迭代 ---\n", AgentMessageType.THINKING);
             }
         }
         return Map.of(
                 PlanExecuteGraph.State.CRITIQUE_RESULT.getState(), critiqueResult,
+                PlanExecuteGraph.State.FINALIZATION_STATUS.getState(), finalizationStatus,
                 PlanExecuteGraph.State.MESSAGES.getState(), ctx.messageSnapshot());
     }
 
@@ -872,7 +866,7 @@ public class PlanExecuteAgent extends BaseAgent {
         if (ctx.isClose()) {
             throw BusinessRuntimeException.of(AgentResultCode.AGENT_TASK_ALREADY_CLOSE);
         }
-        emit("📝 上下文过长，正在压缩...\n", AgentMessageType.THINKING);
+        emit(ctx, "📝 上下文过长，正在压缩...\n", AgentMessageType.THINKING);
 
         int compressedCharLimit = Math.max(1024, contextCharLimit / 2);
         Prompt compressPrompt = new Prompt(List.of(
@@ -885,7 +879,7 @@ public class PlanExecuteAgent extends BaseAgent {
         if (StringUtils.isBlank(snapshot) || snapshot.length() > compressedCharLimit) {
             throw new IllegalStateException("Compressed context is empty or exceeds the configured limit");
         }
-        emit("✅ 上下文压缩完成\n", AgentMessageType.THINKING);
+        emit(ctx, "✅ 上下文压缩完成\n", AgentMessageType.THINKING);
         ctx.compressMessages(snapshot);
 
         return Map.of(PlanExecuteGraph.State.MESSAGES.getState(), ctx.messageSnapshot());
@@ -903,8 +897,8 @@ public class PlanExecuteAgent extends BaseAgent {
         if (ctx.isClose()) {
             throw BusinessRuntimeException.of(AgentResultCode.AGENT_TASK_ALREADY_CLOSE);
         }
-        emit("\n✅ 研究阶段完成，准备生成最终报告\n", AgentMessageType.THINKING);
-        emit("\n📑 正在生成最终研究报告...\n\n", AgentMessageType.THINKING);
+        emit(ctx, "\n✅ 研究阶段完成，准备生成最终报告\n", AgentMessageType.THINKING);
+        emit(ctx, "\n📑 正在生成最终研究报告...\n\n", AgentMessageType.THINKING);
         List<TaskResult> allResults = ctx.allResults(state);
         String toolResults = allResults.stream()
                 .filter(TaskResult::success)
@@ -918,7 +912,9 @@ public class PlanExecuteAgent extends BaseAgent {
         if (CollectionUtils.isNotEmpty(deduplicateReferences)) {
             toolResults += "\n\n【参考来源】\n" + JSON.toJSONString(deduplicateReferences);
         }
-        return Map.of(PlanExecuteGraph.State.TOOL_RESULT.getState(), toolResults);
+        return Map.of(
+                PlanExecuteGraph.State.TOOL_RESULT.getState(), toolResults,
+                PlanExecuteGraph.State.FINALIZATION_STATUS.getState(), ctx.finalizationStatus(state));
     }
 
     /**
@@ -936,7 +932,7 @@ public class PlanExecuteAgent extends BaseAgent {
         if (ctx.isClose()) {
             throw BusinessRuntimeException.of(AgentResultCode.AGENT_TASK_ALREADY_CLOSE);
         }
-        emit("⚙️ 正在执行任务 " + task.id() + " : " + task.instruction() + "\n", AgentMessageType.THINKING);
+        emit(ctx, "⚙️ 正在执行任务 " + task.id() + " : " + task.instruction() + "\n", AgentMessageType.THINKING);
 
         // 在工具调用失败时自动重试
         ToolRetryInterceptor retryInterceptor = ToolRetryInterceptor.builder()
@@ -951,6 +947,7 @@ public class PlanExecuteAgent extends BaseAgent {
 
         // 保证线程安全
         List<WebToolResult> references = new CopyOnWriteArrayList<>();
+        Set<String> invokedToolNames = java.util.concurrent.ConcurrentHashMap.newKeySet();
 
         // 构建完整的任务上下文，包含依赖结果（来自上一个 order）和当前任务指令
         String fullContext = """
@@ -969,7 +966,8 @@ public class PlanExecuteAgent extends BaseAgent {
                     .tools(tools)
                     .systemPrompt(AgentPrompts.getSystemTimePrompt() + "\n\n" + prompt.getExecutePrompt())
                     .hooks(modelCallLimitHook)
-                    .interceptors(retryInterceptor, new ReferenceCaptureInterceptor(references))
+                    .interceptors(retryInterceptor,
+                            new ReferenceCaptureInterceptor(ctx, references, invokedToolNames))
                     .enableLogging(true)
                     .build();
 
@@ -979,14 +977,17 @@ public class PlanExecuteAgent extends BaseAgent {
                 throw BusinessRuntimeException.of(AgentResultCode.AGENT_TASK_ALREADY_CLOSE);
             }
             String answer = ThinkMessageParser.stripThinkTags(assistantMessage.getText());
-            emit("执行结果:" + answer + "\n\n", AgentMessageType.THINKING);
+            if (!invokedToolNames.contains(task.toolName())) {
+                return TaskExecution.failed(task.id(), "计划要求调用工具 " + task.toolName() + "，但未检测到该工具的成功调用");
+            }
+            emit(ctx, "执行结果:" + answer + "\n\n", AgentMessageType.THINKING);
             return new TaskExecution(new TaskResult(task.id(), true, answer, null), new ArrayList<>(references));
         } catch (Exception e) {
             if (ctx.isStop()) {
                 return TaskExecution.failed(task.id(), "任务被用户停止");
             }
-            log.warn("Execute-Task, {} failed", task.id(), e);
-            emit("\n❌ 任务 " + task.id() + " 执行失败: " + e.getMessage() + "\n\n", AgentMessageType.THINKING);
+            log.warn("Execute-Task failed, taskId={}, errorType={}", task.id(), e.getClass().getName());
+            emit(ctx, "\n❌ 任务 " + task.id() + " 执行失败: " + e.getMessage() + "\n\n", AgentMessageType.THINKING);
             return new TaskExecution(new TaskResult(task.id(), false, null, e.getMessage()),
                     new ArrayList<>(references));
         }
@@ -1010,13 +1011,27 @@ public class PlanExecuteAgent extends BaseAgent {
             return List.of();
         }
         Set<String> taskIds = new HashSet<>();
+        Set<String> availableToolNames = tools.stream()
+                .map(tool -> tool.getToolDefinition().name())
+                .filter(StringUtils::isNotBlank)
+                .collect(Collectors.toSet());
         List<PlanTask> executable = new ArrayList<>();
         for (PlanTask task : planTasks) {
             if (task == null) {
                 throw new IllegalStateException("Execution plan contains a null task");
             }
             if (StringUtils.isBlank(task.id())) {
+                if (planTasks.size() != 1 || StringUtils.isNotBlank(task.toolName()) || task.order() != 0
+                        || !StringUtils.contains(task.instruction(), "无需")) {
+                    throw new IllegalStateException("The no-tool plan sentinel must be the only task and use id=null, toolName=null, order=0");
+                }
                 continue;
+            }
+            if (StringUtils.isBlank(task.toolName())) {
+                throw new IllegalStateException("Execution plan task toolName cannot be blank: " + task.id());
+            }
+            if (!availableToolNames.contains(task.toolName())) {
+                throw new IllegalStateException("Execution plan references an unavailable tool: " + task.toolName());
             }
             if (StringUtils.isBlank(task.instruction())) {
                 throw new IllegalStateException("Execution plan task instruction cannot be blank: " + task.id());
@@ -1030,6 +1045,54 @@ public class PlanExecuteAgent extends BaseAgent {
             executable.add(task);
         }
         return executable;
+    }
+
+    private CompletableFuture<TaskExecution> submitTask(DeepResearchExecuteContext ctx, PlanTask task,
+                                                         String dependencyContext) {
+        try {
+            return CompletableFuture.supplyAsync(() -> executeTasks(ctx, task, dependencyContext), toolExecutor);
+        } catch (RuntimeException e) {
+            return CompletableFuture.completedFuture(TaskExecution.failed(task.id(), "任务提交失败: " + e.getMessage()));
+        }
+    }
+
+    private List<TaskExecution> awaitTaskExecutions(List<PlanTask> tasks,
+                                                     List<CompletableFuture<TaskExecution>> futures) {
+        try {
+            CompletableFuture.allOf(futures.toArray(new CompletableFuture[0]))
+                    .get(taskTimeout.toMillis(), TimeUnit.MILLISECONDS);
+        } catch (TimeoutException e) {
+            futures.forEach(future -> future.cancel(true));
+            return completedOrFailedTasks(tasks, futures, "任务执行超时（" + taskTimeout.toSeconds() + " 秒）");
+        } catch (InterruptedException e) {
+            futures.forEach(future -> future.cancel(true));
+            Thread.currentThread().interrupt();
+            throw new CancellationException("任务执行被取消");
+        } catch (ExecutionException e) {
+            Throwable cause = e.getCause();
+            return completedOrFailedTasks(tasks, futures,
+                    "任务执行异常: " + Objects.toString(cause == null ? null : cause.getMessage(), e.getMessage()));
+        }
+        return completedOrFailedTasks(tasks, futures, "任务执行被取消");
+    }
+
+    private List<TaskExecution> completedOrFailedTasks(List<PlanTask> tasks,
+                                                        List<CompletableFuture<TaskExecution>> futures,
+                                                        String failureMessage) {
+        List<TaskExecution> results = new ArrayList<>(tasks.size());
+        for (int index = 0; index < tasks.size(); index++) {
+            CompletableFuture<TaskExecution> future = futures.get(index);
+            if (!future.isDone() || future.isCancelled()) {
+                results.add(TaskExecution.failed(tasks.get(index).id(), failureMessage));
+                continue;
+            }
+            try {
+                results.add(future.join());
+            } catch (CancellationException | java.util.concurrent.CompletionException e) {
+                results.add(TaskExecution.failed(tasks.get(index).id(), failureMessage));
+            }
+        }
+        return results;
     }
 
     /**
@@ -1082,20 +1145,40 @@ public class PlanExecuteAgent extends BaseAgent {
 
     private void complete(DeepResearchExecuteContext ctx) {
         if (ctx.getFinished().compareAndSet(false, true)) {
-            synchronized (emitLock) {
-                sink.tryEmitComplete();
-            }
+            PlanExecuteRunContext runContext = requireRunContext(ctx);
+            completeRun(runContext);
         }
     }
 
-    private void releaseCheckpoint() {
-        if (checkpointSaver == null || runnableConfig == null) {
+    private void releaseCheckpoint(PlanExecuteRunContext runContext) {
+        RunnableConfig runnableConfig = runContext.getRunnableConfig();
+        if (checkpointSaver == null || runnableConfig == null
+                || !runContext.getCheckpointReleased().compareAndSet(false, true)) {
             return;
         }
         try {
             checkpointSaver.release(runnableConfig);
         } catch (Exception e) {
             log.warn("Failed to release graph checkpoint for {}", runnableConfig, e);
+        }
+    }
+
+    /** 将图节点事件路由到其所属运行，避免共享实例上的请求间串流。 */
+    private void emit(DeepResearchExecuteContext ctx, String content, AgentMessageType type) {
+        emit(requireRunContext(ctx), content, type);
+    }
+
+    private PlanExecuteRunContext requireRunContext(DeepResearchExecuteContext ctx) {
+        return Objects.requireNonNull(ctx.getRunContext(), "runContext is required during Agent execution");
+    }
+
+    /**
+     * 关闭共享 Agent 自己创建的工具线程池。单次请求结束不能关闭它，否则后续复用会失败。
+     */
+    @Override
+    public void close() {
+        if (ownsToolExecutor && toolExecutor != null) {
+            toolExecutor.shutdownNow();
         }
     }
 
@@ -1106,19 +1189,28 @@ public class PlanExecuteAgent extends BaseAgent {
      * 2. 记录Web工具相关的引用结果 （WebToolResult）
      */
     private class ReferenceCaptureInterceptor extends ToolInterceptor {
+        private final DeepResearchExecuteContext executionContext;
         private final Collection<WebToolResult> webToolResults;
+        private final Set<String> invokedToolNames;
 
-        public ReferenceCaptureInterceptor(Collection<WebToolResult> webToolResults) {
+        public ReferenceCaptureInterceptor(DeepResearchExecuteContext executionContext,
+                                           Collection<WebToolResult> webToolResults,
+                                           Set<String> invokedToolNames) {
+            this.executionContext = executionContext;
             this.webToolResults = webToolResults;
+            this.invokedToolNames = invokedToolNames;
         }
 
         @Override
         public ToolCallResponse interceptToolCall(ToolCallRequest request, ToolCallHandler handler) {
             // 记录工具调用
-            recordUsedTool(request.getToolName());
+            recordUsedTool(requireRunContext(executionContext), request.getToolName());
             ToolCallResponse response = handler.call(request);
             if (response != null && !response.isError() && response.getResult() != null) {
-                String toolName = response.getToolName();
+                String toolName = StringUtils.defaultIfBlank(response.getToolName(), request.getToolName());
+                if (StringUtils.isNotBlank(toolName)) {
+                    invokedToolNames.add(toolName);
+                }
                 log.info("Receive ToolCall response, toolName:{}", toolName);
                 if (toolRegistry == null) {
                     log.warn("工具注册表未配置，跳过引用解析, 工具名：{}", toolName);

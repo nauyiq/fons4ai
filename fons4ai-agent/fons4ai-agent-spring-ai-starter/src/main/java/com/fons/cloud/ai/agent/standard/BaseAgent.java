@@ -1,25 +1,27 @@
 package com.fons.cloud.ai.agent.standard;
 
-import com.alibaba.fastjson2.JSON;
-import com.alibaba.fastjson2.JSONObject;
+import com.fons.cloud.ai.agent.api.Agent;
+import com.fons.cloud.ai.agent.api.AgentRun;
+import com.fons.cloud.ai.agent.api.AgentRunResult;
+import com.fons.cloud.ai.agent.api.AgentRunState;
 import com.fons.cloud.ai.agent.chat.AgentChatRequest;
-import com.fons.cloud.ai.agent.chat.AgentExecutionContext;
 import com.fons.cloud.ai.agent.chat.AiChatMessage;
 import com.fons.cloud.ai.agent.constants.AgentMessageType;
-import com.fons.cloud.ai.agent.constants.prompt.AgentPrompts;
 import com.fons.cloud.ai.agent.constants.AgentResultCode;
 import com.fons.cloud.ai.agent.constants.AgentType;
+import com.fons.cloud.ai.agent.constants.prompt.AgentPrompts;
 import com.fons.cloud.ai.agent.core.AgentTaskManager;
+import com.fons.cloud.ai.agent.infrastructure.hook.AgentChatHook;
 import com.fons.cloud.ai.agent.infrastructure.prompt.ConstructSystemPrompt;
 import com.fons.cloud.ai.agent.response.AgentResponse;
+import com.fons.cloud.ai.agent.standard.runtime.AgentRunContext;
+import com.fons.cloud.ai.agent.standard.runtime.DefaultAgentRun;
 import com.fons.cloud.common.base.exception.BusinessRuntimeException;
 import com.fons.cloud.common.result.R;
 import jakarta.validation.constraints.NotNull;
-import lombok.Getter;
 import lombok.extern.slf4j.Slf4j;
 import org.apache.commons.collections4.CollectionUtils;
 import org.apache.commons.lang3.StringUtils;
-import org.apache.commons.lang3.time.StopWatch;
 import org.springframework.ai.chat.client.ChatClient;
 import org.springframework.ai.chat.memory.ChatMemory;
 import org.springframework.ai.chat.memory.MessageWindowChatMemory;
@@ -30,264 +32,252 @@ import org.springframework.ai.chat.messages.UserMessage;
 import org.springframework.ai.chat.model.ChatModel;
 import org.springframework.ai.converter.BeanOutputConverter;
 import org.springframework.core.ParameterizedTypeReference;
-import reactor.core.publisher.Flux;
-import reactor.core.publisher.Sinks;
+import reactor.core.Disposable;
 
-import java.util.*;
-import java.util.concurrent.TimeUnit;
+import java.util.ArrayList;
+import java.util.Comparator;
+import java.util.List;
+import java.util.Map;
+import java.util.Objects;
+import java.util.UUID;
 
 /**
- * 基础智能体
- * <pre>
- *     1. 提供智能体的通用功能
- *     2. 一次会话就要创建一次实例，方便数据隔离
- * </pre>
- * @author hongqy
+ * 可共享的基础智能体定义。
+ *
+ * <p>实例只保存模型、提示词、任务管理器和构建期配置；所有请求状态由
+ * {@link AgentRunContext} 隔离。</p>
  */
 @Slf4j
-public abstract class BaseAgent {
-
-    /**
-     * 智能体类型
-     */
+public abstract class BaseAgent implements Agent {
     protected final AgentType agentType;
-
-    /**
-     * LLM对话能力
-     */
     protected final ChatModel chatModel;
-
-    /**
-     * 系统提示词
-     */
-    protected ConstructSystemPrompt systemPrompt;
-
-    /**
-     * 任务管理器
-     */
     protected final AgentTaskManager agentTaskManager;
-
-    /**
-     * 会话记忆
-     */
+    protected ConstructSystemPrompt systemPrompt;
     protected ChatMemory chatMemory;
-
-    /**
-     * 最大会话记忆消息数
-     */
     protected int maxMemoryMessages;
-
-    /**
-     * 是否启用推荐问题功能
-     */
     protected boolean enableRecommendations = true;
+    protected AgentChatHook hook;
 
-    /**
-     * 计时器
-     */
-    protected StopWatch stopWatch;
-
-    /**
-     * 首次响应时间
-     */
-    protected long firstResponseTime;
-
-    /**
-     * 使用的工具列表
-     */
-    protected Set<String> usedTools;
-
-    /**
-     * 当前会话ID
-     */
-    @Getter
-    protected String currentConversationId;
-
-    /**
-     * 当前agent持有的响应式流发布者
-     */
-    protected Sinks.Many<String> sink;
-
-    /**
-     * 当前问题
-     */
-    @Getter
-    protected String currentQuestion;
-
-    /**
-     * 当前请求拓展参数
-     */
-    @Getter
-    protected Map<String, String> toolsParams;
-
-    /**
-     * 当前推荐答案
-     */
-    @Getter
-    protected String currentRecommendations;
-
-    /**
-     * 当前会话的思考过程
-     */
-    @Getter
-    protected String thinking;
-
-    /**
-     * 当前会话的最终答案
-     */
-    @Getter
-    protected String finalAnswer;
-
-    /**
-     *  向 sink 发送消息时的同步锁
-     */
-    protected final Object emitLock = new Object();
-
-
-    /**
-     * 构造方法
-     * @param agentType    智能体类型
-     * @param chatModel    LLM对话能力
-     */
     protected BaseAgent(AgentType agentType, ChatModel chatModel, AgentTaskManager agentTaskManager) {
-        this.agentType = agentType;
-        this.chatModel = chatModel;
-        this.agentTaskManager = agentTaskManager;
+        this.agentType = Objects.requireNonNull(agentType, "agentType cannot be null");
+        this.chatModel = Objects.requireNonNull(chatModel, "chatModel cannot be null");
+        this.agentTaskManager = Objects.requireNonNull(agentTaskManager, "agentTaskManager cannot be null");
     }
 
-    /**
-     * 发起请求， 流式输出
-     * @param request
-     * @return
-     */
-    public Flux<String> stream(@NotNull AgentChatRequest request) {
-        log.info("开始处理流式请求, request:{}", JSON.toJSONString(request));
-        String conversationId = request.getConversationId();
-        String question = request.getQuestion();
-        if (agentTaskManager.hasRunningTask(conversationId)) {
-            // 存在任务在执行 返回错误消息
-            return Flux.error(BusinessRuntimeException.of(AgentResultCode.CONVERSATION_BUSY));
-        }
-
-        // 初始化会话信息
-        initAndStartWatch();
-        clearUsedTools();
-        currentConversationId = conversationId;
-        currentQuestion = question;
-        toolsParams = request.getParams();
-        if (useChatMemory()) {
-            if (CollectionUtils.isNotEmpty(request.getHistoryMessages())) {
-                // 持久化历史消息到会话记忆
-                persistentMessages(request.getHistoryMessages());
-            }
-            // 添加当前消息到会话记忆
-            chatMemory.add(currentConversationId, new UserMessage(question));
-        }
-
-        // 创建一个单播流（只能有一个订阅者）的响应式流发布者， 用于向客户端推送响应
-        sink = Sinks.many().unicast().onBackpressureBuffer();
-        // 注册任务到管理器
-        R<AgentTaskManager.TaskInfo> registered = agentTaskManager.registerTask(conversationId, sink, this.agentType);
-        if (!registered.isSuccess()) {
-            return Flux.error(BusinessRuntimeException.of(registered.getCode(), registered.getMessage()));
-        }
-
-        // 由子类实现流式输出的逻辑
-        return streamExecute();
-    }
-
-    /**
-     * 子类必须实现的执行方法， 请求大模型并流式响应
-     * @return 流式输出
-     */
-    public abstract Flux<String> streamExecute();
-
-    /**
-     * 创建用户提示词
-     * @return
-     */
-    protected Message createUserMessage() {
-        return new UserMessage("<question>" + currentQuestion + "</question>");
-    }
-
-    /**
-     * 清除工具记录
-     */
-    protected void clearUsedTools() {
-        if (usedTools != null) {
-            usedTools.clear();
-        }
-    }
-
-    /**
-     * 记录使用的工具
-     *
-     * @param toolName 工具名称
-     */
-    protected void recordUsedTool(String toolName) {
-        synchronized (emitLock) {
-            if (usedTools == null) {
-                usedTools = new HashSet<>();
-            }
-            if (toolName != null) {
-                usedTools.add(toolName);
-            }
-        }
-    }
-
-    /**
-     * 记录首次响应时间
-     */
-    protected void recordFirstResponse() {
-        long watchTime = stopWatch.getTime(TimeUnit.MILLISECONDS);
-        if (firstResponseTime == 0 && watchTime > 0) {
-            firstResponseTime = System.currentTimeMillis() - watchTime;
-            log.debug("记录首次响应时间: {}ms", firstResponseTime);
-        }
-    }
-
-
-    /**
-     * 初始化并且启动计时器
-     */
-    protected void initAndStartWatch() {
-        stopWatch = StopWatch.createStarted();
-        firstResponseTime = 0;
-    }
-
-    /**
-     * 初始化会话记忆
-     */
-    protected void initChatMemory() {
-        int maxMemoryMessages = this.maxMemoryMessages <= 0 ? 20 : this.maxMemoryMessages;
-        chatMemory = MessageWindowChatMemory.builder().maxMessages(maxMemoryMessages).build();
-    }
-
-    /**
-     * 是否使用会话记忆
-     * @return
-     */
-    protected boolean useChatMemory() {
-        return currentConversationId != null && chatMemory != null;
-    }
-
-    /**
-     * 持久化消息
-     * @param messages   需要持久化的消息
-     */
-    protected void persistentMessages(List<AiChatMessage> messages) {
-        if (CollectionUtils.isEmpty(messages)) {
+    @Override
+    public final AgentRun start(@NotNull AgentChatRequest request) {
+        Objects.requireNonNull(request, "request cannot be null");
+        AgentChatRequest snapshot = request.snapshot();
+        if (StringUtils.isBlank(snapshot.getConversationId()) || StringUtils.isBlank(snapshot.getQuestion())) {
             throw BusinessRuntimeException.of(AgentResultCode.CHAT_MESSAGES_IS_EMPTY);
         }
-        if (this.chatMemory == null) {
+        AgentRunContext context = createRunContext(snapshot, UUID.randomUUID().toString());
+        context.onCancel(() -> {
+            onRunCancelled(context);
+            finishRun(context, AgentRunState.CANCELLED, null,
+                    AgentResultCode.AGENT_TASK_ALREADY_CLOSE.getCode(),
+                    AgentResultCode.AGENT_TASK_ALREADY_CLOSE.getMessage());
+        });
+        return new DefaultAgentRun(context, () -> beginRun(context), () -> cancelRun(context));
+    }
+
+    /** 创建具体 Agent 可扩展的请求级上下文。 */
+    protected AgentRunContext createRunContext(AgentChatRequest request, String runId) {
+        return new AgentRunContext(agentType, request, runId);
+    }
+
+    private void beginRun(AgentRunContext context) {
+        if (!context.tryStart()) {
+            return;
+        }
+        if (stopBeforeExecutionWhenCancelled(context)) {
+            return;
+        }
+        log.info("开始处理Agent请求, conversationId={}, runId={}, agentType={}",
+                context.getConversationId(), context.getRunId(), agentType);
+        try {
+            prepareChatMemory(context);
+            if (stopBeforeExecutionWhenCancelled(context)) {
+                return;
+            }
+            R<AgentTaskManager.TaskInfo> registered = agentTaskManager.registerTask(
+                    context.getTaskHandle(), context.getEventSink(), agentType);
+            if (!registered.isSuccess()) {
+                BusinessRuntimeException error = BusinessRuntimeException.of(
+                        registered.getCode(), registered.getMessage());
+                finishRun(context, AgentRunState.REJECTED, error,
+                        registered.getCode(), registered.getMessage());
+                return;
+            }
+            // 注册前后的取消存在竞态；注册成功后必须再次检查并精确清理刚登记的句柄。
+            if (stopAfterRegistrationWhenCancelled(context)) {
+                return;
+            }
+            if (!agentTaskManager.setDisposable(context.getTaskHandle(), context.cancellationDisposable())) {
+                finishRun(context, AgentRunState.FAILED, null,
+                        AgentResultCode.AGENT_TASK_ALREADY_CLOSE.getCode(),
+                        AgentResultCode.AGENT_TASK_ALREADY_CLOSE.getMessage());
+                return;
+            }
+            if (stopBeforeExecutionWhenCancelled(context)) {
+                return;
+            }
+            Disposable nativeDisposable = streamExecute(context);
+            bindDisposable(context, nativeDisposable);
+        } catch (Throwable error) {
+            failRun(context, error);
+        }
+    }
+
+    /**
+     * 启动具体 Agent 的模型、工具或 Graph 执行。
+     *
+     * @param context 本次请求独立上下文
+     * @return 当前底层订阅；无单一订阅时可以返回 null 并通过 {@link #bindDisposable} 更新
+     */
+    protected abstract Disposable streamExecute(AgentRunContext context);
+
+    /** 子类在底层订阅被中断前标记自己的请求级状态；默认无需额外处理。 */
+    protected void onRunCancelled(AgentRunContext context) {
+    }
+
+    protected final void bindDisposable(AgentRunContext context, Disposable disposable) {
+        context.bindNativeDisposable(disposable);
+    }
+
+    /** 登记不会替换主订阅的并行任务，使其随当前 Run 一起取消。 */
+    protected final void trackDisposable(AgentRunContext context, Disposable disposable) {
+        context.trackDisposable(disposable);
+    }
+
+    protected final void completeRun(AgentRunContext context) {
+        finishRun(context, AgentRunState.COMPLETED, null, null, null);
+    }
+
+    protected final void failRun(AgentRunContext context, Throwable error) {
+        finishRun(context, AgentRunState.FAILED, error,
+                AgentResultCode.FAILED_EXECUTE_AGENT.getCode(),
+                AgentResultCode.FAILED_EXECUTE_AGENT.getMessage());
+    }
+
+    private boolean cancelRun(AgentRunContext context) {
+        if (context.currentState().isTerminal()) {
+            return false;
+        }
+        // 先固定取消意图，再查询 TaskManager，避免 RUNNING 到 registerTask 之间查不到任务而丢失取消。
+        if (!context.requestCancellation()) {
+            return false;
+        }
+        if (context.currentState() != AgentRunState.CREATED
+                && agentTaskManager.cancelTask(context.getTaskHandle())) {
+            return true;
+        }
+        // 尚未注册或刚好与注册竞争时，直接终止请求级取消句柄；beginRun 的阶段检查负责阻止后续启动。
+        context.cancellationDisposable().dispose();
+        return true;
+    }
+
+    /**
+     * 在准备、注册和绑定底层执行的每个边界消费取消意图。
+     *
+     * <p>取消句柄会通过统一 handler 生成 CANCELLED 结果；若任务刚完成注册，
+     * finishRun 中的精确 completeTask 会同步释放该句柄和租约。</p>
+     */
+    private boolean stopBeforeExecutionWhenCancelled(AgentRunContext context) {
+        if (!context.isCancellationRequested()) {
+            return false;
+        }
+        context.cancellationDisposable().dispose();
+        return true;
+    }
+
+    /**
+     * 注册返回后消费取消意图，并再次精确释放任务。
+     *
+     * <p>取消可能发生在 Redis setIfAbsent 成功、但本地 taskMap 尚未写入的窗口；
+     * 此时取消 handler 的首次 completeTask 查不到任务。注册完成后必须显式重做清理，
+     * 不能只重复 dispose 已终止的取消句柄。</p>
+     */
+    private boolean stopAfterRegistrationWhenCancelled(AgentRunContext context) {
+        if (!context.isCancellationRequested()) {
+            return false;
+        }
+        agentTaskManager.completeTask(context.getTaskHandle());
+        context.cancellationDisposable().dispose();
+        return true;
+    }
+
+    private void finishRun(AgentRunContext context, AgentRunState state, Throwable eventError,
+                           String errorCode, String errorMessage) {
+        if (!context.tryFinalize(state)) {
+            return;
+        }
+        agentTaskManager.completeTask(context.getTaskHandle());
+        if (state == AgentRunState.FAILED || state == AgentRunState.REJECTED) {
+            context.failEvents(eventError == null
+                    ? BusinessRuntimeException.of(errorCode, errorMessage)
+                    : eventError);
+        } else {
+            context.completeEvents();
+        }
+        AgentRunResult result = AgentRunResult.builder()
+                .runId(context.getRunId())
+                .conversationId(context.getConversationId())
+                .state(state)
+                .finalContext(context.finalContext())
+                .errorCode(errorCode)
+                .errorMessage(errorMessage)
+                .build();
+        context.completeResult(result);
+        if (hook != null) {
+            try {
+                hook.onFinish(result);
+            } catch (Exception hookError) {
+                log.error("Agent完成Hook执行失败, conversationId={}, runId={}",
+                        context.getConversationId(), context.getRunId(), hookError);
+            }
+        }
+    }
+
+    protected final Message createUserMessage(AgentRunContext context) {
+        return new UserMessage("<question>" + context.getQuestion() + "</question>");
+    }
+
+    protected final void recordUsedTool(AgentRunContext context, String toolName) {
+        context.recordUsedTool(toolName);
+    }
+
+    protected final void initChatMemory() {
+        int limit = maxMemoryMessages <= 0 ? 20 : maxMemoryMessages;
+        chatMemory = MessageWindowChatMemory.builder().maxMessages(limit).build();
+    }
+
+    protected final boolean useChatMemory() {
+        return chatMemory != null;
+    }
+
+    private void prepareChatMemory(AgentRunContext context) {
+        if (!useChatMemory()) {
+            return;
+        }
+        if (CollectionUtils.isNotEmpty(context.getRequest().getHistoryMessages())) {
+            persistentMessages(context.getRequest().getHistoryMessages());
+        }
+        chatMemory.add(context.getConversationId(), new UserMessage(context.getQuestion()));
+    }
+
+    protected final void persistentMessages(List<AiChatMessage> source) {
+        if (CollectionUtils.isEmpty(source)) {
+            throw BusinessRuntimeException.of(AgentResultCode.CHAT_MESSAGES_IS_EMPTY);
+        }
+        if (chatMemory == null) {
             throw BusinessRuntimeException.of(AgentResultCode.AGENT_CHAT_MEMORY_NOT_INIT);
         }
-
-        // 将记录添加到 ChatMemory（按时间正序）
-        messages.sort(Comparator.comparing(AiChatMessage::getCreated));
+        List<AiChatMessage> messages = new ArrayList<>(source);
+        messages.sort(Comparator.comparing(AiChatMessage::getCreated,
+                Comparator.nullsLast(Comparator.naturalOrder())));
         for (AiChatMessage message : messages) {
             switch (message.getMessageType()) {
-                // TODO 支持更多消息类型
                 case USER -> chatMemory.add(message.getConversationId(), new UserMessage(message.getContent()));
                 case ASSISTANT -> chatMemory.add(message.getConversationId(), new AssistantMessage(message.getContent()));
                 default -> throw BusinessRuntimeException.of(AgentResultCode.NOT_SUPPORT_MESSAGE_TYPE_FOR_PERSISTENT);
@@ -295,199 +285,86 @@ public abstract class BaseAgent {
         }
     }
 
-    /**
-     * 加载历史消息
-     * @param conversationId 会话ID
-     * @param skipSystem     是否跳过系统消息
-     * @param addMsgLabel    是否添加消息标签
-     * @return
-     */
-    protected List<Message> loadHistoryMessages(String conversationId, boolean skipSystem, boolean addMsgLabel) {
+    protected final List<Message> loadHistoryMessages(AgentRunContext context,
+                                                       boolean skipSystem, boolean addMsgLabel) {
         if (!useChatMemory()) {
-            return Collections.synchronizedList(new ArrayList<>());
+            return new ArrayList<>();
         }
-        List<Message> messages = chatMemory.get(conversationId);
-        if (CollectionUtils.isEmpty(messages)) {
-            log.info("没有发现会话历史消息：{}", conversationId);
-            return messages;
-        }
-        // 消息列表, 使用Collections.synchronizedList 保证线程安全
-        List<Message> results = Collections.synchronizedList(new ArrayList<>());
-        if (addMsgLabel) {
+        List<Message> messages = chatMemory.get(context.getConversationId());
+        List<Message> results = new ArrayList<>();
+        if (addMsgLabel && CollectionUtils.isNotEmpty(messages)) {
             results.add(new UserMessage("conversation history："));
         }
-        for (Message message : messages) {
-            if (skipSystem && message instanceof SystemMessage) {
-                continue;
+        if (messages != null) {
+            for (Message message : messages) {
+                if (!(skipSystem && message instanceof SystemMessage)) {
+                    results.add(message);
+                }
             }
-            results.add(message);
         }
         return results;
     }
 
-
-    /**
-     * 生成推荐答案
-     * @param finalText
-     * @return
-     */
-    protected String generateRecommendations(String finalText) {
+    protected final String generateRecommendations(AgentRunContext context, String finalText) {
         if (!enableRecommendations) {
             return null;
         }
-
         try {
             List<Message> messages = new ArrayList<>();
-
-            // 1. 添加系统提示词
             messages.add(new SystemMessage(AgentPrompts.SYSTEM_RECOMMEND_PROMPT));
-            // 2. 加载历史消息列表
-            List<Message> historyMessages = loadHistoryMessages(currentConversationId, true, true);
-            if (CollectionUtils.isNotEmpty(historyMessages)) {
-                messages.addAll(historyMessages);
-            }
-            // 3. 添加当前会话的消息（最新的消息，放在最后）
+            messages.addAll(loadHistoryMessages(context, true, true));
             messages.add(new UserMessage("当前会话："));
-            messages.add(new UserMessage(currentQuestion));
+            if (!useChatMemory()) {
+                messages.add(new UserMessage(context.getQuestion()));
+            }
             if (StringUtils.isNotBlank(finalText)) {
                 messages.add(new AssistantMessage(finalText));
             }
-
-            // 4. 添加格式说明消息
-            // 使用 BeanOutputConverter 进行结构化输出
-            BeanOutputConverter<List<String>> converter = new BeanOutputConverter<>(new ParameterizedTypeReference<>() {
-            });
-            // 添加格式说明消息
+            BeanOutputConverter<List<String>> converter = new BeanOutputConverter<>(
+                    new ParameterizedTypeReference<>() { });
             messages.add(new UserMessage("请根据上述对话生成3个推荐问题。输出格式为：\n" + converter.getFormat()));
-
-
-            // 5. 调用模型生成推荐问题
-            String response = ChatClient.builder(chatModel).build()
-                    .prompt()
-                    .messages(messages)
-                    .call()
-                    .content();
-
-            // 6. 使用 converter 转换响应
-            if (response != null && !response.isEmpty()) {
-                List<String> recommendations = converter.convert(response);
-                if (!recommendations.isEmpty()) {
-                    String jsonStr = JSON.toJSONString(recommendations);
-                    log.info("生成推荐问题成功: {}", jsonStr);
-                    return jsonStr;
-                }
-            }
-            log.warn("生成推荐问题失败，响应格式无效: {}", response);
-            return null;
-        } catch (Exception e) {
-            log.error("生成推荐答案异常, currentQuestion: {}", currentQuestion, e);
+            String response = ChatClient.builder(chatModel).build().prompt().messages(messages).call().content();
+            List<String> recommendations = StringUtils.isBlank(response) ? null : converter.convert(response);
+            return CollectionUtils.isEmpty(recommendations)
+                    ? null : com.alibaba.fastjson2.JSON.toJSONString(recommendations);
+        } catch (Exception error) {
+            log.warn("生成推荐答案失败, conversationId={}, runId={}",
+                    context.getConversationId(), context.getRunId(), error);
             return null;
         }
-
     }
 
-    /**
-     * 获取使用的工具列表字符串
-     *
-     * @return 逗号分隔的工具名称字符串
-     */
-    protected String getUsedToolsString() {
-        synchronized (emitLock) {
-            if (usedTools == null || usedTools.isEmpty()) {
-                return "";
-            }
-            return String.join(",", usedTools);
-        }
-    }
-
-    /**
-     * 采集每一块的数据
-     * @param chunk
-     * @param context
-     */
-    protected void collectResponse(String chunk, AgentExecutionContext context) {
-        recordFirstResponse();
-        try {
-            JSONObject json = JSON.parseObject(chunk);
-            String type = json.getString("type");
-            if (AgentMessageType.TEXT.getCode().equals(type)) {
-                context.finalAnswerBuffer.append(json.getString("content"));
-            } else if (AgentMessageType.THINKING.getCode().equals(type)) {
-                context.thinkingBuffer.append(json.getString("content"));
-            }
-        } catch (Exception e) {
-            context.finalAnswerBuffer.append(chunk);
-        }
-
-    }
-
-    /**
-     * 发送响应
-     * @param content 内容
-     * @param type    响应类型
-     */
-    protected void emit(String content, AgentMessageType type) {
+    protected final void emit(AgentRunContext context, String content, AgentMessageType type) {
         if (StringUtils.isBlank(content)) {
-            log.warn("无法发送空内容");
             return;
         }
-        if (sink == null) {
-            return;
-        }
-        synchronized (emitLock) {
-            switch (type) {
-                case TEXT -> sink.tryEmitNext(createTextResponse(content));
-                case THINKING -> sink.tryEmitNext(createThinkingResponse(content));
-                case REFERENCE -> sink.tryEmitNext(createReferenceResponse(content));
-                case RECOMMEND -> sink.tryEmitNext(createRecommendResponse(content));
-                case ERROR -> sink.tryEmitNext(createErrorResponse(content));
-                default -> throw new IllegalArgumentException("未知的响应类型: " + type);
-            }
-        }
+        context.recordResponse(type, content);
+        context.emitRaw(switch (type) {
+            case TEXT -> createTextResponse(content);
+            case THINKING -> createThinkingResponse(content);
+            case REFERENCE -> createReferenceResponse(content);
+            case RECOMMEND -> createRecommendResponse(content);
+            case ERROR -> createErrorResponse(content);
+        });
     }
 
-    /**
-     * 创建text类型响应
-     *
-     * @param content 内容
-     * @return JSON格式的响应字符串
-     */
-    protected String createTextResponse(String content) {
+    protected final String createTextResponse(String content) {
         return AgentResponse.text(content).toJson();
     }
 
-    /**
-     * 创建thinking类型响应
-     *
-     * @param content 内容
-     * @return JSON格式的响应字符串
-     */
-    protected String createThinkingResponse(String content) {
+    protected final String createThinkingResponse(String content) {
         return AgentResponse.thinking(content).toJson();
     }
 
-    /**
-     * 创建reference类型响应
-     *
-     * @param content 内容（JSON数组字符串，count会自动计算）
-     * @return JSON格式的响应字符串
-     */
-    protected String createReferenceResponse(String content) {
+    protected final String createReferenceResponse(String content) {
         return AgentResponse.reference(content).toJson();
     }
 
-    /**
-     * 生成推荐答案
-     * @param content
-     * @return
-     */
-    protected String createRecommendResponse(String content) {return AgentResponse.recommend(content).toJson();}
+    protected final String createRecommendResponse(String content) {
+        return AgentResponse.recommend(content).toJson();
+    }
 
-    /**
-     * 创建error类型响应
-     *
-     * @param content 内容
-     * @return JSON格式的响应字符串
-     */
-    protected String createErrorResponse(String content) {return AgentResponse.error(content).toJson();}
+    protected final String createErrorResponse(String content) {
+        return AgentResponse.error(content).toJson();
+    }
 }

@@ -3,6 +3,7 @@ package com.fons.cloud.ai.agent.standard.deepresearch.model;
 import com.alibaba.cloud.ai.graph.OverAllState;
 import com.fons.cloud.ai.agent.chat.AgentExecutionContext;
 import com.fons.cloud.ai.agent.standard.deepresearch.PlanExecuteGraph;
+import com.fons.cloud.ai.agent.standard.deepresearch.PlanExecuteRunContext;
 import com.fons.cloud.ai.tool.model.WebToolResult;
 import lombok.Getter;
 import lombok.Setter;
@@ -34,6 +35,9 @@ public class DeepResearchExecuteContext extends AgentExecutionContext {
      */
     private final String question;
 
+    /** 关联的请求级运行上下文；图结构单测可不提供，真实运行时始终存在。 */
+    private final PlanExecuteRunContext runContext;
+
     /**
      * 是否完成标记
      */
@@ -46,11 +50,17 @@ public class DeepResearchExecuteContext extends AgentExecutionContext {
 
 
     public DeepResearchExecuteContext(String conversationId, String question) {
-        this(conversationId, question, null);
+        this(null, conversationId, question, null);
     }
 
 
     public DeepResearchExecuteContext(String conversationId, String question, List<Message> messages) {
+        this(null, conversationId, question, messages);
+    }
+
+    public DeepResearchExecuteContext(PlanExecuteRunContext runContext, String conversationId,
+                                      String question, List<Message> messages) {
+        this.runContext = runContext;
         this.conversationId = conversationId;
         this.question = question;
         if (CollectionUtils.isNotEmpty(messages)) {
@@ -124,8 +134,13 @@ public class DeepResearchExecuteContext extends AgentExecutionContext {
         return state.value(PlanExecuteGraph.State.CRITIQUE_RESULT.getState(),  new CritiqueResult(false, ""));
     }
 
+    public String finalizationStatus(OverAllState state) {
+        return state.value(PlanExecuteGraph.State.FINALIZATION_STATUS.getState(), "");
+    }
+
     public Object finalAnswer(OverAllState state) {
-        return state.value(PlanExecuteGraph.State.FINAL_ANSWER.getState(), null);
+        // 不能把 null 作为默认值传给重载方法，否则会命中 Optional 版本并把 Optional 本身当成答案。
+        return state.value(PlanExecuteGraph.State.FINAL_ANSWER.getState()).orElse(null);
     }
 
     public boolean needMoreInformation(String clarify) {

@@ -1,53 +1,24 @@
 package com.fons.cloud.ai.agent.chat;
 
-import lombok.*;
+import lombok.AllArgsConstructor;
+import lombok.Builder;
+import lombok.Getter;
+import lombok.NoArgsConstructor;
 
 /**
- * 终态上下文
- * @author hongqy
+ * 一次执行聚合后的最终上下文。
  */
 @Getter
-@Setter
-@ToString
 @Builder
 @NoArgsConstructor
 @AllArgsConstructor
 public class AgentChatFinalContext {
-
-    /**
-     * 最终答案
-     */
     private String finalAnswer;
-
-    /**
-     * 思考过程
-     */
     private String thinking;
-
-    /**
-     * 推荐答案
-     */
     private String recommendations;
-
-    /**
-     * 调用的工具列表
-     */
     private String tools;
-
-    /**
-     * 引用的参考信息
-     */
+    private String skills;
     private String references;
-
-    /**
-     * 首次响应时间
-     */
     private long firstResponseTime;
-
-    /**
-     * 总响应时间
-     */
     private long totalResponseTime;
-
-
 }

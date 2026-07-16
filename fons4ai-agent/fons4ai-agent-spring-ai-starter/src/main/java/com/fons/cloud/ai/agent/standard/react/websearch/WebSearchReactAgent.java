@@ -3,10 +3,13 @@ package com.fons.cloud.ai.agent.standard.react.websearch;
 import com.alibaba.fastjson2.JSON;
 import com.alibaba.fastjson2.JSONObject;
 import com.fons.cloud.ai.agent.chat.AgentExecutionContext;
+import com.fons.cloud.ai.agent.chat.AgentChatRequest;
 import com.fons.cloud.ai.agent.core.AgentTaskManager;
 import com.fons.cloud.ai.agent.infrastructure.prompt.ReactAgentSystemPrompt;
-import com.fons.cloud.ai.agent.standard.hook.AgentChatHook;
+import com.fons.cloud.ai.agent.infrastructure.hook.AgentChatHook;
 import com.fons.cloud.ai.agent.standard.react.ReactAgent;
+import com.fons.cloud.ai.agent.standard.react.ReactAgentRunContext;
+import com.fons.cloud.ai.agent.standard.runtime.AgentRunContext;
 import com.fons.cloud.ai.tool.model.ToolMeta;
 import com.fons.cloud.ai.tool.model.WebExtractResult;
 import com.fons.cloud.ai.tool.model.WebSearchResult;
@@ -20,7 +23,6 @@ import org.springframework.ai.chat.client.advisor.api.Advisor;
 import org.springframework.ai.chat.messages.AssistantMessage;
 import org.springframework.ai.chat.model.ChatModel;
 import org.springframework.ai.tool.ToolCallback;
-import reactor.core.publisher.Sinks;
 
 import java.util.ArrayList;
 import java.util.List;
@@ -45,18 +47,22 @@ public class WebSearchReactAgent extends ReactAgent {
      * @param context
      */
     @Override
-    protected void beforeToolCall(Sinks.Many<String> sink, AssistantMessage.ToolCall toolCall, AgentExecutionContext context) {
+    protected void beforeToolCall(ReactAgentRunContext context, AssistantMessage.ToolCall toolCall) {
         // 工具名
         String name = toolCall.name();
         // 工具参数
         String arguments = toolCall.arguments();
         JSONObject args = JSON.parseObject(arguments);
         ToolMeta toolMeta = toolsRegistry.getToolMeta(name);
+        if (toolMeta == null) {
+            log.warn("未找到工具元数据, 工具名：{}", name);
+            return;
+        }
         if (toolMeta.isSearch()) {
             // 确认是搜索工具， 则输出一些实时的提示语
             String query = args.getString("query");
             String message = StringUtils.isBlank(query) ? "🔍 正在搜索相关信息\n" : "🔍 正在搜索信息:" + query + "\n";
-            sink.tryEmitNext(createThinkingResponse(message));
+            emit(context, message, com.fons.cloud.ai.agent.constants.AgentMessageType.THINKING);
         }
     }
 
@@ -67,9 +73,9 @@ public class WebSearchReactAgent extends ReactAgent {
      * @param context
      */
     @Override
-    protected void afterToolCall(AssistantMessage.ToolCall toolCall, String result, AgentExecutionContext context) {
-        // 跨轮次上下文
-        WebSearchAgentExecutionContext webContext = (WebSearchAgentExecutionContext) context;
+    protected void afterToolCall(ReactAgentRunContext context,
+                                 AssistantMessage.ToolCall toolCall, String result) {
+        WebSearchAgentRunContext webContext = (WebSearchAgentRunContext) context;
         // 工具名
         String name = toolCall.name();
         // 获取工具解析器
@@ -78,16 +84,20 @@ public class WebSearchReactAgent extends ReactAgent {
             log.warn("未找到工具提供者, 工具名：{}", name);
         } else {
             ToolMeta toolMeta = toolsRegistry.getToolMeta(name);
+            if (toolMeta == null) {
+                log.warn("未找到工具元数据, 工具名：{}", name);
+                return;
+            }
             if (toolMeta.isSearch()) {
                 // 搜索相关的工具
                 ToolResultParser<WebSearchResult> resultParser = toolProvider.getResultParser(toolMeta.category());
                 List<WebSearchResult> results = resultParser.parse(result);
-                webContext.searchResults.addAll(results);
+                webContext.getSearchResults().addAll(results);
             } else if (toolMeta.isExtract()) {
                 // 提取相关的工具
                 ToolResultParser<WebExtractResult> resultParser = toolProvider.getResultParser(toolMeta.category());
                 List<WebExtractResult> results = resultParser.parse(result);
-                webContext.extractResults.addAll(results);
+                webContext.getExtractResults().addAll(results);
             }
         }
     }
@@ -99,36 +109,19 @@ public class WebSearchReactAgent extends ReactAgent {
      * @param context
      */
     @Override
-    protected void emitAdditionalFinalResponses(Sinks.Many<String> sink, String finalText, AgentExecutionContext context) {
-        WebSearchAgentExecutionContext webContext = (WebSearchAgentExecutionContext) context;
-        if (webContext.hasSearchResult()) {
+    protected void emitAdditionalFinalResponses(ReactAgentRunContext context, String finalText) {
+        WebSearchAgentRunContext webContext = (WebSearchAgentRunContext) context;
+        if (CollectionUtils.isNotEmpty(webContext.getSearchResults())) {
             // TODO 暂时只输出搜索结果
-            this.referenceJson = createReferenceResponse(JSON.toJSONString(webContext.searchResults));
-            sink.tryEmitNext(this.referenceJson);
+            String references = JSON.toJSONString(webContext.getSearchResults());
+            context.setReferences(references);
+            emit(context, references, com.fons.cloud.ai.agent.constants.AgentMessageType.REFERENCE);
         }
     }
 
     @Override
-    protected AgentExecutionContext createReactExecutionContext() {
-        return new WebSearchAgentExecutionContext();
-    }
-
-    /**
-     * websearchagent 跨轮次执行上下文。
-     */
-    private static class WebSearchAgentExecutionContext extends AgentExecutionContext {
-        /** 搜索结果列表（对应 tavily-search 等搜索工具） */
-        List<WebSearchResult> searchResults = new ArrayList<>();
-        /** 提取结果列表（对应 tavily-extract 等内容提取工具） */
-        List<WebExtractResult> extractResults = new ArrayList<>();
-
-        public boolean hasSearchResult() {
-            return CollectionUtils.isNotEmpty(searchResults);
-        }
-
-        public boolean hasResult() {
-            return CollectionUtils.isNotEmpty(searchResults) || CollectionUtils.isNotEmpty(extractResults);
-        }
+    protected AgentRunContext createRunContext(AgentChatRequest request, String runId) {
+        return new WebSearchAgentRunContext(request, runId, new AgentExecutionContext());
     }
 
 
@@ -143,6 +136,7 @@ public class WebSearchReactAgent extends ReactAgent {
         private int maxRounds = 5;
         private boolean useChatMemory;
         private int maxMemoryMessages;
+        private boolean enableRecommendations = true;
         private AgentChatHook hook;
 
         public Builder(List<ToolCallback> tools, ChatModel chatModel, AgentTaskManager agentTaskManager, ToolRegistry toolsRegistry) {
@@ -183,13 +177,19 @@ public class WebSearchReactAgent extends ReactAgent {
             return this;
         }
 
+        public Builder enableRecommendations(boolean enableRecommendations) {
+            this.enableRecommendations = enableRecommendations;
+            return this;
+        }
+
         public WebSearchReactAgent build() {
             WebSearchReactAgent reactAgent = new WebSearchReactAgent(tools, chatModel, agentTaskManager, toolsRegistry);
             reactAgent.systemPrompt = this.systemPrompt;
             reactAgent.hook = this.hook;
-            reactAgent.advisors = this.advisors;
+            reactAgent.advisors = this.advisors == null ? List.of() : List.copyOf(this.advisors);
             reactAgent.maxRounds = this.maxRounds;
             reactAgent.maxMemoryMessages = this.maxMemoryMessages;
+            reactAgent.enableRecommendations = this.enableRecommendations;
             // 初始化
             reactAgent.init(this.useChatMemory);
             return reactAgent;

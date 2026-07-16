@@ -27,7 +27,11 @@ public class PlanExecuteGraph {
 
             【工具检索结果】
             {%s}
-            """.formatted(State.QUESTION.state, State.REFINED_TOPIC.state, State.TOOL_RESULT.state);
+
+            【研究完整性状态】
+            {%s}
+            """.formatted(State.QUESTION.state, State.REFINED_TOPIC.state, State.TOOL_RESULT.state,
+            State.FINALIZATION_STATUS.state);
 
     /**
      * 初始化状态, 对应 OverAllState（StateGraph 的全局状态容器）中的字段名
@@ -49,6 +53,7 @@ public class PlanExecuteGraph {
         state.put(State.ALL_RESULTS.state, new ArrayList<TaskResult>());
         state.put(State.REFERENCES.state, new ArrayList<WebToolResult>());
         state.put(State.TOOL_RESULT.state, "");
+        state.put(State.FINALIZATION_STATUS.state, "已完成研究评审，可以基于工具结果生成最终回答。" );
         state.put(State.CLARIFICATION_REQUIRED.state, false);
         return state;
     }
@@ -121,6 +126,8 @@ public class PlanExecuteGraph {
         ALL_RESULTS("all_results", "所有轮次的结果（用于最终总结）"),
 
         CRITIQUE_RESULT("critique_result", "返思结果"),
+
+        FINALIZATION_STATUS("finalization_status", "最终总结前的研究完整性状态"),
 
         REFERENCES("references", "引用的工具来源结果"),
         

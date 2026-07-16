@@ -178,8 +178,9 @@ public final class PlanExecutorSystemPromptConstants {
             ## 重要规则（必须严格遵守）
 
             1. 你只能规划【工具调用型任务】；
-               - 每一个 task 都必须明确对应一个具体工具；
-               - instruction 中必须显式包含工具名称。
+               - 每一个 task 都必须在 toolName 字段中明确指定一个具体工具；
+               - toolName 必须来自“可用工具说明”中的名称；
+               - instruction 中也必须说明该工具要执行的明确查询或操作。
 
             2. 严禁规划以下内容：
                - 总结、分析、对比、写报告、生成结论；
@@ -207,6 +208,7 @@ public final class PlanExecutorSystemPromptConstants {
             [
               {
                 "id": null,
+                "toolName": null,
                 "instruction": "无需调用任何工具",
                 "order": 0
               }
@@ -216,11 +218,13 @@ public final class PlanExecutorSystemPromptConstants {
             [
               {
                 "id": "task-1",
+                "toolName": "<工具名>",
                 "instruction": "调用 <工具名> 工具，执行 <明确查询或操作>",
                 "order": 1
               },
               {
                 "id": "task-2",
+                "toolName": "<工具名>",
                 "instruction": "调用 <工具名> 工具，执行 <明确查询或操作>",
                 "order": 1
               }
@@ -230,11 +234,13 @@ public final class PlanExecutorSystemPromptConstants {
             [
               {
                 "id": "task-1",
+                "toolName": "<工具名>",
                 "instruction": "调用 <工具名> 工具，执行 <明确查询或操作>，获取XX结果",
                 "order": 1
               },
               {
                 "id": "task-2",
+                "toolName": "<工具名>",
                 "instruction": "根据task-1的执行结果，调用 <工具名> 工具，执行 <明确查询或操作>",
                 "order": 2
               }
@@ -242,9 +248,9 @@ public final class PlanExecutorSystemPromptConstants {
             
             示例4：具有先后关系的执行计划（并行+串行）
             [
-               {"id":"task-1","instruction":"调用 XXX 工具，执行<明确查询或操作>","order":1},
-               {"id":"task-2","instruction":"调用 XXX 工具，执行<明确查询或操作>","order":1},
-               {"id":"task-3","instruction":"根据 task1 和 task-2 的结果，调用 XXX 工具，执行<明确查询或操作>","order":2}
+               {"id":"task-1","toolName":"XXX","instruction":"调用 XXX 工具，执行<明确查询或操作>","order":1},
+               {"id":"task-2","toolName":"XXX","instruction":"调用 XXX 工具，执行<明确查询或操作>","order":1},
+               {"id":"task-3","toolName":"XXX","instruction":"根据 task1 和 task-2 的结果，调用 XXX 工具，执行<明确查询或操作>","order":2}
              ]
             """;
 
@@ -346,6 +352,7 @@ public final class PlanExecutorSystemPromptConstants {
             - 基于【完整执行上下文】生成最终回答
             - 直接回应用户最初的问题
             - 工具执行结果是事实依据，应充分利用
+            - 必须遵守【研究完整性状态】：如果其中说明研究未完成或评审未通过，必须如实说明信息不足和未解决项，不得将结论表述为已充分验证。
             - 不要提及执行计划、轮次、批判、上下文等中间过程
             - 不要解释你是如何得到答案的
             - 输出应专业、完整、结构清晰

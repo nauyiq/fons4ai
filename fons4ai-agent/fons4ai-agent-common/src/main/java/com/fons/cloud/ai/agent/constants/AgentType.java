@@ -21,6 +21,11 @@ public enum AgentType {
     PLAN_EXECUTOR("plan-execute"),
 
     /**
+     * 技能模式的智能体
+     */
+    SKILLS("skills"),
+
+    /**
      * 自定义模式的智能体
      */
     CUSTOM("custom"),

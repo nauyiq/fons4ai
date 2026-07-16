@@ -18,6 +18,8 @@ public enum AgentResultCode implements Result {
     AGENT_CHAT_MEMORY_NOT_INIT("AG200001", "agent记忆未初始化"),
     NOT_SUPPORT_MESSAGE_TYPE_FOR_PERSISTENT("AG200002", "不支持的消息类型"),
     AGENT_TASK_ALREADY_CLOSE("AG200003", "任务已关闭"),
+    AGENT_BLOCKING_CALL_NOT_ALLOWED("AG200005", "不能在Reactor非阻塞线程调用Agent.call"),
+    AGENT_RUN_RESULT_MISSING("AG200006", "Agent执行未产生终态结果"),
     //  ==================== 认证异常 ====================
 
     //  ==================== 文件/oss异常 ====================
@@ -29,6 +31,7 @@ public enum AgentResultCode implements Result {
     //  ==================== 系统异常 ====================
     CONVERSATION_BUSY("AG999991", "会话繁忙"),
     FAILED_EXECUTE_REGISTER_AGENTS_TASK("AG999992", "注册agent任务失败"),
+    FAILED_EXECUTE_AGENT("AG999993", "Agent执行失败"),
     ;
 
     private final String code;

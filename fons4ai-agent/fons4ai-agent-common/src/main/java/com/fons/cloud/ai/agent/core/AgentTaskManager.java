@@ -1,11 +1,11 @@
 package com.fons.cloud.ai.agent.core;
 
+import com.alibaba.fastjson2.JSON;
 import com.alibaba.fastjson2.JSONObject;
 import com.fons.cloud.ai.agent.constants.AgentResultCode;
 import com.fons.cloud.ai.agent.constants.AgentType;
 import com.fons.cloud.common.result.R;
 import lombok.Getter;
-import lombok.Setter;
 import lombok.extern.slf4j.Slf4j;
 import org.apache.commons.lang3.StringUtils;
 import org.redisson.api.RBucket;
@@ -19,6 +19,7 @@ import reactor.core.Disposable;
 import reactor.core.publisher.Sinks;
 
 import java.time.Duration;
+import java.util.List;
 import java.util.Map;
 import java.util.UUID;
 import java.util.concurrent.ConcurrentHashMap;
@@ -34,7 +35,6 @@ import java.util.concurrent.TimeUnit;
  * @author hongqy
  */
 @Slf4j
-@Component
 public class AgentTaskManager implements InitializingBean, DisposableBean {
     private static final String TASK_KEY_PREFIX = "fons4ai-agent:task:";
     private static final String STOP_TOPIC_NAME = "fons4ai-agent:stop";
@@ -114,7 +114,8 @@ public class AgentTaskManager implements InitializingBean, DisposableBean {
      * @param agentType      agent类型
      * @return
      */
-    public R<TaskInfo> registerTask(String conversationId, Sinks.Many<String> sink, AgentType agentType) {
+    public R<TaskInfo> registerTask(AgentTaskHandle handle, Sinks.Many<String> sink, AgentType agentType) {
+        String conversationId = handle.conversationId();
         try {
             // 1.查询本地是否存在
             if (this.taskMap.containsKey(conversationId)) {
@@ -124,16 +125,22 @@ public class AgentTaskManager implements InitializingBean, DisposableBean {
 
             // 2. 尝试在redis中注册
             RBucket<String> bucket = getTaskBucket(conversationId);
-            boolean result = bucket.setIfAbsent(instanceId, Duration.ofMinutes(TASK_TTL_MINUTES));
+            String leaseValue = leaseValue(handle, agentType);
+            boolean result = bucket.setIfAbsent(leaseValue, Duration.ofMinutes(TASK_TTL_MINUTES));
             if (!result) {
-                log.warn("会话{}已在实例{}中存在执行的任务, 拒绝注册新任务", conversationId, bucket.get());
+                log.warn("会话{}已存在执行任务，拒绝注册runId={}", conversationId, handle.runId());
                 return R.failed(AgentResultCode.CONVERSATION_BUSY);
             }
 
             // 3. 添加到本地缓存
-            TaskInfo taskInfo = new TaskInfo(sink, agentType);
-            taskMap.put(conversationId, taskInfo);
-            log.info("注册任务成功, conversationId={}, instanceId={}", conversationId, instanceId);
+            TaskInfo taskInfo = new TaskInfo(handle, sink, agentType, leaseValue);
+            TaskInfo existing = taskMap.putIfAbsent(conversationId, taskInfo);
+            if (existing != null) {
+                bucket.compareAndSet(leaseValue, null);
+                return R.failed(AgentResultCode.CONVERSATION_BUSY);
+            }
+            log.info("注册任务成功, conversationId={}, runId={}, instanceId={}",
+                    conversationId, handle.runId(), instanceId);
             return R.success(taskInfo);
         } catch (Exception e) {
             log.error("【Agent任务管理器】注册任务失败, conversationId:{}, agentType:{}", conversationId, agentType, e);
@@ -151,9 +158,7 @@ public class AgentTaskManager implements InitializingBean, DisposableBean {
         // 1. 先尝试本地停止（快速路径）
         TaskInfo localTask = taskMap.get(conversationId);
         if (localTask != null) {
-            log.info("本地停止任务: conversationId={}, instanceId={}", conversationId, instanceId);
-            doStopTask(conversationId, localTask);
-            return true;
+            return cancelTask(localTask.getHandle());
         }
 
         // 2. 先检查 Redis 中是否存在该任务，不存在则无需广播
@@ -163,15 +168,56 @@ public class AgentTaskManager implements InitializingBean, DisposableBean {
         }
 
         // 3. 持有者是本实例，说明已在处理中，无需广播
-        String holder = bucket.get();
-        if (instanceId.equals(holder)) {
+        AgentTaskLease lease = parseLease(bucket.get());
+        if (lease == null) {
+            log.warn("忽略非法或旧版任务租约, conversationId={}", conversationId);
+            return false;
+        }
+        if (instanceId.equals(lease.instanceId())) {
             log.debug("任务持有者是本实例，跳过广播: conversationId={}", conversationId);
             return false;
         }
 
         // 4. 本地没有但 Redis 有，且持有者不是本实例，Pub/Sub 广播停止请求
-        long receivers = stopTopic.publish(conversationId);
-        log.info("发布停止广播: conversationId={}, 订阅者数量={}", conversationId, receivers);
+        AgentStopCommand command = new AgentStopCommand(
+                AgentStopCommand.CURRENT_VERSION, conversationId, lease.runId());
+        long receivers = stopTopic.publish(JSON.toJSONString(command));
+        log.info("发布停止广播: conversationId={}, runId={}, 订阅者数量={}",
+                conversationId, lease.runId(), receivers);
+        return true;
+    }
+
+    /**
+     * 正常完成任务，只释放任务占用，不取消订阅，也不向客户端发送停止消息。
+     *
+     * @param handle 精确任务句柄
+     * @return 本地存在任务时返回 true
+     */
+    public boolean completeTask(AgentTaskHandle handle) {
+        TaskInfo taskInfo = exactTask(handle);
+        if (taskInfo == null || !taskMap.remove(handle.conversationId(), taskInfo)) {
+            return false;
+        }
+        deleteTaskKeyIfOwned(taskInfo);
+        log.info("正常完成任务: conversationId={}, runId={}, instanceId={}",
+                handle.conversationId(), handle.runId(), instanceId);
+        return true;
+    }
+
+    /**
+     * 主动取消精确匹配的本地任务，并向该任务的客户端发送停止消息。
+     *
+     * @param handle 精确任务句柄
+     * @return 是否成功取消目标任务
+     */
+    public boolean cancelTask(AgentTaskHandle handle) {
+        TaskInfo taskInfo = exactTask(handle);
+        if (taskInfo == null || !taskMap.remove(handle.conversationId(), taskInfo)) {
+            return false;
+        }
+        log.info("本地取消任务: conversationId={}, runId={}, instanceId={}",
+                handle.conversationId(), handle.runId(), instanceId);
+        doStopTask(taskInfo);
         return true;
     }
 
@@ -179,22 +225,30 @@ public class AgentTaskManager implements InitializingBean, DisposableBean {
     /**
      * 设置任务的Disposable
      *
-     * @param conversationId 会话ID
+     * @param handle          精确任务句柄
      * @param disposable     Disposable对象
+     * @return 是否绑定到仍在运行的目标任务
      */
-    public void setDisposable(String conversationId, Disposable disposable) {
-        TaskInfo taskInfo = taskMap.get(conversationId);
-        if (taskInfo != null) {
-            taskInfo.setDisposable(disposable);
+    public boolean setDisposable(AgentTaskHandle handle, Disposable disposable) {
+        TaskInfo taskInfo = exactTask(handle);
+        if (taskInfo == null) {
+            disposable.dispose();
+            return false;
         }
+        taskInfo.setDisposable(disposable);
+        if (exactTask(handle) != taskInfo) {
+            taskInfo.dispose();
+            return false;
+        }
+        return true;
     }
 
 
     @Override
     public void afterPropertiesSet() throws Exception {
         // 订阅停止消息(fons4ai-agent:stop)
-        this.listenerId = stopTopic.addListener(String.class, (channel, conversationId) -> {
-            handleRemoteStop(conversationId);
+        this.listenerId = stopTopic.addListener(String.class, (channel, payload) -> {
+            handleRemoteStop(payload);
         });
         // 启动TTL刷新定时任务
         ttlRefreshScheduler.scheduleAtFixedRate(this::refreshTaskTtls, TTL_REFRESH_INTERVAL_MINUTES, TTL_REFRESH_INTERVAL_MINUTES, TimeUnit.MINUTES);
@@ -215,8 +269,8 @@ public class AgentTaskManager implements InitializingBean, DisposableBean {
         ttlRefreshScheduler.shutdown();
 
         // 清理所有本地任务（释放 Redis key）
-        for (String conversationId : taskMap.keySet()) {
-            doRemoveTask(conversationId);
+        for (TaskInfo taskInfo : List.copyOf(taskMap.values())) {
+            releaseTask(taskInfo);
         }
 
         log.info("AgentTaskManager 销毁完成, instanceId={}", instanceId);
@@ -224,33 +278,38 @@ public class AgentTaskManager implements InitializingBean, DisposableBean {
 
     /**
      * 处理远程停止任务请求（Pub/Sub 回调）
-     * @param conversationId 会话ID
+     * @param payload 版本化停止命令 JSON
      */
-    private void handleRemoteStop(String conversationId) {
-        // 获取会话ID任务
-        TaskInfo taskInfo = taskMap.remove(conversationId);
-        if (taskInfo == null) {
+    private void handleRemoteStop(String payload) {
+        AgentStopCommand command = parseStopCommand(payload);
+        if (command == null) {
+            log.warn("忽略非法或旧版停止命令");
             return;
         }
-        log.info("远程停止任务: conversationId={}, instanceId={}", conversationId, instanceId);
-        doStopTask(conversationId, taskInfo);
+        AgentTaskHandle handle;
+        try {
+            handle = new AgentTaskHandle(command.conversationId(), command.runId());
+        } catch (IllegalArgumentException e) {
+            log.warn("忽略字段非法的停止命令");
+            return;
+        }
+        TaskInfo taskInfo = exactTask(handle);
+        if (taskInfo == null || !taskMap.remove(handle.conversationId(), taskInfo)) {
+            return;
+        }
+        log.info("远程停止任务: conversationId={}, runId={}, instanceId={}",
+                handle.conversationId(), handle.runId(), instanceId);
+        doStopTask(taskInfo);
     }
 
     /**
      * 执行停止任务（本地操作 + Redis 清理）
-     * @param conversationId 会话ID
      * @param taskInfo 任务信息
      */
-    private void doStopTask(String conversationId, TaskInfo taskInfo) {
+    private void doStopTask(TaskInfo taskInfo) {
+        AgentTaskHandle handle = taskInfo.getHandle();
         try {
-            // 1. 中断底层调用
-            Disposable disposable = taskInfo.getDisposable();
-            if (disposable != null && !disposable.isDisposed()) {
-                disposable.dispose();
-                log.info("已中断底层调用: conversationId={}", conversationId);
-            }
-
-            // 2. 发送停止消息
+            // 1. 先发送兼容的停止消息。若先 dispose，Run 的取消回调可能抢先关闭同一个 sink。
             Sinks.Many<String> sink = taskInfo.getSink();
             if (sink != null) {
                 try {
@@ -259,28 +318,34 @@ public class AgentTaskManager implements InitializingBean, DisposableBean {
                     stopMessage.put("content", "用户已停止生成\n");
                     sink.tryEmitNext(stopMessage.toJSONString());
                     sink.tryEmitComplete();
-                    log.info("已发送停止消息: conversationId={}", conversationId);
+                    log.info("已发送停止消息: conversationId={}, runId={}",
+                            handle.conversationId(), handle.runId());
                 } catch (Exception e) {
-                    log.warn("发送停止消息失败: conversationId={}", conversationId, e);
+                    log.warn("发送停止消息失败: conversationId={}, runId={}",
+                            handle.conversationId(), handle.runId(), e);
                 }
             }
+            // 2. 客户端终态可见后再中断底层调用，并触发 Run 的 CANCELLED 收口。
+            taskInfo.dispose();
         } finally {
-            // 3. 清理本地和 Redis
-            doRemoveTask(conversationId);
+            deleteTaskKeyIfOwned(taskInfo);
         }
     }
 
-    /**
-     * 内部移除：从本地 map 删除 + 删除 Redis key
-     */
-    private void doRemoveTask(String conversationId) {
-        taskMap.remove(conversationId);
+    private void releaseTask(TaskInfo taskInfo) {
+        AgentTaskHandle handle = taskInfo.getHandle();
+        if (taskMap.remove(handle.conversationId(), taskInfo)) {
+            taskInfo.dispose();
+            deleteTaskKeyIfOwned(taskInfo);
+        }
+    }
 
-        RBucket<String> bucket = getTaskBucket(conversationId);
-        String holder = bucket.get();
-        if (instanceId.equals(holder)) {
-            bucket.delete();
-            log.info("删除 Redis 任务key: conversationId={}", conversationId);
+    private void deleteTaskKeyIfOwned(TaskInfo taskInfo) {
+        AgentTaskHandle handle = taskInfo.getHandle();
+        RBucket<String> bucket = getTaskBucket(handle.conversationId());
+        if (bucket.compareAndSet(taskInfo.getLeaseValue(), null)) {
+            log.info("删除 Redis 任务key: conversationId={}, runId={}",
+                    handle.conversationId(), handle.runId());
         }
     }
 
@@ -301,45 +366,103 @@ public class AgentTaskManager implements InitializingBean, DisposableBean {
         }
 
         log.debug("开始刷新 TTL, 本地任务数={}", taskMap.size());
-        for (String conversationId : taskMap.keySet()) {
+        for (TaskInfo taskInfo : List.copyOf(taskMap.values())) {
+            AgentTaskHandle handle = taskInfo.getHandle();
             try {
-                RBucket<String> bucket = getTaskBucket(conversationId);
+                RBucket<String> bucket = getTaskBucket(handle.conversationId());
                 String holder = bucket.get();
-                if (instanceId.equals(holder)) {
+                if (taskInfo.getLeaseValue().equals(holder)) {
                     bucket.expire(Duration.ofMinutes(TASK_TTL_MINUTES));
                 } else {
-                    // Redis 中的 holder 不是本实例，说明 key 已被其他实例持有或已过期
-                    log.warn("TTL刷新发现 key 归属变化: conversationId={}, 期望={}, 实际={}",
-                            conversationId, instanceId, holder);
-                    taskMap.remove(conversationId);
+                    log.warn("TTL刷新发现租约归属变化: conversationId={}, runId={}",
+                            handle.conversationId(), handle.runId());
+                    releaseTask(taskInfo);
                 }
             } catch (Exception e) {
-                log.error("TTL刷新失败: conversationId={}", conversationId, e);
+                log.error("TTL刷新失败: conversationId={}, runId={}",
+                        handle.conversationId(), handle.runId(), e);
             }
         }
     }
 
-
-
-
     @Getter
-    @Setter
     public static class TaskInfo {
+        // 精确任务句柄
+        private final AgentTaskHandle handle;
         // 手动向流中发送数据
         private final Sinks.Many<String> sink;
         // 智能体类型
         private final AgentType agentType;
         // 任务创建时间戳
         private final long createTime;
+        // Redis 中的精确租约序列化值
+        private final String leaseValue;
         // 可中断的任务
-        private Disposable disposable;
+        private final java.util.concurrent.atomic.AtomicReference<Disposable> disposable =
+                new java.util.concurrent.atomic.AtomicReference<>();
 
-        public TaskInfo(Sinks.Many<String> sink, AgentType agentType) {
+        public TaskInfo(AgentTaskHandle handle, Sinks.Many<String> sink, AgentType agentType,
+                        String leaseValue) {
+            this.handle = handle;
             this.sink = sink;
             this.agentType = agentType;
+            this.leaseValue = leaseValue;
             this.createTime = System.currentTimeMillis();
         }
 
+        void setDisposable(Disposable newDisposable) {
+            Disposable previous = disposable.getAndSet(newDisposable);
+            if (previous != null && previous != newDisposable && !previous.isDisposed()) {
+                previous.dispose();
+            }
+        }
+
+        void dispose() {
+            Disposable current = disposable.getAndSet(null);
+            if (current != null && !current.isDisposed()) {
+                current.dispose();
+            }
+        }
+    }
+
+    private TaskInfo exactTask(AgentTaskHandle handle) {
+        if (handle == null) {
+            return null;
+        }
+        TaskInfo taskInfo = taskMap.get(handle.conversationId());
+        return taskInfo != null && taskInfo.getHandle().equals(handle) ? taskInfo : null;
+    }
+
+    private String leaseValue(AgentTaskHandle handle, AgentType agentType) {
+        return JSON.toJSONString(new AgentTaskLease(
+                AgentTaskLease.CURRENT_VERSION, instanceId, handle.runId(), agentType));
+    }
+
+    private AgentTaskLease parseLease(String value) {
+        if (StringUtils.isBlank(value)) {
+            return null;
+        }
+        try {
+            AgentTaskLease lease = JSON.parseObject(value, AgentTaskLease.class);
+            return lease != null && lease.version() == AgentTaskLease.CURRENT_VERSION
+                    && StringUtils.isNotBlank(lease.instanceId())
+                    && StringUtils.isNotBlank(lease.runId()) ? lease : null;
+        } catch (Exception e) {
+            return null;
+        }
+    }
+
+    private AgentStopCommand parseStopCommand(String payload) {
+        if (StringUtils.isBlank(payload)) {
+            return null;
+        }
+        try {
+            AgentStopCommand command = JSON.parseObject(payload, AgentStopCommand.class);
+            return command != null && command.version() == AgentStopCommand.CURRENT_VERSION
+                    ? command : null;
+        } catch (Exception e) {
+            return null;
+        }
     }
 
 }
