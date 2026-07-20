@@ -20,7 +20,7 @@ import java.util.concurrent.atomic.AtomicLong;
  * 以及后续 Alibaba Agent 预设复用。</p>
  */
 @Getter
-public class AlibabaAgentRunContext extends AgentRunContext {
+public class FrameAgentRunContext extends AgentRunContext {
     /** 当前 Graph 订阅代次；恢复会创建新代次，旧订阅的迟到信号将被忽略。 */
     private final AtomicLong nativeGeneration = new AtomicLong();
     /** Graph 已完成、失败或被拒绝时置位，保证外层终态只执行一次。 */
@@ -40,7 +40,7 @@ public class AlibabaAgentRunContext extends AgentRunContext {
     /** 直接拒绝终止的恢复分段不会重新进入 Graph。 */
     private volatile String nativeResumeRejection;
 
-    public AlibabaAgentRunContext(AgentType agentType, AgentChatRequest request, String runId) {
+    public FrameAgentRunContext(AgentType agentType, AgentChatRequest request, String runId) {
         super(agentType, request, runId);
     }
 

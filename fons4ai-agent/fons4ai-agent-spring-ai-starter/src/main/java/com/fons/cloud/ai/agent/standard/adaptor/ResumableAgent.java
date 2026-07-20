@@ -10,5 +10,5 @@ import com.fons.cloud.ai.agent.api.AgentRun;
  */
 public interface ResumableAgent extends Agent {
 
-    AgentRun resume(AlibabaAgentResumeRequest request);
+    AgentRun resume(AgentResumeRequest request);
 }

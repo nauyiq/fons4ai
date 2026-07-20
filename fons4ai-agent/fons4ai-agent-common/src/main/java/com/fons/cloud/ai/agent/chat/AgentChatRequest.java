@@ -13,6 +13,7 @@ import java.util.Map;
 
 /**
  * 智能体调用请求。执行边界必须使用 {@link #snapshot()}，避免调用方后续修改集合。
+ * @author hongqy
  */
 @Getter
 @Setter
@@ -43,6 +44,7 @@ public class AgentChatRequest extends BaseRequest {
                 : historyMessages.stream().map(AiChatMessage::snapshot).toList();
         return AgentChatRequest.builder()
                 .conversationId(conversationId)
+                .messageId(messageId)
                 .question(question)
                 .params(params == null ? Map.of() : Map.copyOf(params))
                 .historyMessages(history)

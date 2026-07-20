@@ -11,6 +11,7 @@ import java.util.function.BooleanSupplier;
 
 /**
  * 默认的单次 Agent 执行句柄，集中保证执行最多启动一次。
+ * @author hongqy
  */
 public final class DefaultAgentRun implements AgentRun {
     private final AgentRunContext context;

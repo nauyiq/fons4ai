@@ -13,14 +13,22 @@ import java.util.concurrent.CopyOnWriteArrayList;
 
 /**
  * Web Search ReAct 单次执行的引用聚合状态。
+ * @author hongqy
  */
 @Getter
 public final class WebSearchAgentRunContext extends ReactAgentRunContext {
+
+    /**
+     * 网页搜索结果
+     */
     private final List<WebSearchResult> searchResults = new CopyOnWriteArrayList<>();
+
+    /**
+     * 网页提取结果
+     */
     private final List<WebExtractResult> extractResults = new CopyOnWriteArrayList<>();
 
-    public WebSearchAgentRunContext(AgentChatRequest request, String runId,
-                                    AgentExecutionContext executionContext) {
-        super(AgentType.REACT, request, runId, executionContext);
+    public WebSearchAgentRunContext(AgentChatRequest request, String runId) {
+        super(AgentType.REACT, request, runId);
     }
 }

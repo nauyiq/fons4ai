@@ -24,15 +24,14 @@ import com.fons.cloud.ai.agent.core.AgentTaskManager;
 import com.fons.cloud.ai.agent.infrastructure.hook.AgentChatHook;
 import com.fons.cloud.ai.agent.infrastructure.prompt.ReactAgentSystemPrompt;
 import com.fons.cloud.ai.agent.standard.BaseAgent;
-import com.fons.cloud.ai.agent.standard.adaptor.AlibabaAgentStreamBridge;
-import com.fons.cloud.ai.agent.standard.adaptor.AlibabaAgentResumeRequest;
-import com.fons.cloud.ai.agent.standard.adaptor.AlibabaHumanFeedbacks;
+import com.fons.cloud.ai.agent.standard.BaseAgentBuilder;
+import com.fons.cloud.ai.agent.standard.adaptor.AgentResumeRequest;
+import com.fons.cloud.ai.agent.standard.adaptor.AgentStreamBridge;
+import com.fons.cloud.ai.agent.standard.adaptor.AlibabaResumeSupport;
 import com.fons.cloud.ai.agent.standard.adaptor.ResumableAgent;
 import com.fons.cloud.ai.agent.standard.runtime.AgentRunContext;
 import lombok.extern.slf4j.Slf4j;
 import org.apache.commons.lang3.StringUtils;
-import org.springframework.ai.chat.client.ChatClient;
-import org.springframework.ai.chat.client.advisor.api.Advisor;
 import org.springframework.ai.chat.messages.AssistantMessage;
 import org.springframework.ai.chat.messages.Message;
 import org.springframework.ai.chat.messages.UserMessage;
@@ -42,12 +41,7 @@ import reactor.core.Disposable;
 import reactor.core.publisher.Flux;
 
 import java.time.Duration;
-import java.util.ArrayList;
-import java.util.EnumSet;
-import java.util.List;
-import java.util.Map;
-import java.util.Objects;
-import java.util.Set;
+import java.util.*;
 
 /**
  * 基于 Spring AI Alibaba 原生内核的通用 ReAct Agent。
@@ -60,7 +54,7 @@ import java.util.Set;
  * <ol>
  *     <li>BaseAgent 创建独立 {@link ReactAgentRunContext} 并注册任务。</li>
  *     <li>按 Run 组装 Alibaba delegate、唯一 threadId、原生 Hook 和工具拦截器。</li>
- *     <li>Alibaba 执行 ReAct 循环；{@link AlibabaAgentStreamBridge} 只转换输出协议。</li>
+ *     <li>Alibaba 执行 ReAct 循环；{@link AgentStreamBridge} 只转换输出协议。</li>
  *     <li>启用审批时，{@link HumanInTheLoopHook} 在工具节点前产生原生中断；决定通过
  *     同一个 thread/checkpoint 作为 human feedback 恢复，不再由 Fons4AI 执行工具。</li>
  *     <li>Graph 完成、失败或取消后由 BaseAgent 统一完成客户端流、任务清理和 Hook。</li>
@@ -76,8 +70,6 @@ public class ReactAgent extends BaseAgent implements ResumableAgent {
 
     /** Alibaba delegate 的静态工具定义。 */
     protected final List<ToolCallback> tools;
-    /** Spring AI Advisor 通过共享 ChatClient 交给 Alibaba 使用。 */
-    protected List<Advisor> advisors = List.of();
     /** 单 Run 最大模型调用次数；兼容旧 maxRounds 名称。 */
     protected int maxRounds = 5;
 
@@ -86,14 +78,13 @@ public class ReactAgent extends BaseAgent implements ResumableAgent {
     private BaseCheckpointSaver checkpointSaver = new MemorySaver();
     private boolean parallelToolExecution;
     private Duration toolExecutionTimeout = Duration.ofMinutes(5);
-    private ChatClient nativeChatClient;
-    private final AlibabaAgentStreamBridge<ReactAgentRunContext> streamBridge;
+    private final AgentStreamBridge<ReactAgentRunContext> streamBridge;
 
     protected ReactAgent(List<ToolCallback> tools, ChatModel chatModel,
                          AgentTaskManager agentTaskManager) {
         super(AgentType.REACT, chatModel, agentTaskManager);
         this.tools = tools == null ? List.of() : List.copyOf(tools);
-        this.streamBridge = new AlibabaAgentStreamBridge<>(new NativeStreamListener());
+        this.streamBridge = new AgentStreamBridge<>(new NativeStreamListener());
     }
 
     /**
@@ -104,11 +95,6 @@ public class ReactAgent extends BaseAgent implements ResumableAgent {
         if (systemPrompt == null) {
             systemPrompt = ReactAgentSystemPrompt.defaultPrompt();
         }
-        ChatClient.Builder clientBuilder = ChatClient.builder(chatModel);
-        if (!advisors.isEmpty()) {
-            clientBuilder.defaultAdvisors(advisors);
-        }
-        nativeChatClient = clientBuilder.build();
         if (initChatMemory) {
             initChatMemory();
         }
@@ -132,7 +118,7 @@ public class ReactAgent extends BaseAgent implements ResumableAgent {
         return com.alibaba.cloud.ai.graph.agent.ReactAgent.builder()
                 .name(AGENT_NAME)
                 .description("Fons4AI adapter over Spring AI Alibaba ReactAgent")
-                .chatClient(nativeChatClient)
+                .model(chatModel)
                 .systemPrompt(systemPrompt.getSystemPrompt())
                 .tools(tools)
                 .hooks(hooks)
@@ -204,7 +190,7 @@ public class ReactAgent extends BaseAgent implements ResumableAgent {
             Flux<NodeOutput> outputs = resuming
                     ? context.getDelegate().stream(Map.of(), config)
                     : context.getDelegate().stream(createInputMessages(context), config);
-            subscribeNative(context, outputs);
+            return subscribeNative(context, outputs);
         } catch (Exception error) {
             terminateNativeWithError(context, error);
         }
@@ -217,33 +203,21 @@ public class ReactAgent extends BaseAgent implements ResumableAgent {
      * 本方法不依赖旧 RunContext，也不会保存 Java continuation。
      */
     @Override
-    public com.fons.cloud.ai.agent.api.AgentRun resume(AlibabaAgentResumeRequest request) {
-        Objects.requireNonNull(request, "request cannot be null");
+    public com.fons.cloud.ai.agent.api.AgentRun resume(AgentResumeRequest request) {
         String expectedThreadId = request.request().getConversationId() + ":" + request.runId();
-        if (!expectedThreadId.equals(request.threadId())) {
-            throw new IllegalArgumentException("conversationId does not match threadId");
-        }
+        AlibabaResumeSupport.ResumeCheckpoint resume = AlibabaResumeSupport.load(
+                request, expectedThreadId, checkpointSaver,
+                "Alibaba checkpoint not found: " + request.checkpointId());
         ReactAgentRunContext context = (ReactAgentRunContext) createRunContext(
                 request.request(), request.runId());
         context.markResumeSegment();
-        RunnableConfig lookup = RunnableConfig.builder()
-                .threadId(request.threadId())
-                .checkPointId(request.checkpointId())
-                .build();
-        com.alibaba.cloud.ai.graph.checkpoint.Checkpoint checkpoint = checkpointSaver.get(lookup)
-                .orElseThrow(() -> new IllegalArgumentException(
-                        "Alibaba checkpoint not found: " + request.checkpointId()));
         if (request.action() == AgentApprovalAction.REJECT
                 && request.rejectionMode() == ApprovalRejectionMode.TERMINATE) {
-            context.setRunnableConfig(lookup);
+            context.setRunnableConfig(resume.lookup());
             context.rejectNativeResume(request.comment());
             return createRunHandle(context, request.options());
         }
-        InterruptionMetadata source = AlibabaHumanFeedbacks.fromCheckpoint(checkpoint);
-        InterruptionMetadata humanFeedback = AlibabaHumanFeedbacks.apply(source, request.action(),
-                request.comment(), request.editedArguments());
-        context.setRunnableConfig(RunnableConfig.builder(lookup)
-                .addHumanFeedback(humanFeedback).build());
+        context.setRunnableConfig(AlibabaResumeSupport.feedbackConfig(resume, request));
         return createRunHandle(context, request.options());
     }
 
@@ -251,20 +225,19 @@ public class ReactAgent extends BaseAgent implements ResumableAgent {
         return streamBridge.subscribe(context, outputs);
     }
 
-    /** ChatMemory 已包含当前问题时不重复追加；toolsParams 只作为附加用户上下文。 */
+    /** ChatMemory 已包含当前问题时不重复追加；动态参数使用固定标签，禁止 key 注入标签结构。 */
     private List<Message> createInputMessages(ReactAgentRunContext context) {
         List<Message> messages = useChatMemory()
                 ? new ArrayList<>(loadHistoryMessages(context, true, false))
                 : new ArrayList<>(List.of(createUserMessage(context)));
         context.getToolsParams().forEach((key, value) -> messages.add(
-                new UserMessage("<" + key + ">" + Objects.toString(value, "")
-                        + "</" + key + ">")));
+                createParameterMessage(key, value)));
         return messages;
     }
 
     @Override
     protected AgentRunContext createRunContext(AgentChatRequest request, String runId) {
-        return new ReactAgentRunContext(agentType, request, runId, createReactExecutionContext());
+        return new ReactAgentRunContext(agentType, request, runId);
     }
 
     /** 每 Run 独立的工具扩展上下文。 */
@@ -377,7 +350,7 @@ public class ReactAgent extends BaseAgent implements ResumableAgent {
     }
 
     private final class NativeStreamListener
-            implements AlibabaAgentStreamBridge.Listener<ReactAgentRunContext> {
+            implements AgentStreamBridge.Listener<ReactAgentRunContext> {
         @Override
         public void onText(ReactAgentRunContext context, String text) {
             emit(context, text, AgentMessageType.TEXT);
@@ -411,17 +384,10 @@ public class ReactAgent extends BaseAgent implements ResumableAgent {
     }
 
     /** 只保存共享配置；每个 Run 的 Alibaba delegate 在执行时创建。 */
-    public static class Builder {
+    public static class Builder extends BaseAgentBuilder<Builder> {
         private final List<ToolCallback> tools;
-        private final ChatModel chatModel;
-        private final AgentTaskManager agentTaskManager;
-        private List<Advisor> advisors = List.of();
         private ReactAgentSystemPrompt systemPrompt;
         private int maxRounds = 5;
-        private boolean useChatMemory;
-        private int maxMemoryMessages = 20;
-        private boolean enableRecommendations = true;
-        private AgentChatHook hook;
         private List<Hook> nativeHooks = List.of();
         private List<Interceptor> nativeInterceptors = List.of();
         private BaseCheckpointSaver checkpointSaver;
@@ -430,15 +396,8 @@ public class ReactAgent extends BaseAgent implements ResumableAgent {
 
         public Builder(List<ToolCallback> tools, ChatModel chatModel,
                        AgentTaskManager agentTaskManager) {
+            super(chatModel, agentTaskManager);
             this.tools = tools == null ? List.of() : List.copyOf(tools);
-            this.chatModel = Objects.requireNonNull(chatModel, "chatModel cannot be null");
-            this.agentTaskManager = Objects.requireNonNull(agentTaskManager,
-                    "agentTaskManager cannot be null");
-        }
-
-        public Builder advisors(List<Advisor> advisors) {
-            this.advisors = advisors == null ? List.of() : List.copyOf(advisors);
-            return this;
         }
 
         public Builder systemPrompt(ReactAgentSystemPrompt systemPrompt) {
@@ -452,29 +411,6 @@ public class ReactAgent extends BaseAgent implements ResumableAgent {
                 throw new IllegalArgumentException("maxRounds must be greater than 0");
             }
             this.maxRounds = maxRounds;
-            return this;
-        }
-
-        public Builder useChatMemory(boolean useChatMemory) {
-            this.useChatMemory = useChatMemory;
-            return this;
-        }
-
-        public Builder maxMemoryMessages(int maxMemoryMessages) {
-            if (maxMemoryMessages <= 0) {
-                throw new IllegalArgumentException("maxMemoryMessages must be greater than 0");
-            }
-            this.maxMemoryMessages = maxMemoryMessages;
-            return this;
-        }
-
-        public Builder enableRecommendations(boolean enableRecommendations) {
-            this.enableRecommendations = enableRecommendations;
-            return this;
-        }
-
-        public Builder hook(AgentChatHook hook) {
-            this.hook = hook;
             return this;
         }
 
@@ -514,19 +450,16 @@ public class ReactAgent extends BaseAgent implements ResumableAgent {
 
         public ReactAgent build() {
             ReactAgent agent = new ReactAgent(tools, chatModel, agentTaskManager);
-            agent.systemPrompt = systemPrompt;
-            agent.advisors = advisors;
+            agent.systemPrompt = systemPrompt == null
+                    ? ReactAgentSystemPrompt.defaultPrompt() : systemPrompt;
             agent.maxRounds = maxRounds;
-            agent.maxMemoryMessages = maxMemoryMessages;
-            agent.enableRecommendations = enableRecommendations;
-            agent.hook = hook;
             agent.nativeHooks = nativeHooks;
             agent.nativeInterceptors = nativeInterceptors;
             agent.checkpointSaver = checkpointSaver == null
                     ? new MemorySaver() : checkpointSaver;
             agent.parallelToolExecution = parallelToolExecution;
             agent.toolExecutionTimeout = toolExecutionTimeout;
-            agent.init(useChatMemory);
+            applySharedConfig(agent);
             return agent;
         }
     }

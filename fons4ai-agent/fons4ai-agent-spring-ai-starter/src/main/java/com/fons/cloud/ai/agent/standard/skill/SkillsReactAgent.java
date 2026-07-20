@@ -6,6 +6,7 @@ import com.alibaba.cloud.ai.graph.action.InterruptionMetadata;
 import com.alibaba.cloud.ai.graph.agent.hook.Hook;
 import com.alibaba.cloud.ai.graph.agent.hook.hip.HumanInTheLoopHook;
 import com.alibaba.cloud.ai.graph.checkpoint.BaseCheckpointSaver;
+import com.alibaba.cloud.ai.graph.checkpoint.Checkpoint;
 import com.alibaba.cloud.ai.graph.checkpoint.savers.MemorySaver;
 import com.alibaba.cloud.ai.graph.agent.hook.modelcalllimit.ModelCallLimitHook;
 import com.alibaba.cloud.ai.graph.agent.hook.skills.ReadSkillTool;
@@ -19,12 +20,12 @@ import com.fons.cloud.ai.agent.approval.AgentApprovalAction;
 import com.fons.cloud.ai.agent.approval.ApprovalRejectionMode;
 import com.fons.cloud.ai.agent.constants.AgentType;
 import com.fons.cloud.ai.agent.core.AgentTaskManager;
-import com.fons.cloud.ai.agent.infrastructure.hook.AgentChatHook;
 import com.fons.cloud.ai.agent.infrastructure.prompt.ReactAgentSystemPrompt;
 import com.fons.cloud.ai.agent.standard.BaseAgent;
-import com.fons.cloud.ai.agent.standard.adaptor.AlibabaAgentStreamBridge;
-import com.fons.cloud.ai.agent.standard.adaptor.AlibabaAgentResumeRequest;
-import com.fons.cloud.ai.agent.standard.adaptor.AlibabaHumanFeedbacks;
+import com.fons.cloud.ai.agent.standard.BaseAgentBuilder;
+import com.fons.cloud.ai.agent.standard.adaptor.AgentStreamBridge;
+import com.fons.cloud.ai.agent.standard.adaptor.AgentResumeRequest;
+import com.fons.cloud.ai.agent.standard.adaptor.AlibabaResumeSupport;
 import com.fons.cloud.ai.agent.standard.adaptor.ResumableAgent;
 import com.fons.cloud.ai.agent.standard.runtime.AgentRunContext;
 import lombok.extern.slf4j.Slf4j;
@@ -45,6 +46,7 @@ import java.util.HashMap;
 import java.util.HashSet;
 import java.util.LinkedHashMap;
 import java.util.List;
+import java.util.LinkedHashMap;
 import java.util.Map;
 import java.util.Objects;
 import java.util.Set;
@@ -126,17 +128,12 @@ public class SkillsReactAgent extends BaseAgent implements ResumableAgent {
     /** 同一实例所有 Run 共享但按 threadId 隔离的原生 checkpoint 存储。 */
     private final BaseCheckpointSaver checkpointSaver;
     /** 普通 React 与 Skills 共用的 Alibaba 输出协议桥接。 */
-    private final AlibabaAgentStreamBridge<SkillsAgentRunContext> streamBridge;
+    private final AgentStreamBridge<SkillsAgentRunContext> streamBridge;
 
-    private SkillsReactAgent(Builder builder) {
-        super(AgentType.SKILLS, builder.chatModel, builder.agentTaskManager);
+    private SkillsReactAgent(ChatModel chatModel, AgentTaskManager agentTaskManager, Builder builder) {
+        super(AgentType.SKILLS, chatModel, agentTaskManager);
 
-        // 1. 先写入 Fons4AI 外层配置。外层只负责请求生命周期、客户端流协议和完成 Hook。
-        this.maxMemoryMessages = builder.maxMemoryMessages;
-        this.enableRecommendations = builder.enableRecommendations;
-        this.hook = builder.hook;
-
-        // 2. 固化共享配置。工具名和技能绑定在构建时快速校验。
+        // 1. 固化共享配置。工具名和技能绑定在构建时快速校验。
         this.commonTools = List.copyOf(builder.commonTools);
         this.configuredSkillTools = immutableSkillTools(builder.skillTools);
         validateToolNames(commonTools, configuredSkillTools);
@@ -156,9 +153,9 @@ public class SkillsReactAgent extends BaseAgent implements ResumableAgent {
         this.toolExecutionTimeout = builder.toolExecutionTimeout;
         this.checkpointSaver = builder.checkpointSaver == null
                 ? new MemorySaver() : builder.checkpointSaver;
-        this.streamBridge = new AlibabaAgentStreamBridge<>(new NativeStreamListener());
+        this.streamBridge = new AgentStreamBridge<>(new NativeStreamListener());
 
-        // 3. 构建并验证首个只读目录快照。autoReload=false 时所有 Run 复用该不可变数据。
+        // 2. 构建并验证首个只读目录快照。autoReload=false 时所有 Run 复用该不可变数据。
         SkillCatalogSnapshot initialSnapshot = SkillCatalogSnapshot.capture(
                 sourceSkillRegistry, false, maxSkillCount, maxSkillContentBytes);
         new GuardedSkillRegistry(initialSnapshot, maxSkillCount, maxSkillContentBytes,
@@ -168,11 +165,6 @@ public class SkillsReactAgent extends BaseAgent implements ResumableAgent {
         this.systemPrompt = builder.systemPrompt == null
                 ? ReactAgentSystemPrompt.defaultPrompt()
                 : builder.systemPrompt;
-
-        // 4. ChatMemory 由 BaseAgent 共享管理，并按 conversationId 隔离。
-        if (builder.useChatMemory) {
-            initChatMemory();
-        }
     }
 
     @Override
@@ -284,8 +276,7 @@ public class SkillsReactAgent extends BaseAgent implements ResumableAgent {
             reactor.core.publisher.Flux<NodeOutput> outputs = resuming
                     ? context.getDelegate().stream(Map.of(), config)
                     : context.getDelegate().stream(createInputMessages(context), config);
-            subscribeNative(context, outputs);
-            return null;
+            return subscribeNative(context, outputs);
         } catch (Exception error) {
             terminateNativeWithError(context, error);
             return null;
@@ -314,7 +305,7 @@ public class SkillsReactAgent extends BaseAgent implements ResumableAgent {
         // toolsParams 作为附加用户上下文传入，不改变工具授权，也不能直接注册新工具。
         if (!context.getToolsParams().isEmpty()) {
             context.getToolsParams().forEach((key, value) -> messages.add(
-                    new UserMessage("<" + key + ">" + Objects.toString(value, "") + "</" + key + ">")));
+                    createParameterMessage(key, value)));
         }
         return messages;
     }
@@ -341,9 +332,21 @@ public class SkillsReactAgent extends BaseAgent implements ResumableAgent {
                     : EnumSet.of(AgentApprovalAction.APPROVE, AgentApprovalAction.REJECT);
             RunnableConfig config = Objects.requireNonNull(context.getRunnableConfig(),
                     "native runnable config cannot be null");
-            com.alibaba.cloud.ai.graph.checkpoint.Checkpoint checkpoint =
+            Checkpoint checkpoint =
                     checkpointSaver.get(config).orElseThrow(() ->
                             new IllegalStateException("Alibaba interruption checkpoint is missing"));
+            Map<String, Object> state = new LinkedHashMap<>(checkpoint.getState());
+            state.put(SkillPermissionSnapshot.STATE_KEY,
+                    context.getSkillRegistry().permissionSnapshot().toCheckpointValue());
+            Checkpoint protectedCheckpoint = Checkpoint.builder()
+                    .id(checkpoint.getId())
+                    .state(state)
+                    .nodeId(checkpoint.getNodeId())
+                    .nextNodeId(checkpoint.getNextNodeId())
+                    .build();
+            RunnableConfig protectedConfig = checkpointSaver.put(config, protectedCheckpoint);
+            context.setRunnableConfig(RunnableConfig.builder(protectedConfig)
+                    .checkPointId(protectedCheckpoint.getId()).build());
             String threadId = config.threadId().orElseThrow();
             pauseForNativeApproval(context, checkpoint.getId(), Map.ofEntries(
                     Map.entry("interruptId", checkpoint.getId()),
@@ -398,7 +401,7 @@ public class SkillsReactAgent extends BaseAgent implements ResumableAgent {
 
     /** Skills 对公共 Alibaba 输出桥接器的最小生命周期实现。 */
     private final class NativeStreamListener
-            implements AlibabaAgentStreamBridge.Listener<SkillsAgentRunContext> {
+            implements AgentStreamBridge.Listener<SkillsAgentRunContext> {
         @Override
         public void onText(SkillsAgentRunContext context, String text) {
             emit(context, text, com.fons.cloud.ai.agent.constants.AgentMessageType.TEXT);
@@ -453,33 +456,23 @@ public class SkillsReactAgent extends BaseAgent implements ResumableAgent {
      * Registry 和资源解析器会重新创建当前快照视图，Graph 消息与技能工具状态来自 checkpoint。
      */
     @Override
-    public com.fons.cloud.ai.agent.api.AgentRun resume(AlibabaAgentResumeRequest request) {
-        Objects.requireNonNull(request, "request cannot be null");
+    public com.fons.cloud.ai.agent.api.AgentRun resume(AgentResumeRequest request) {
         String expectedThreadId = request.request().getConversationId() + ":" + request.runId();
-        if (!expectedThreadId.equals(request.threadId())) {
-            throw new IllegalArgumentException("conversationId does not match threadId");
-        }
+        AlibabaResumeSupport.ResumeCheckpoint resume = AlibabaResumeSupport.load(
+                request, expectedThreadId, checkpointSaver,
+                "Alibaba checkpoint not found: " + request.checkpointId());
         SkillsAgentRunContext context = (SkillsAgentRunContext) createRunContext(
                 request.request(), request.runId());
         context.markResumeSegment();
-        RunnableConfig lookup = RunnableConfig.builder()
-                .threadId(request.threadId())
-                .checkPointId(request.checkpointId())
-                .build();
-        com.alibaba.cloud.ai.graph.checkpoint.Checkpoint checkpoint = checkpointSaver.get(lookup)
-                .orElseThrow(() -> new IllegalArgumentException(
-                        "Alibaba checkpoint not found: " + request.checkpointId()));
+        context.getSkillRegistry().restorePermissions(
+                SkillPermissionSnapshot.fromCheckpoint(resume.checkpoint().getState()));
         if (request.action() == AgentApprovalAction.REJECT
                 && request.rejectionMode() == ApprovalRejectionMode.TERMINATE) {
-            context.setRunnableConfig(lookup);
+            context.setRunnableConfig(resume.lookup());
             context.rejectNativeResume(request.comment());
             return createRunHandle(context, request.options());
         }
-        InterruptionMetadata source = AlibabaHumanFeedbacks.fromCheckpoint(checkpoint);
-        InterruptionMetadata feedback = AlibabaHumanFeedbacks.apply(source, request.action(),
-                request.comment(), request.editedArguments());
-        context.setRunnableConfig(RunnableConfig.builder(lookup)
-                .addHumanFeedback(feedback).build());
+        context.setRunnableConfig(AlibabaResumeSupport.feedbackConfig(resume, request));
         return createRunHandle(context, request.options());
     }
 
@@ -548,10 +541,8 @@ public class SkillsReactAgent extends BaseAgent implements ResumableAgent {
     }
 
     /** SkillsReactAgent 构建器；区分共享定义、每 Run 快照和动态授权边界。 */
-    public static class Builder {
-        // 必选依赖：模型和任务管理属于执行层，Registry 和 Resolver 属于技能数据访问层。
-        private final ChatModel chatModel;
-        private final AgentTaskManager agentTaskManager;
+    public static class Builder extends BaseAgentBuilder<Builder> {
+        // 必选依赖：Registry 和 Resolver 属于技能数据访问层；chatModel 和 agentTaskManager 由 BaseAgentBuilder 管理。
         private final SkillRegistry skillRegistry;
         private final SkillResourceResolver resourceResolver;
 
@@ -562,8 +553,6 @@ public class SkillsReactAgent extends BaseAgent implements ResumableAgent {
         // 模型和技能行为配置。
         private ReactAgentSystemPrompt systemPrompt;
         private boolean autoReload;
-        private boolean useChatMemory;
-        private int maxMemoryMessages = 20;
         private int maxModelCalls = 8;
         private int maxSkillLoads = 8;
         private int maxSkillCount = GuardedSkillRegistry.DEFAULT_MAX_SKILLS;
@@ -575,17 +564,14 @@ public class SkillsReactAgent extends BaseAgent implements ResumableAgent {
         private Duration toolExecutionTimeout = Duration.ofMinutes(5);
         private BaseCheckpointSaver checkpointSaver;
 
-        // Fons4AI 外层响应增强和扩展 Hook。
-        private boolean enableRecommendations = true;
-        private AgentChatHook hook;
+        // 原生 Graph 扩展 Hook；核心 Skills/HITL Hook 禁止重复注册。
         private List<Hook> nativeHooks = List.of();
 
         private Builder(ChatModel chatModel,
                         AgentTaskManager agentTaskManager,
                         SkillRegistry skillRegistry,
                         SkillResourceResolver resourceResolver) {
-            this.chatModel = Objects.requireNonNull(chatModel, "chatModel cannot be null");
-            this.agentTaskManager = Objects.requireNonNull(agentTaskManager, "agentTaskManager cannot be null");
+            super(chatModel, agentTaskManager);
             this.skillRegistry = Objects.requireNonNull(skillRegistry, "skillRegistry cannot be null");
             this.resourceResolver = Objects.requireNonNull(resourceResolver, "resourceResolver cannot be null");
         }
@@ -611,21 +597,6 @@ public class SkillsReactAgent extends BaseAgent implements ResumableAgent {
         /** 是否在每个 Run 开始前重新捕获 Registry 快照；默认 false。 */
         public Builder autoReload(boolean autoReload) {
             this.autoReload = autoReload;
-            return this;
-        }
-
-        /** 是否启用按 conversationId 隔离的消息记忆。 */
-        public Builder useChatMemory(boolean useChatMemory) {
-            this.useChatMemory = useChatMemory;
-            return this;
-        }
-
-        /** 设置消息记忆窗口上限，必须大于 0。 */
-        public Builder maxMemoryMessages(int maxMemoryMessages) {
-            if (maxMemoryMessages <= 0) {
-                throw new IllegalArgumentException("maxMemoryMessages must be greater than 0");
-            }
-            this.maxMemoryMessages = maxMemoryMessages;
             return this;
         }
 
@@ -689,18 +660,6 @@ public class SkillsReactAgent extends BaseAgent implements ResumableAgent {
             return this;
         }
 
-        /** 是否在完成后生成推荐问题。 */
-        public Builder enableRecommendations(boolean enableRecommendations) {
-            this.enableRecommendations = enableRecommendations;
-            return this;
-        }
-
-        /** 配置共享 Fons4AI 生命周期 Hook。 */
-        public Builder hook(AgentChatHook hook) {
-            this.hook = hook;
-            return this;
-        }
-
         /**
          * 配置原生 Graph checkpoint 存储。默认使用当前 Agent 内的 MemorySaver。
          * 持久化 Saver 只能增强 Graph checkpoint 耐久性；当前 Fons4AI 公共中断路由仍是同进程能力，
@@ -720,7 +679,9 @@ public class SkillsReactAgent extends BaseAgent implements ResumableAgent {
 
         /** 校验目录、工具和 Hook 后创建可共享 Agent。 */
         public SkillsReactAgent build() {
-            return new SkillsReactAgent(this);
+            SkillsReactAgent agent = new SkillsReactAgent(chatModel, agentTaskManager, this);
+            applySharedConfig(agent);
+            return agent;
         }
     }
 

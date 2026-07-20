@@ -1,0 +1,85 @@
+schema_version: "1.0"
+handoff_type: tasks-to-implement
+status: waiting-readability-gate
+source_stage: tasks
+target_stage: implementation
+next_skill: fons4ai-sdd-implement
+
+feature:
+  name: Agent运行时审批
+  slug: agent-runtime-approval
+  date: "20260716"
+  sdd_level: S2
+  requirements_path: spec/features/20260716/Agent运行时审批-需求说明书.md
+  design_path: spec/features/20260716/Agent运行时审批-技术设计说明书.md
+  tasks_path: spec/features/20260716/Agent运行时审批-任务规划.md
+
+implementation_approval:
+  status: approved
+  evidence: 用户明确要求开始执行全量任务
+  default_scope_on_approval: all-unfinished
+  recommended_first_scope: [T011, T012]
+  mandatory_pause_after: T012
+  pause_reason: 负责人可读性 Gate 通过后才能继续 Skills、Plan 和最终清理
+
+change:
+  id: CR-001
+  path: spec/features/20260716/changes/CR-001.md
+  type: 重构、契约变更
+  summary: 将通用分布式审批平台收缩为轻量可插拔 HITL，并治理 Agent/Skills 可读性
+
+historical_tasks:
+  completed: [T001, T002, T003, T004, T005, T006, T007, T008, T009]
+  superseded: [T010]
+
+completed_tasks: [T011]
+unfinished_tasks: [T012, T013, T014, T015, T016]
+dependency_order:
+  - T011
+  - T012
+  - user-readability-gate
+  - T013
+  - T014
+  - T015
+  - T016
+
+parallel_groups: []
+
+risk_tasks:
+  - T011
+  - T012
+  - T013
+  - T014
+  - T016
+
+data_structure:
+  database_ddl: false
+  logical_structure_tasks: []
+  runtime_seed: false
+  deferred_runtime_structures:
+    - Redisson approval aggregate
+    - generic checkpoint and event log
+    - audit and retention storage
+
+acceptance_coverage:
+  covered: [AC-001, AC-002, AC-003, AC-004, AC-006, AC-008, AC-009, AC-010, AC-011, AC-012, AC-013, AC-017, AC-018, AC-019, AC-020, AC-021, AC-022, AC-023]
+  deferred: [AC-005, AC-007, AC-014, AC-015, AC-016]
+  missing: []
+
+required_gates:
+  - implementer-self-check
+  - spec-review
+  - code-review
+  - evidence-matrix
+  - human-gate
+
+constraints:
+  - 未获得用户最新明确实现授权前不得修改业务代码
+  - T012 负责人可读性 Gate 未通过前不得启动 T013-T016
+  - 不实现业务审批UI、身份鉴权或多人聚合
+  - 自研Agent V1只支持同进程恢复，禁止伪装跨重启成功
+  - Alibaba Agent必须复用原生HITL和Saver，不复制checkpoint协议
+  - 下游不得实现Agent专属ResumeHandler
+  - 删除代码时必须保护Agent共享和Skills非审批改动，不得整文件回退
+  - 不生成或执行数据库DDL/DML
+  - 为最终保留的字段、枚举、入口和关键逻辑补充中文边界注释

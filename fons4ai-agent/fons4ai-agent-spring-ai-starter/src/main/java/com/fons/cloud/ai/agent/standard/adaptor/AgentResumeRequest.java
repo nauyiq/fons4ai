@@ -26,7 +26,7 @@ import java.util.Objects;
  * @param editedArguments EDIT 时只允许提供 {@code arguments} 字段
  * @param rejectionMode 拒绝后终止或把意见作为原生 observation 恢复；默认安全终止
  */
-public record AlibabaAgentResumeRequest(
+public record AgentResumeRequest(
         AgentChatRequest request,
         AgentRunOptions options,
         String runId,
@@ -37,12 +37,13 @@ public record AlibabaAgentResumeRequest(
         Map<String, String> editedArguments,
         ApprovalRejectionMode rejectionMode) {
 
-    public AlibabaAgentResumeRequest {
+    public AgentResumeRequest {
         request = Objects.requireNonNull(request, "request cannot be null").snapshot();
         options = Objects.requireNonNullElseGet(options, AgentRunOptions::defaults);
         runId = requireText(runId, "runId");
         threadId = requireText(threadId, "threadId");
         checkpointId = requireText(checkpointId, "checkpointId");
+        action = Objects.requireNonNull(action, "action cannot be null");
         rejectionMode = rejectionMode == null
                 ? ApprovalRejectionMode.TERMINATE : rejectionMode;
         editedArguments = editedArguments == null ? Map.of()

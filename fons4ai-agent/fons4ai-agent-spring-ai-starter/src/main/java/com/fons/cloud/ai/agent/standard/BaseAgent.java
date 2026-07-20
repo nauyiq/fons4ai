@@ -53,6 +53,7 @@ import java.util.UUID;
  * <p>Agent 实例只共享模型、提示词、工具定义和构建期配置。消息、答案、订阅、中断及
  * 终态全部保存在 {@link AgentRunContext}。Base 不保存审批单、checkpoint 或 Java
  * continuation；具体 Agent 直接把供应商原生 checkpoint 中断映射为统一事件。</p>
+ * @author hongqy
  */
 @Slf4j
 public abstract class BaseAgent implements Agent {
@@ -127,10 +128,6 @@ public abstract class BaseAgent implements Agent {
         log.info("开始处理Agent请求, conversationId={}, runId={}, agentType={}",
                 context.getConversationId(), context.getRunId(), agentType);
         try {
-            prepareChatMemory(context);
-            if (stopBeforeExecutionWhenCancelled(context)) {
-                return;
-            }
             R<AgentTaskManager.TaskInfo> registered = agentTaskManager.registerTask(
                     context.getTaskHandle(), context.getEventSink(), agentType);
             if (!registered.isSuccess()) {
@@ -150,6 +147,10 @@ public abstract class BaseAgent implements Agent {
                         AgentResultCode.AGENT_TASK_ALREADY_CLOSE.getMessage());
                 return;
             }
+            if (stopBeforeExecutionWhenCancelled(context)) {
+                return;
+            }
+            prepareChatMemory(context);
             if (stopBeforeExecutionWhenCancelled(context)) {
                 return;
             }
@@ -181,20 +182,14 @@ public abstract class BaseAgent implements Agent {
         context.bindNativeDisposable(disposable);
     }
 
-    /** 登记不会替换主订阅的并行任务，使其随当前 Run 一起取消。 */
-    protected final void trackDisposable(AgentRunContext context, Disposable disposable) {
-        context.trackDisposable(disposable);
-    }
-
     /** 以幂等方式完成当前 Run，并统一触发事件、结果、任务清理和 Hook。 */
     protected final void completeRun(AgentRunContext context) {
         finishRun(context, AgentRunState.COMPLETED, null, null, null);
     }
 
     /**
-     * 发布 Alibaba 原生 checkpoint 中断并结束当前 HTTP/SSE 分段。
+     * 发布   checkpoint 中断并结束当前 HTTP/SSE 分段。
      *
-     * <p>该入口不注册 Java continuation。下游持久化审批单后，用 threadId/checkpointId
      * 调用具体 Alibaba Adapter 的 resume 方法开启新连接；Graph 状态由配置的 Saver 保存。</p>
      */
     protected final void pauseForNativeApproval(AgentRunContext context,
@@ -212,7 +207,7 @@ public abstract class BaseAgent implements Agent {
                         "runId", context.getRunId(),
                         "checkpointId", checkpointId)).toJson());
         context.pauseNativeExecution();
-        agentTaskManager.completeTask(context.getTaskHandle());
+        safelyCompleteTask(context);
         context.completeResult(AgentRunResult.builder()
                 .runId(context.getRunId())
                 .conversationId(context.getConversationId())
@@ -226,9 +221,7 @@ public abstract class BaseAgent implements Agent {
     }
 
     protected final void failRun(AgentRunContext context, Throwable error) {
-        finishRun(context, AgentRunState.FAILED, error,
-                AgentResultCode.FAILED_EXECUTE_AGENT.getCode(),
-                AgentResultCode.FAILED_EXECUTE_AGENT.getMessage());
+        finishRun(context, AgentRunState.FAILED, error, AgentResultCode.FAILED_EXECUTE_AGENT.getCode(), AgentResultCode.FAILED_EXECUTE_AGENT.getMessage());
     }
 
     /**
@@ -283,7 +276,7 @@ public abstract class BaseAgent implements Agent {
         if (!context.isCancellationRequested()) {
             return false;
         }
-        agentTaskManager.completeTask(context.getTaskHandle());
+        safelyCompleteTask(context);
         context.cancellationDisposable().dispose();
         return true;
     }
@@ -293,14 +286,23 @@ public abstract class BaseAgent implements Agent {
         if (!context.tryFinalize(state)) {
             return;
         }
+        if (state == AgentRunState.COMPLETED) {
+            try {
+                commitChatMemory(context);
+            } catch (RuntimeException memoryError) {
+                // 会话记忆是完成后的增强能力，提交失败不能阻断任务、sink、completion 和 Hook 收口。
+                log.warn("Agent会话记忆提交失败, conversationId={}, runId={}",
+                        context.getConversationId(), context.getRunId(), memoryError);
+            }
+        }
         try {
             onRunTerminated(context, state);
-        } catch (RuntimeException releaseError) {
+        } catch (Throwable releaseError) {
             // 供应商 checkpoint 清理失败不能阻断任务租约、sink、completion 和 Hook 收口。
             log.warn("Agent终态资源释放失败, conversationId={}, runId={}, state={}",
                     context.getConversationId(), context.getRunId(), state, releaseError);
         }
-        agentTaskManager.completeTask(context.getTaskHandle());
+        safelyCompleteTask(context);
         if (state == AgentRunState.FAILED || state == AgentRunState.REJECTED) {
             context.failEvents(eventError == null
                     ? BusinessRuntimeException.of(errorCode, errorMessage)
@@ -323,15 +325,45 @@ public abstract class BaseAgent implements Agent {
         if (hook != null) {
             try {
                 hook.onFinish(result);
-            } catch (Exception hookError) {
+            } catch (Throwable hookError) {
                 log.error("Agent完成Hook执行失败, conversationId={}, runId={}",
                         context.getConversationId(), context.getRunId(), hookError);
             }
         }
     }
 
+    /**
+     * 尽最大努力释放任务句柄和分布式租约。
+     *
+     * <p>TaskManager 属于基础设施边界，其异常不得阻断事件流、completion 或 Hook 的
+     * 终态发布。所有终态、审批暂停和注册后取消都复用此入口。</p>
+     */
+    private void safelyCompleteTask(AgentRunContext context) {
+        try {
+            agentTaskManager.completeTask(context.getTaskHandle());
+        } catch (Throwable cleanupError) {
+            log.warn("Agent任务清理失败, conversationId={}, runId={}",
+                    context.getConversationId(), context.getRunId(), cleanupError);
+        }
+    }
+
     protected final Message createUserMessage(AgentRunContext context) {
         return new UserMessage("<question>" + context.getQuestion() + "</question>");
+    }
+
+    /** 使用固定标签承载动态参数，避免调用方提供的 key/value 改写提示词结构。 */
+    protected final Message createParameterMessage(String key, String value) {
+        return new UserMessage("<parameter name=\"" + escapeXml(key) + "\">"
+                + escapeXml(value) + "</parameter>");
+    }
+
+    private String escapeXml(String value) {
+        return Objects.toString(value, "")
+                .replace("&", "&amp;")
+                .replace("<", "&lt;")
+                .replace(">", "&gt;")
+                .replace("\"", "&quot;")
+                .replace("'", "&apos;");
     }
 
     protected final void recordUsedTool(AgentRunContext context, String toolName) {
@@ -348,32 +380,69 @@ public abstract class BaseAgent implements Agent {
     }
 
     private void prepareChatMemory(AgentRunContext context) {
-        if (!useChatMemory() || context.isResumeSegment()) {
+        if (!useChatMemory()) {
             return;
         }
-        if (CollectionUtils.isNotEmpty(context.getRequest().getHistoryMessages())) {
-            persistentMessages(context.getRequest().getHistoryMessages());
+        List<Message> storedMessages = chatMemory.get(context.getConversationId());
+        List<Message> inputMessages = new ArrayList<>();
+        List<Message> pendingMessages = new ArrayList<>();
+        if (CollectionUtils.isNotEmpty(storedMessages)) {
+            inputMessages.addAll(storedMessages);
         }
-        chatMemory.add(context.getConversationId(), new UserMessage(context.getQuestion()));
+        UserMessage currentQuestion = new UserMessage(context.getQuestion());
+        if (context.isResumeSegment()) {
+            boolean questionAlreadyStored = CollectionUtils.isNotEmpty(storedMessages)
+                    && storedMessages.getLast() instanceof UserMessage lastUserMessage
+                    && Objects.equals(lastUserMessage.getText(), context.getQuestion());
+            if (!questionAlreadyStored) {
+                // 首段暂停时不污染长期记忆；恢复成功后再与最终回答成对提交。
+                inputMessages.add(currentQuestion);
+                pendingMessages.add(currentQuestion);
+            }
+            context.stageChatMemory(inputMessages, pendingMessages);
+            return;
+        }
+        if (CollectionUtils.isEmpty(storedMessages)
+                && CollectionUtils.isNotEmpty(context.getRequest().getHistoryMessages())) {
+            List<Message> historyMessages = convertHistoryMessages(
+                    context.getConversationId(), context.getRequest().getHistoryMessages());
+            inputMessages.addAll(historyMessages);
+            pendingMessages.addAll(historyMessages);
+        }
+        inputMessages.add(currentQuestion);
+        pendingMessages.add(currentQuestion);
+        context.stageChatMemory(inputMessages, pendingMessages);
     }
 
-    protected final void persistentMessages(List<AiChatMessage> source) {
-        if (CollectionUtils.isEmpty(source)) {
-            throw BusinessRuntimeException.of(AgentResultCode.CHAT_MESSAGES_IS_EMPTY);
-        }
-        if (chatMemory == null) {
-            throw BusinessRuntimeException.of(AgentResultCode.AGENT_CHAT_MEMORY_NOT_INIT);
-        }
+    private List<Message> convertHistoryMessages(String conversationId, List<AiChatMessage> source) {
         List<AiChatMessage> messages = new ArrayList<>(source);
         messages.sort(Comparator.comparing(AiChatMessage::getCreated,
                 Comparator.nullsLast(Comparator.naturalOrder())));
+        List<Message> results = new ArrayList<>(messages.size());
         for (AiChatMessage message : messages) {
+            if (StringUtils.isNotBlank(message.getConversationId())
+                    && !Objects.equals(conversationId, message.getConversationId())) {
+                throw new IllegalArgumentException(
+                        "history conversationId does not match current conversation");
+            }
             switch (message.getMessageType()) {
-                case USER -> chatMemory.add(message.getConversationId(), new UserMessage(message.getContent()));
-                case ASSISTANT -> chatMemory.add(message.getConversationId(), new AssistantMessage(message.getContent()));
-                default -> throw BusinessRuntimeException.of(AgentResultCode.NOT_SUPPORT_MESSAGE_TYPE_FOR_PERSISTENT);
+                case USER -> results.add(new UserMessage(message.getContent()));
+                case ASSISTANT -> results.add(new AssistantMessage(message.getContent()));
+                default -> throw BusinessRuntimeException.of(
+                        AgentResultCode.NOT_SUPPORT_MESSAGE_TYPE_FOR_PERSISTENT);
             }
         }
+        return results;
+    }
+
+    private void commitChatMemory(AgentRunContext context) {
+        if (!useChatMemory() || StringUtils.isBlank(context.finalAnswerText())) {
+            return;
+        }
+        for (Message message : context.getPendingChatMemoryMessages()) {
+            chatMemory.add(context.getConversationId(), message);
+        }
+        chatMemory.add(context.getConversationId(), new AssistantMessage(context.finalAnswerText()));
     }
 
     protected final List<Message> loadHistoryMessages(AgentRunContext context,
@@ -381,16 +450,18 @@ public abstract class BaseAgent implements Agent {
         if (!useChatMemory()) {
             return new ArrayList<>();
         }
-        List<Message> messages = chatMemory.get(context.getConversationId());
+        List<Message> messages = context.getChatInputMessages();
+        if (messages == null) {
+            // 未暂存消息的特殊执行路径仍可读取同会话已提交记忆。
+            messages = chatMemory.get(context.getConversationId());
+        }
         List<Message> results = new ArrayList<>();
         if (addMsgLabel && CollectionUtils.isNotEmpty(messages)) {
             results.add(new UserMessage("conversation history："));
         }
-        if (messages != null) {
-            for (Message message : messages) {
-                if (!(skipSystem && message instanceof SystemMessage)) {
-                    results.add(message);
-                }
+        for (Message message : messages) {
+            if (!(skipSystem && message instanceof SystemMessage)) {
+                results.add(message);
             }
         }
         return results;

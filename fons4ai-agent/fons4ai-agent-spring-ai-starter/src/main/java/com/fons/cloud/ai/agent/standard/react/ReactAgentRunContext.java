@@ -1,9 +1,8 @@
 package com.fons.cloud.ai.agent.standard.react;
 
 import com.fons.cloud.ai.agent.chat.AgentChatRequest;
-import com.fons.cloud.ai.agent.chat.AgentExecutionContext;
 import com.fons.cloud.ai.agent.constants.AgentType;
-import com.fons.cloud.ai.agent.standard.adaptor.AlibabaAgentRunContext;
+import com.fons.cloud.ai.agent.standard.adaptor.FrameAgentRunContext;
 import lombok.Getter;
 
 import java.util.Objects;
@@ -15,15 +14,11 @@ import java.util.Objects;
  * Fons4AI 请求上下文以及 WebSearch 等预设需要的扩展数据。</p>
  */
 @Getter
-public class ReactAgentRunContext extends AlibabaAgentRunContext {
-    private final AgentExecutionContext executionContext;
+public class ReactAgentRunContext extends FrameAgentRunContext {
     private volatile com.alibaba.cloud.ai.graph.agent.ReactAgent delegate;
 
-    public ReactAgentRunContext(AgentType agentType, AgentChatRequest request, String runId,
-                                AgentExecutionContext executionContext) {
+    public ReactAgentRunContext(AgentType agentType, AgentChatRequest request, String runId) {
         super(agentType, request, runId);
-        this.executionContext = Objects.requireNonNull(executionContext,
-                "executionContext cannot be null");
     }
 
     /** 原生中断恢复时可重建 delegate；delegate 始终只属于当前 Run。 */

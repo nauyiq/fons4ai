@@ -10,7 +10,7 @@ import com.fons.cloud.ai.agent.approval.ApprovalRejectionMode;
 import com.fons.cloud.ai.agent.chat.AgentChatRequest;
 import com.fons.cloud.ai.agent.core.AgentTaskHandle;
 import com.fons.cloud.ai.agent.core.AgentTaskManager;
-import com.fons.cloud.ai.agent.standard.adaptor.AlibabaAgentResumeRequest;
+import com.fons.cloud.ai.agent.standard.adaptor.AgentResumeRequest;
 import com.fons.cloud.ai.tool.registry.ToolRegistry;
 import com.fons.cloud.common.result.R;
 import org.junit.jupiter.api.Test;
@@ -106,11 +106,11 @@ class PlanExecuteAgentHitlTest {
         return new Fixture(agent, reportCalls);
     }
 
-    private static AlibabaAgentResumeRequest resumeRequest(
+    private static AgentResumeRequest resumeRequest(
             AgentChatRequest request, AgentRunResult waiting,
             AgentApprovalAction action, String comment,
             ApprovalRejectionMode rejectionMode) {
-        return new AlibabaAgentResumeRequest(request, enabledOptions(), waiting.getRunId(),
+        return new AgentResumeRequest(request, enabledOptions(), waiting.getRunId(),
                 "PLAN-EXECUTE-AGENT:" + request.getConversationId() + ":" + waiting.getRunId(),
                 waiting.getPendingApprovalId(), action, comment, Map.of(), rejectionMode);
     }

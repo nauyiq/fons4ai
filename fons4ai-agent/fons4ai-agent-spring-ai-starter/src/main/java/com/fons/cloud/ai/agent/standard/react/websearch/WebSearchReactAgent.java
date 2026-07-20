@@ -2,29 +2,31 @@ package com.fons.cloud.ai.agent.standard.react.websearch;
 
 import com.alibaba.fastjson2.JSON;
 import com.alibaba.fastjson2.JSONObject;
-import com.fons.cloud.ai.agent.chat.AgentExecutionContext;
 import com.fons.cloud.ai.agent.chat.AgentChatRequest;
 import com.fons.cloud.ai.agent.core.AgentTaskManager;
 import com.fons.cloud.ai.agent.infrastructure.prompt.ReactAgentSystemPrompt;
-import com.fons.cloud.ai.agent.infrastructure.hook.AgentChatHook;
+import com.fons.cloud.ai.agent.standard.BaseAgentBuilder;
 import com.fons.cloud.ai.agent.standard.react.ReactAgent;
 import com.fons.cloud.ai.agent.standard.react.ReactAgentRunContext;
 import com.fons.cloud.ai.agent.standard.runtime.AgentRunContext;
 import com.fons.cloud.ai.tool.model.ToolMeta;
 import com.fons.cloud.ai.tool.model.WebExtractResult;
 import com.fons.cloud.ai.tool.model.WebSearchResult;
+import com.fons.cloud.ai.tool.model.WebToolResult;
 import com.fons.cloud.ai.tool.registry.ToolRegistry;
 import com.fons.cloud.ai.tool.spi.ToolProvider;
 import com.fons.cloud.ai.tool.spi.ToolResultParser;
 import lombok.extern.slf4j.Slf4j;
 import org.apache.commons.collections4.CollectionUtils;
 import org.apache.commons.lang3.StringUtils;
-import org.springframework.ai.chat.client.advisor.api.Advisor;
 import org.springframework.ai.chat.messages.AssistantMessage;
 import org.springframework.ai.chat.model.ChatModel;
 import org.springframework.ai.tool.ToolCallback;
 
+import java.util.ArrayList;
+import java.util.LinkedHashMap;
 import java.util.List;
+import java.util.Map;
 
 /**
  * 在通用 {@link ReactAgent} 上聚合搜索/抓取结果的 Web Agent。
@@ -53,21 +55,23 @@ public class WebSearchReactAgent extends ReactAgent {
      */
     @Override
     protected void beforeToolCall(ReactAgentRunContext context, AssistantMessage.ToolCall toolCall) {
-        // 工具名
         String name = toolCall.name();
-        // 工具参数
-        String arguments = toolCall.arguments();
-        JSONObject args = JSON.parseObject(arguments);
         ToolMeta toolMeta = toolsRegistry.getToolMeta(name);
         if (toolMeta == null) {
             log.warn("未找到工具元数据, 工具名：{}", name);
             return;
         }
         if (toolMeta.isSearch()) {
-            // 确认是搜索工具， 则输出一些实时的提示语
-            String query = args.getString("query");
-            String message = StringUtils.isBlank(query) ? "🔍 正在搜索相关信息\n" : "🔍 正在搜索信息:" + query + "\n";
-            emit(context, message, com.fons.cloud.ai.agent.constants.AgentMessageType.THINKING);
+            try {
+                JSONObject args = JSON.parseObject(toolCall.arguments());
+                String query = args == null ? null : args.getString("query");
+                String message = StringUtils.isBlank(query)
+                        ? "🔍 正在搜索相关信息\n" : "🔍 正在搜索信息:" + query + "\n";
+                emit(context, message, com.fons.cloud.ai.agent.constants.AgentMessageType.THINKING);
+            } catch (RuntimeException parseError) {
+                // 参数可能包含用户敏感数据，日志只保留工具名。
+                log.warn("Web工具参数解析失败, 工具名：{}", name);
+            }
         }
     }
 
@@ -81,29 +85,38 @@ public class WebSearchReactAgent extends ReactAgent {
     protected void afterToolCall(ReactAgentRunContext context,
                                  AssistantMessage.ToolCall toolCall, String result) {
         WebSearchAgentRunContext webContext = (WebSearchAgentRunContext) context;
-        // 工具名
         String name = toolCall.name();
-        // 获取工具解析器
         ToolProvider toolProvider = toolsRegistry.getToolProvider(name);
         if (toolProvider == null) {
             log.warn("未找到工具提供者, 工具名：{}", name);
-        } else {
-            ToolMeta toolMeta = toolsRegistry.getToolMeta(name);
-            if (toolMeta == null) {
-                log.warn("未找到工具元数据, 工具名：{}", name);
-                return;
-            }
+            return;
+        }
+        ToolMeta toolMeta = toolsRegistry.getToolMeta(name);
+        if (toolMeta == null) {
+            log.warn("未找到工具元数据, 工具名：{}", name);
+            return;
+        }
+        try {
             if (toolMeta.isSearch()) {
-                // 搜索相关的工具
                 ToolResultParser<WebSearchResult> resultParser = toolProvider.getResultParser(toolMeta.category());
-                List<WebSearchResult> results = resultParser.parse(result);
-                webContext.getSearchResults().addAll(results);
+                addParsedResults(webContext.getSearchResults(), resultParser, result);
             } else if (toolMeta.isExtract()) {
-                // 提取相关的工具
                 ToolResultParser<WebExtractResult> resultParser = toolProvider.getResultParser(toolMeta.category());
-                List<WebExtractResult> results = resultParser.parse(result);
-                webContext.getExtractResults().addAll(results);
+                addParsedResults(webContext.getExtractResults(), resultParser, result);
             }
+        } catch (RuntimeException parseError) {
+            // 工具结果可能包含网页正文，禁止写入普通日志。
+            log.warn("Web工具结果解析失败, 工具名：{}", name);
+        }
+    }
+
+    private <T> void addParsedResults(List<T> target, ToolResultParser<T> parser, String result) {
+        if (parser == null) {
+            return;
+        }
+        List<T> parsed = parser.parse(result);
+        if (CollectionUtils.isNotEmpty(parsed)) {
+            target.addAll(parsed);
         }
     }
 
@@ -115,9 +128,16 @@ public class WebSearchReactAgent extends ReactAgent {
     @Override
     protected void emitAdditionalFinalResponses(ReactAgentRunContext context, String finalText) {
         WebSearchAgentRunContext webContext = (WebSearchAgentRunContext) context;
-        if (CollectionUtils.isNotEmpty(webContext.getSearchResults())) {
-            // TODO 暂时只输出搜索结果
-            String references = JSON.toJSONString(webContext.getSearchResults());
+        List<WebToolResult> collected = new ArrayList<>(webContext.getSearchResults());
+        collected.addAll(webContext.getExtractResults());
+        if (CollectionUtils.isNotEmpty(collected)) {
+            Map<String, WebToolResult> referencesByUrl = new LinkedHashMap<>();
+            for (WebToolResult reference : collected) {
+                if (reference != null && StringUtils.isNotBlank(reference.url())) {
+                    referencesByUrl.putIfAbsent(reference.url(), reference);
+                }
+            }
+            String references = JSON.toJSONString(referencesByUrl.values());
             context.setReferences(references);
             emit(context, references, com.fons.cloud.ai.agent.constants.AgentMessageType.REFERENCE);
         }
@@ -125,37 +145,24 @@ public class WebSearchReactAgent extends ReactAgent {
 
     @Override
     protected AgentRunContext createRunContext(AgentChatRequest request, String runId) {
-        return new WebSearchAgentRunContext(request, runId, new AgentExecutionContext());
+        return new WebSearchAgentRunContext(request, runId);
     }
 
 
     /** WebSearchReactAgent 构建器；所有字段在 build 后作为共享只读配置使用。 */
-    public static class Builder {
+    public static class Builder extends BaseAgentBuilder<Builder> {
         private final List<ToolCallback> tools;
-        private final ChatModel chatModel;
-        private final AgentTaskManager agentTaskManager;
         private final ToolRegistry toolsRegistry;
 
-        private List<Advisor> advisors;
         private ReactAgentSystemPrompt systemPrompt;
         private int maxRounds = 5;
-        private boolean useChatMemory;
-        private int maxMemoryMessages;
-        private boolean enableRecommendations = true;
-        private AgentChatHook hook;
 
         public Builder(List<ToolCallback> tools, ChatModel chatModel, AgentTaskManager agentTaskManager, ToolRegistry toolsRegistry) {
-            this.tools = tools;
-            this.chatModel = chatModel;
-            this.agentTaskManager = agentTaskManager;
-            this.toolsRegistry = toolsRegistry;
+            super(chatModel, agentTaskManager);
+            this.tools = tools == null ? List.of() : List.copyOf(tools);
+            this.toolsRegistry = java.util.Objects.requireNonNull(toolsRegistry,
+                    "toolsRegistry cannot be null");
 
-        }
-
-        /** 配置共享 Spring AI Advisors。 */
-        public Builder advisors(List<Advisor> advisors) {
-            this.advisors = advisors;
-            return this;
         }
 
         /** 覆盖默认 ReAct 系统提示词。 */
@@ -170,41 +177,13 @@ public class WebSearchReactAgent extends ReactAgent {
             return this;
         }
 
-        /** 是否启用按 conversationId 隔离的消息记忆。 */
-        public Builder useChatMemory(boolean useChatMemory) {
-            this.useChatMemory = useChatMemory;
-            return this;
-        }
-
-        /** 设置启用记忆时的窗口上限。 */
-        public Builder maxMemoryMessages(int maxMemoryMessages) {
-            this.maxMemoryMessages = maxMemoryMessages;
-            return this;
-        }
-
-        /** 配置共享生命周期 Hook。 */
-        public Builder hook(AgentChatHook hook) {
-            this.hook = hook;
-            return this;
-        }
-
-        /** 是否在完成后生成推荐问题。 */
-        public Builder enableRecommendations(boolean enableRecommendations) {
-            this.enableRecommendations = enableRecommendations;
-            return this;
-        }
-
         /** 校验并创建可共享 Agent；请求态将在 start 时创建。 */
         public WebSearchReactAgent build() {
             WebSearchReactAgent reactAgent = new WebSearchReactAgent(tools, chatModel, agentTaskManager, toolsRegistry);
-            reactAgent.systemPrompt = this.systemPrompt;
-            reactAgent.hook = this.hook;
-            reactAgent.advisors = this.advisors == null ? List.of() : List.copyOf(this.advisors);
+            reactAgent.systemPrompt = this.systemPrompt == null
+                    ? ReactAgentSystemPrompt.defaultPrompt() : this.systemPrompt;
             reactAgent.maxRounds = this.maxRounds;
-            reactAgent.maxMemoryMessages = this.maxMemoryMessages;
-            reactAgent.enableRecommendations = this.enableRecommendations;
-            // 初始化
-            reactAgent.init(this.useChatMemory);
+            applySharedConfig(reactAgent);
             return reactAgent;
         }
     }

@@ -5,6 +5,12 @@ import com.fons.cloud.ai.agent.core.AgentTaskManager;
 import com.fons.cloud.ai.agent.core.AgentTaskHandle;
 import com.fons.cloud.common.result.R;
 import com.fons.cloud.ai.tool.registry.ToolRegistry;
+import com.fons.cloud.ai.tool.constants.ToolCategory;
+import com.fons.cloud.ai.tool.model.ToolMeta;
+import com.fons.cloud.ai.tool.model.WebExtractResult;
+import com.fons.cloud.ai.tool.model.WebSearchResult;
+import com.fons.cloud.ai.tool.spi.ToolProvider;
+import com.fons.cloud.ai.tool.spi.ToolResultParser;
 import org.junit.jupiter.api.Test;
 
 import java.util.Arrays;
@@ -21,6 +27,8 @@ import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.when;
 import static org.mockito.ArgumentMatchers.any;
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertDoesNotThrow;
+import static org.junit.jupiter.api.Assertions.assertFalse;
 
 class WebSearchReactAgentContractTest {
 
@@ -70,5 +78,60 @@ class WebSearchReactAgentContractTest {
         assertEquals("web answer", agent.call(AgentChatRequest.builder()
                         .conversationId("web-call").question("question").build())
                 .getFinalContext().getFinalAnswer());
+    }
+
+    @Test
+    void builderMustInheritSharedConfigurationInsteadOfRedeclaringIt() {
+        java.util.Set<String> declared = Arrays.stream(WebSearchReactAgent.Builder.class.getDeclaredFields())
+                .map(java.lang.reflect.Field::getName).collect(java.util.stream.Collectors.toSet());
+
+        assertFalse(declared.contains("chatModel"));
+        assertFalse(declared.contains("agentTaskManager"));
+        assertFalse(declared.contains("useChatMemory"));
+        assertFalse(declared.contains("maxMemoryMessages"));
+        assertFalse(declared.contains("enableRecommendations"));
+        assertFalse(declared.contains("hook"));
+    }
+
+    @Test
+    @SuppressWarnings({"rawtypes", "unchecked"})
+    void malformedWebArgumentsAndParserFailuresMustNotBreakExecution() {
+        ToolRegistry registry = mock(ToolRegistry.class);
+        ToolProvider provider = mock(ToolProvider.class);
+        ToolResultParser parser = mock(ToolResultParser.class);
+        when(registry.getToolMeta("search")).thenReturn(
+                new ToolMeta("search", "provider", ToolCategory.SEARCH));
+        when(registry.getToolProvider("search")).thenReturn(provider);
+        when(provider.getResultParser(ToolCategory.SEARCH)).thenReturn(parser);
+        when(parser.parse(any())).thenThrow(new IllegalArgumentException("invalid result"));
+        WebSearchReactAgent agent = new WebSearchReactAgent.Builder(
+                List.of(), mock(org.springframework.ai.chat.model.ChatModel.class),
+                mock(AgentTaskManager.class), registry).build();
+        WebSearchAgentRunContext context = new WebSearchAgentRunContext(
+                AgentChatRequest.builder().conversationId("web-errors").question("q").build(), "run");
+        AssistantMessage.ToolCall malformed = new AssistantMessage.ToolCall(
+                "id", "function", "search", "{not-json");
+
+        assertDoesNotThrow(() -> agent.beforeToolCall(context, malformed));
+        assertDoesNotThrow(() -> agent.afterToolCall(context, malformed, "not-a-result"));
+        assertTrue(context.getSearchResults().isEmpty());
+    }
+
+    @Test
+    void finalReferencesMustIncludeSearchAndExtractResultsWithoutChangingEventType() {
+        WebSearchReactAgent agent = new WebSearchReactAgent.Builder(
+                List.of(), mock(org.springframework.ai.chat.model.ChatModel.class),
+                mock(AgentTaskManager.class), mock(ToolRegistry.class)).build();
+        WebSearchAgentRunContext context = new WebSearchAgentRunContext(
+                AgentChatRequest.builder().conversationId("web-references").question("q").build(), "run");
+        context.getSearchResults().add(new WebSearchResult(
+                "https://search.example", "title", null, "summary"));
+        context.getExtractResults().add(new WebExtractResult(
+                "https://extract.example", "content"));
+
+        agent.emitAdditionalFinalResponses(context, "answer");
+
+        assertTrue(context.getReferences().contains("https://search.example"));
+        assertTrue(context.getReferences().contains("https://extract.example"));
     }
 }

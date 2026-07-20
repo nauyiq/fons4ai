@@ -2,7 +2,7 @@ package com.fons.cloud.ai.agent.standard.skill;
 
 import com.fons.cloud.ai.agent.chat.AgentChatRequest;
 import com.fons.cloud.ai.agent.constants.AgentType;
-import com.fons.cloud.ai.agent.standard.adaptor.AlibabaAgentRunContext;
+import com.fons.cloud.ai.agent.standard.adaptor.FrameAgentRunContext;
 import lombok.Getter;
 
 /**
@@ -10,7 +10,7 @@ import lombok.Getter;
  * 通用 Graph 流、代次、checkpoint 和中断状态由 AlibabaAgentRunContext 统一提供。
  */
 @Getter
-final class SkillsAgentRunContext extends AlibabaAgentRunContext {
+final class SkillsAgentRunContext extends FrameAgentRunContext {
     private final GuardedSkillRegistry skillRegistry;
     /** 本 Run 固定的资源视图；恢复重建 delegate 时必须复用，防止资源版本漂移。 */
     private final SkillResourceResolver resourceResolver;

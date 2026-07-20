@@ -1,0 +1,157 @@
+schema_version: "1.0"
+handoff_type: requirements-to-design
+status: ready
+source_stage: requirements
+target_stage: design
+next_skill: fons4ai-sdd-design
+
+feature:
+  name: Agent运行时审批
+  slug: agent-runtime-approval
+  date: "20260716"
+  sdd_level: S2
+  sdd_level_reason:
+    - 影响 Agent 公共执行契约和任务生命周期
+    - 引入持久化 checkpoint、跨重启及多实例恢复
+    - 涉及并发原子性、幂等、安全、审计和兼容性
+  requirements_path: spec/features/20260716/Agent运行时审批-需求说明书.md
+  document_status: 已确认
+
+clarification:
+  accepted_count: 5
+  blocking_open_count: 0
+  accepted_decisions:
+    - id: Q1
+      decision: 审批状态和完整执行 checkpoint 必须支持客户端断线、应用重启和多实例切换后的持久化恢复
+    - id: Q2
+      decision: 框架每个审批点维护单个审批请求，只接收下游完成鉴权和多审批人规则聚合后的最终决定
+    - id: Q3
+      decision: 拒绝后支持终止或携带意见恢复两种模式，下游按审批点配置，默认拒绝即终止；超时和取消不自动恢复
+    - id: Q4
+      decision: 首个合法最终决定原子生效，相同重复提交幂等，冲突决定拒绝并审计，同一 Run 最多恢复一次
+    - id: Q5
+      decision: 待审批数据不得清理；终态 checkpoint 与审计记录分别支持可配置保留和清理，审计可保留更久
+
+scope:
+  included:
+    - 通用暂停、审批、恢复、超时、取消和审计
+    - 当前五类 Agent 形态的可编排审批点
+    - 下游编排启用条件、触发阶段、审批规则、审批人和拒绝模式
+    - 审批状态及完整 checkpoint 持久化
+    - 跨客户端断线、应用重启和多实例恢复
+    - 原子决定、幂等重试、冲突审计和单次恢复
+    - checkpoint 与审计记录的独立保留和清理治理
+  excluded:
+    - SDD 或研发审批门禁
+    - 业务审批流及多审批人聚合
+    - 下游身份认证、权限体系和审批 UI
+    - 具体行业审批策略
+    - 唯一持久化产品或部署拓扑
+
+repository_context:
+  capability_domain: agent-orchestration
+  impacted_agent_types:
+    - BaseAgent
+    - ReactAgent
+    - WebSearchReactAgent
+    - PlanExecuteAgent
+    - SkillsReactAgent
+  verified_context:
+    - 当前流式任务并发、停止和中断由 Agent 任务协调能力管理
+    - 当前 Agent 执行参考链路依赖 Redis/Redisson 协调，但不得将其定义为长期唯一持久化标准
+    - Spring AI 是当前实现适配，不是长期唯一框架
+    - Plan-Execute 当前存在预留或待完善范围，设计时必须区分已实现与预留能力
+
+requirements:
+  - id: REQ-001
+    summary: 审批默认关闭并保持既有行为兼容
+    acceptance: [AC-001]
+  - id: REQ-002
+    summary: 当前五类 Agent 形态均支持由下游编排审批点
+    acceptance: [AC-002, AC-003]
+  - id: REQ-003
+    summary: 到达审批点后暂停并保存审批状态与完整 checkpoint
+    acceptance: [AC-004]
+  - id: REQ-004
+    summary: 支持断线、重启和多实例后的查询、决定与原 Run 恢复
+    acceptance: [AC-005, AC-006]
+  - id: REQ-005
+    summary: 仅接收下游聚合后的最终决定并记录完整决定审计
+    acceptance: [AC-007]
+  - id: REQ-006
+    summary: 批准恢复；拒绝按审批点配置终止或携带意见恢复，默认终止
+    acceptance: [AC-008, AC-009, AC-010]
+  - id: REQ-007
+    summary: 超时和取消进入明确终态且不自动恢复
+    acceptance: [AC-011]
+  - id: REQ-008
+    summary: 首个合法决定原子生效，重复幂等，冲突拒绝并审计，Run 最多恢复一次
+    acceptance: [AC-012, AC-013]
+  - id: REQ-009
+    summary: 审批全生命周期可查询和审计
+    acceptance: [AC-014]
+  - id: REQ-010
+    summary: 待审批数据禁止清理，终态 checkpoint 与审计分别配置治理策略
+    acceptance: [AC-015, AC-016]
+
+data_impact:
+  has_persistent_state: true
+  has_cross_instance_flow: true
+  may_contain_sensitive_context: true
+  key_data:
+    - Run 标识
+    - 审批请求标识
+    - 审批状态
+    - 完整执行 checkpoint
+    - 最终决定
+    - 规则快照
+    - 最终决定人
+    - 审批意见
+    - 生命周期时间
+    - checkpoint 保留与清理策略
+    - 审计记录保留与清理策略
+  confirmed_governance:
+    - 待审批数据在决定、超时或取消前不得清理
+    - 终态 checkpoint 与审计记录分别配置保留周期和清理策略
+    - 框架不硬编码固定保留时长
+    - 审计记录允许比 checkpoint 保留更久
+  ddl_impact: 由设计阶段根据持久化适配方案判定，不得在需求阶段假定
+
+design_focus:
+  - 跨框架的审批点与运行生命周期契约
+  - 审批请求、checkpoint 和审计的持久化边界及可替换适配
+  - 可验证的状态流转、终态和拒绝后恢复语义
+  - 多实例原子决定、幂等和单次恢复机制
+  - 断线、重启、恢复失败和重复恢复的异常处理
+  - 潜在敏感 checkpoint 与审批意见的权限、加密、脱敏、审计和清理
+  - 默认关闭下的向后兼容及五类 Agent 形态覆盖
+  - 超时触发与取消契约，但不得硬编码业务时长
+
+risks_and_open_items:
+  blocking: []
+  deferred_to_design:
+    - 具体公共接口、错误码和状态模型
+    - checkpoint 捕获与恢复协议
+    - 持久化介质、数据结构和资源拓扑
+    - 加密、脱敏和访问控制落地
+    - 性能基线和故障恢复验证方案
+    - Plan-Execute 已实现与预留链路的覆盖方式
+
+recommended_reuse:
+  workflows:
+    - fons4ai-sdd-design
+  rules:
+    - AGENTS.md
+    - .specify/rules/agent运行规则.md
+  knowledge:
+    - .specify/memory/index.md
+    - .specify/memory/项目技术能力架构文档.md
+    - .specify/memory/项目运行架构文档.md
+  knowledge_cards: []
+
+constraints:
+  - 需求阶段不得生成技术设计、任务规划或业务代码
+  - Agent 不得硬编码业务审批策略、审批人或多审批人聚合规则
+  - 不得把 Redis/Redisson 或 Spring AI 表述为长期唯一实现
+  - 审批默认关闭并保持现有行为兼容
+  - 设计阶段必须覆盖所有 REQ 与 AC，且不得改变已确认的决定语义

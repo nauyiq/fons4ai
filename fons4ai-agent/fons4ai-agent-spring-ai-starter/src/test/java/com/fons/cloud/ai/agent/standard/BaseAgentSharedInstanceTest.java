@@ -181,6 +181,55 @@ class BaseAgentSharedInstanceTest {
         assertEquals(streamingResult.getState(), blockingResult.getState());
     }
 
+    @Test
+    void cleanupFailuresMustNotBlockTerminalResultOrHookIsolation() {
+        AgentTaskManager manager = taskManager(true);
+        when(manager.completeTask(any())).thenThrow(new IllegalStateException("cleanup failed"));
+        AtomicInteger hookCalls = new AtomicInteger();
+        CleanupFailureAgent agent = new CleanupFailureAgent(manager, result -> {
+            hookCalls.incrementAndGet();
+            throw new AssertionError("hook failed");
+        });
+
+        AgentRunResult result = agent.call(request("cleanup-failure", "answer"));
+
+        assertEquals(AgentRunState.COMPLETED, result.getState());
+        assertEquals("answer", result.getFinalContext().getFinalAnswer());
+        assertEquals(1, hookCalls.get());
+        org.mockito.Mockito.verify(manager, org.mockito.Mockito.times(1)).completeTask(any());
+    }
+
+    @Test
+    void approvalPauseMustCompleteSegmentWhenTaskCleanupFails() {
+        AgentTaskManager manager = taskManager(true);
+        when(manager.completeTask(any())).thenThrow(new IllegalStateException("cleanup failed"));
+        ApprovalPauseAgent agent = new ApprovalPauseAgent(manager);
+
+        AgentRunResult result = agent.start(request("approval-cleanup", "question"))
+                .completion().block(java.time.Duration.ofSeconds(1));
+
+        assertEquals(AgentRunState.WAITING_APPROVAL, result.getState());
+        assertEquals("checkpoint-1", result.getPendingApprovalId());
+    }
+
+    @Test
+    void concurrentEventsMustBeSerializedWithoutSilentLoss() throws Exception {
+        AgentRunContext context = new AgentRunContext(
+                AgentType.REACT, request("event-concurrency", "question"), "run");
+        assertTrue(context.tryStart());
+        CompletableFuture<java.util.List<String>> collected = context.events().collectList().toFuture();
+        java.util.List<CompletableFuture<Void>> emitters = java.util.stream.IntStream.range(0, 8)
+                .mapToObj(worker -> CompletableFuture.runAsync(() ->
+                        java.util.stream.IntStream.range(0, 100)
+                                .forEach(index -> assertTrue(context.emitRaw(worker + ":" + index)))))
+                .toList();
+        CompletableFuture.allOf(emitters.toArray(CompletableFuture[]::new)).get(2, TimeUnit.SECONDS);
+        assertTrue(context.completeEvents());
+
+        assertEquals(800, collected.get(2, TimeUnit.SECONDS).size());
+        assertFalse(context.emitRaw("late"));
+    }
+
     private AgentTaskManager taskManager(boolean accept) {
         AgentTaskManager manager = mock(AgentTaskManager.class);
         if (accept) {
@@ -281,6 +330,38 @@ class BaseAgentSharedInstanceTest {
                         }
                     })).toList();
             return Disposables.composite(tasks);
+        }
+    }
+
+    private static final class CleanupFailureAgent extends BaseAgent {
+        private CleanupFailureAgent(AgentTaskManager manager, AgentChatHook hook) {
+            super(AgentType.REACT, mock(ChatModel.class), manager);
+            this.hook = hook;
+            this.enableRecommendations = false;
+        }
+
+        @Override
+        protected Disposable streamExecute(AgentRunContext context) {
+            emit(context, context.getQuestion(), AgentMessageType.TEXT);
+            completeRun(context);
+            return null;
+        }
+
+        @Override
+        protected void onRunTerminated(AgentRunContext context, AgentRunState state) {
+            throw new AssertionError("provider cleanup failed");
+        }
+    }
+
+    private static final class ApprovalPauseAgent extends BaseAgent {
+        private ApprovalPauseAgent(AgentTaskManager manager) {
+            super(AgentType.REACT, mock(ChatModel.class), manager);
+        }
+
+        @Override
+        protected Disposable streamExecute(AgentRunContext context) {
+            pauseForNativeApproval(context, "checkpoint-1", Map.of("checkpointId", "checkpoint-1"));
+            return null;
         }
     }
 }

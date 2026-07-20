@@ -9,11 +9,13 @@ import com.fons.cloud.ai.agent.constants.AgentMessageType;
 import com.fons.cloud.ai.agent.constants.AgentType;
 import com.fons.cloud.ai.agent.core.AgentTaskHandle;
 import lombok.Getter;
+import org.springframework.ai.chat.messages.Message;
 import reactor.core.Disposable;
 import reactor.core.publisher.Flux;
 import reactor.core.publisher.Mono;
 import reactor.core.publisher.Sinks;
 
+import java.util.List;
 import java.util.Set;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.atomic.AtomicBoolean;
@@ -25,6 +27,7 @@ import java.util.concurrent.atomic.AtomicReference;
  *
  * <p>该对象不被不同请求共享；所有事件、计时、工具、最终上下文、底层订阅和终态
  * 都集中在此维护。</p>
+ * @author hongqy
  */
 @Getter
 public class AgentRunContext {
@@ -45,11 +48,13 @@ public class AgentRunContext {
      * 尚未写入 TaskManager 的短暂窗口，避免取消请求因查不到任务而丢失。</p>
      */
     private final AtomicBoolean cancellationRequested = new AtomicBoolean();
-    private final AtomicLong firstResponseTime = new AtomicLong();
+    private final AtomicLong firstResponseTime = new AtomicLong(-1);
     private final Set<String> usedTools = ConcurrentHashMap.newKeySet();
     private final StringBuffer finalAnswer = new StringBuffer();
     private final StringBuffer thinking = new StringBuffer();
-    private final long startedAt = System.currentTimeMillis();
+    private final AtomicLong startedAt = new AtomicLong();
+    /** 单个 Run 的事件发送串行化边界，避免并行工具回调触发 FAIL_NON_SERIALIZED。 */
+    private final Object eventEmissionMonitor = new Object();
     private final RunCancellation cancellation = new RunCancellation();
     private final String messageId;
     private volatile String recommendations;
@@ -57,8 +62,12 @@ public class AgentRunContext {
     private volatile String skills;
     /** WAITING_APPROVAL 时关联的审批请求；不得跨 Run 共享。 */
     private volatile String pendingApprovalId;
-    /** checkpoint 恢复分段不应再次把同一个用户问题写入 ChatMemory。 */
+    /** 当前 Run 是否为 checkpoint 恢复分段。 */
     private volatile boolean resumeSegment;
+    /** 当前 Run 提交给模型的消息快照；执行期间可见，但尚未写入共享 ChatMemory。 */
+    private volatile List<Message> chatInputMessages;
+    /** 仅在 Run 成功完成后追加到共享 ChatMemory 的消息增量。 */
+    private volatile List<Message> pendingChatMemoryMessages = List.of();
 
     public AgentRunContext(AgentType agentType, AgentChatRequest request, String runId) {
         this.agentType = agentType;
@@ -88,7 +97,11 @@ public class AgentRunContext {
     }
 
     public boolean tryStart() {
-        return state.compareAndSet(AgentRunState.CREATED, AgentRunState.RUNNING);
+        if (!state.compareAndSet(AgentRunState.CREATED, AgentRunState.RUNNING)) {
+            return false;
+        }
+        startedAt.compareAndSet(0, System.currentTimeMillis());
+        return true;
     }
 
     /** 在执行发布给调用方前设置本次 Run 的防御性编排参数快照。 */
@@ -107,6 +120,14 @@ public class AgentRunContext {
 
     public boolean isResumeSegment() {
         return resumeSegment;
+    }
+
+    /**
+     * 固化本次执行使用的消息和成功后待提交的增量，避免失败或拒绝的 Run 污染长期记忆。
+     */
+    public void stageChatMemory(List<Message> inputMessages, List<Message> pendingMessages) {
+        this.chatInputMessages = List.copyOf(inputMessages);
+        this.pendingChatMemoryMessages = List.copyOf(pendingMessages);
     }
 
     /** 原生 Graph 已保存可恢复 checkpoint 后，才允许从 RUNNING 进入审批等待。 */
@@ -155,16 +176,30 @@ public class AgentRunContext {
         return completionSink.asMono();
     }
 
-    public void emitRaw(String event) {
-        eventSink.tryEmitNext(event);
+    public boolean emitRaw(String event) {
+        synchronized (eventEmissionMonitor) {
+            Sinks.EmitResult result = eventSink.tryEmitNext(event);
+            if (result == Sinks.EmitResult.OK) {
+                return true;
+            }
+            if (result == Sinks.EmitResult.FAIL_TERMINATED
+                    || result == Sinks.EmitResult.FAIL_CANCELLED) {
+                return false;
+            }
+            throw new IllegalStateException("failed to emit Agent event: " + result);
+        }
     }
 
-    public void completeEvents() {
-        eventSink.tryEmitComplete();
+    public boolean completeEvents() {
+        synchronized (eventEmissionMonitor) {
+            return terminalEmission(eventSink.tryEmitComplete());
+        }
     }
 
-    public void failEvents(Throwable error) {
-        eventSink.tryEmitError(error);
+    public boolean failEvents(Throwable error) {
+        synchronized (eventEmissionMonitor) {
+            return terminalEmission(eventSink.tryEmitError(error));
+        }
     }
 
     public void completeResult(AgentRunResult result) {
@@ -182,7 +217,9 @@ public class AgentRunContext {
     }
 
     public void recordResponse(AgentMessageType type, String content) {
-        firstResponseTime.compareAndSet(0, System.currentTimeMillis());
+        long start = startedAt.get();
+        long elapsed = start == 0 ? 0 : Math.max(0, System.currentTimeMillis() - start);
+        firstResponseTime.compareAndSet(-1, elapsed);
         if (type == AgentMessageType.TEXT) {
             finalAnswer.append(content);
         } else if (type == AgentMessageType.THINKING) {
@@ -234,7 +271,8 @@ public class AgentRunContext {
     }
 
     public long totalResponseTime() {
-        return Math.max(0, System.currentTimeMillis() - startedAt);
+        long start = startedAt.get();
+        return start == 0 ? 0 : Math.max(0, System.currentTimeMillis() - start);
     }
 
     public String usedToolsText() {
@@ -249,7 +287,7 @@ public class AgentRunContext {
                 .tools(usedToolsText())
                 .skills(skills)
                 .references(references)
-                .firstResponseTime(firstResponseTime.get())
+                .firstResponseTime(Math.max(0, firstResponseTime.get()))
                 .totalResponseTime(totalResponseTime())
                 .build();
     }
@@ -328,11 +366,17 @@ public class AgentRunContext {
         }
 
         void markTerminated() {
-            disposed.set(true);
-            current.set(null);
+            if (!disposed.compareAndSet(false, true)) {
+                return;
+            }
+            disposeTrackedResources();
         }
 
         void pauseCurrent() {
+            disposeTrackedResources();
+        }
+
+        private void disposeTrackedResources() {
             Disposable nativeDisposable = current.getAndSet(null);
             if (nativeDisposable != null && !nativeDisposable.isDisposed()) {
                 nativeDisposable.dispose();
@@ -371,5 +415,16 @@ public class AgentRunContext {
         public boolean isDisposed() {
             return disposed.get();
         }
+    }
+
+    private boolean terminalEmission(Sinks.EmitResult result) {
+        if (result == Sinks.EmitResult.OK) {
+            return true;
+        }
+        if (result == Sinks.EmitResult.FAIL_TERMINATED
+                || result == Sinks.EmitResult.FAIL_CANCELLED) {
+            return false;
+        }
+        throw new IllegalStateException("failed to terminate Agent events: " + result);
     }
 }

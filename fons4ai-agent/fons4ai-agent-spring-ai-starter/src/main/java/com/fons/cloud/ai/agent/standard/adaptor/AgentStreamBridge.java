@@ -24,10 +24,10 @@ import java.util.Objects;
  * <p>统一流程：Graph 输出 → 识别模型/工具/中断事件 → 维护请求级流缓存 → 回调外层；
  * Graph complete/error → 原子收口。流式与非流式模型共用同一条路径。</p>
  */
-public final class AlibabaAgentStreamBridge<C extends AlibabaAgentRunContext> {
+public final class AgentStreamBridge<C extends FrameAgentRunContext> {
 
     /** 由 BaseAgent 子类提供的最小生命周期回调。 */
-    public interface Listener<C extends AlibabaAgentRunContext> {
+    public interface Listener<C extends FrameAgentRunContext> {
         void onText(C context, String text);
 
         void onThinking(C context, String reasoning);
@@ -45,7 +45,7 @@ public final class AlibabaAgentStreamBridge<C extends AlibabaAgentRunContext> {
 
     private final Listener<C> listener;
 
-    public AlibabaAgentStreamBridge(Listener<C> listener) {
+    public AgentStreamBridge(Listener<C> listener) {
         this.listener = Objects.requireNonNull(listener, "listener cannot be null");
     }
 
@@ -54,12 +54,10 @@ public final class AlibabaAgentStreamBridge<C extends AlibabaAgentRunContext> {
         Objects.requireNonNull(context, "context cannot be null");
         Objects.requireNonNull(outputs, "outputs cannot be null");
         long generation = context.nextNativeGeneration();
-        Disposable disposable = outputs.subscribe(
+        return outputs.subscribe(
                 output -> handleOutput(context, generation, output),
                 error -> handleError(context, generation, error),
                 () -> handleComplete(context, generation));
-        context.bindNativeDisposableIfCurrent(generation, disposable);
-        return disposable;
     }
 
     private void handleOutput(C context, long generation, NodeOutput output) {

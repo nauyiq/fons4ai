@@ -6,6 +6,8 @@ import org.springframework.ai.chat.prompt.SystemPromptTemplate;
 
 import java.io.IOException;
 import java.nio.charset.StandardCharsets;
+import java.security.MessageDigest;
+import java.security.NoSuchAlgorithmException;
 import java.util.LinkedHashMap;
 import java.util.HashSet;
 import java.util.List;
@@ -146,6 +148,26 @@ final class SkillCatalogSnapshot implements SkillRegistry {
     @Override
     public SystemPromptTemplate getSystemPromptTemplate() {
         return promptTemplate;
+    }
+
+    /** 返回不暴露目录内容的稳定指纹，用于审批恢复时拒绝目录版本漂移。 */
+    String fingerprint() {
+        try {
+            MessageDigest digest = MessageDigest.getInstance("SHA-256");
+            metadata.values().stream().sorted(java.util.Comparator.comparing(SkillMetadata::getName))
+                    .forEach(item -> updateDigest(digest, item));
+            return java.util.HexFormat.of().formatHex(digest.digest());
+        } catch (NoSuchAlgorithmException impossible) {
+            throw new IllegalStateException("SHA-256 is unavailable", impossible);
+        }
+    }
+
+    private void updateDigest(MessageDigest digest, SkillMetadata item) {
+        String canonical = Objects.toString(item.getName(), "") + '\u0000'
+                + Objects.toString(item.getDescription(), "") + '\u0000'
+                + Objects.toString(item.getSkillPath(), "") + '\u0000'
+                + Objects.toString(item.getSource(), "") + '\n';
+        digest.update(canonical.getBytes(StandardCharsets.UTF_8));
     }
 
     private static SkillMetadata copy(SkillMetadata item) {

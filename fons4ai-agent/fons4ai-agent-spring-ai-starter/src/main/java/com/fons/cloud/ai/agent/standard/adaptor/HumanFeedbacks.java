@@ -10,9 +10,12 @@ import org.springframework.ai.chat.messages.AssistantMessage;
 import java.util.List;
 import java.util.Map;
 
-/** Alibaba HITL 元数据转换工具；不保存审批状态或 checkpoint。 */
-public final class AlibabaHumanFeedbacks {
-    private AlibabaHumanFeedbacks() {
+/**
+ * Alibaba HITL 元数据转换工具；不保存审批状态或 checkpoint。
+ * @author hongqy
+ */
+public final class HumanFeedbacks {
+    private HumanFeedbacks() {
     }
 
     /** 从 Saver 的 checkpoint 重建 HumanInTheLoopHook 校验决定所需的工具信息。 */

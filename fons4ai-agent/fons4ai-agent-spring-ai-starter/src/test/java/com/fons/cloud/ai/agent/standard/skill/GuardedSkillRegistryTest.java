@@ -83,6 +83,42 @@ class GuardedSkillRegistryTest {
         assertFalse(registry.isActivated("utf8-skill"));
     }
 
+    @Test
+    void resumeMustRestoreOnlyOriginallyActivatedSkills() throws IOException {
+        InMemorySkillRegistry source = new InMemorySkillRegistry();
+        source.add("original-skill", "original", "C:/skills/original", "content");
+        SkillCatalogSnapshot catalog = SkillCatalogSnapshot.capture(source, false, 50, 1024);
+        GuardedSkillRegistry first = new GuardedSkillRegistry(catalog, 50, 1024, Set.of());
+        first.readSkillContent("original-skill");
+        SkillPermissionSnapshot permissions = first.permissionSnapshot();
+
+        GuardedSkillRegistry resumed = new GuardedSkillRegistry(catalog, 50, 1024, Set.of());
+        resumed.restorePermissions(permissions);
+
+        assertEquals(Set.of("original-skill"), resumed.activatedSkills());
+    }
+
+    @Test
+    void resumeMustRejectCatalogReloadInsteadOfGrantingNewPermissions() throws IOException {
+        InMemorySkillRegistry source = new InMemorySkillRegistry();
+        source.add("original-skill", "original", "C:/skills/original", "content");
+        GuardedSkillRegistry first = new GuardedSkillRegistry(
+                SkillCatalogSnapshot.capture(source, false, 50, 1024),
+                50, 1024, Set.of());
+        first.readSkillContent("original-skill");
+        SkillPermissionSnapshot permissions = first.permissionSnapshot();
+
+        source.add("new-skill", "new", "C:/skills/new", "new content");
+        GuardedSkillRegistry reloaded = new GuardedSkillRegistry(
+                SkillCatalogSnapshot.capture(source, true, 50, 1024),
+                50, 1024, Set.of());
+
+        assertThrows(IllegalStateException.class,
+                () -> reloaded.restorePermissions(permissions));
+        assertTrue(reloaded.activatedSkills().isEmpty());
+        assertTrue(reloaded.contains("new-skill"), "只有新 Run 可以看到 reload 后的目录");
+    }
+
     static final class InMemorySkillRegistry implements SkillRegistrySnapshotProvider {
         private final Map<String, SkillMetadata> skills = new LinkedHashMap<>();
         private final Map<String, String> contents = new LinkedHashMap<>();

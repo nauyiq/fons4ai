@@ -7,7 +7,7 @@ import com.fons.cloud.ai.agent.chat.AgentChatRequest;
 import com.fons.cloud.ai.agent.constants.AgentType;
 import com.fons.cloud.ai.agent.standard.deepresearch.model.DeepResearchExecuteContext;
 import com.fons.cloud.ai.agent.standard.runtime.AgentRunContext;
-import com.fons.cloud.ai.agent.standard.adaptor.AlibabaAgentResumeRequest;
+import com.fons.cloud.ai.agent.standard.adaptor.AgentResumeRequest;
 import lombok.Getter;
 import lombok.Setter;
 
@@ -46,7 +46,7 @@ public final class PlanExecuteRunContext extends AgentRunContext {
     private final AtomicLong graphGeneration = new AtomicLong();
 
     /** 非空表示当前分段从外部审批决定恢复，而不是一次新的 Plan 执行。 */
-    private volatile AlibabaAgentResumeRequest resumeRequest;
+    private volatile AgentResumeRequest resumeRequest;
 
     public PlanExecuteRunContext(AgentType agentType, AgentChatRequest request, String runId) {
         super(agentType, request, runId);

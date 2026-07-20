@@ -1,0 +1,118 @@
+schema_version: "1.0"
+handoff_type: design-to-tasks
+status: ready
+source_stage: design
+target_stage: tasks
+next_skill: fons4ai-sdd-tasks
+
+feature:
+  name: Agent运行时审批
+  slug: agent-runtime-approval
+  date: "20260716"
+  sdd_level: S2
+  requirements_path: spec/features/20260716/Agent运行时审批-需求说明书.md
+  design_path: spec/features/20260716/Agent运行时审批-技术设计说明书.md
+  document_status: 已完成
+
+confirmed_decisions:
+  - 公共审批契约保持供应商无关，Alibaba HITL 仅为当前适配
+  - 审批默认关闭，现有 API 和无审批运行语义保持兼容
+  - WAITING_APPROVAL 为非终态，持久化成功后才公开审批请求
+  - 下游通过 ApprovalProfile/Policy 编排审批点，框架不内置业务规则或多人聚合
+  - 首个合法决定 CAS 生效，相同重试幂等，冲突拒绝并审计
+  - 恢复采用 fencing 与 at-most-once 安全语义，不承诺外部副作用 exactly-once
+  - 拒绝支持 TERMINATE 和 RESUME_WITH_FEEDBACK，默认 TERMINATE
+  - 超时和取消进入明确终态，不自动恢复
+  - 事件以 runId/sequence 持久化并支持重连，不依赖原本本地 sink
+  - PENDING 数据禁止清理，终态 checkpoint 与 audit 独立治理
+  - Redisson 和 Spring AI Alibaba 都不是长期唯一实现
+
+affected_modules:
+  - fons4ai-agent/fons4ai-agent-common
+  - fons4ai-agent/fons4ai-agent-spring-ai-starter
+
+public_contracts:
+  - AgentApprovalPoint
+  - AgentRunOptions
+  - AgentApprovalContext
+  - ApprovalRequirement
+  - AgentApprovalRequest
+  - AgentApprovalDecision
+  - AgentApprovalResult
+  - AgentApprovalPolicy
+  - AgentApprovalService
+  - AgentRunQueryService
+  - AgentRunState.WAITING_APPROVAL
+  - AgentRunState.APPROVAL_REJECTED
+  - AgentRunState.TIMED_OUT
+  - approval_required/approval_resolved/run_paused/run_resumed events
+
+infrastructure_spis:
+  - ApprovalStore
+  - AgentCheckpointStore
+  - AgentEventStore
+  - AgentAuditStore
+  - ApprovalRetentionPolicy
+  - AgentRecoveryAdapter
+  - AgentRecoveryAdapterRegistry
+
+agent_points:
+  BaseAgent: [agent.before-run, agent.before-finalize]
+  ReactAgent: [react.after-model, react.before-tool]
+  WebSearchReactAgent: [web-search.before-search, web-search.before-fetch]
+  PlanExecuteAgent: [plan.after-plan, plan.before-task, plan.after-task, plan.before-report]
+  SkillsReactAgent: [skills.before-activation, skills.before-resource, skills.before-tool]
+
+data_impact:
+  database_ddl: false
+  sql_snapshot: none
+  logical_structures:
+    - ApprovalRecord
+    - RunApprovalIndex
+    - CheckpointEnvelope
+    - EventLog
+    - AuditLog
+    - TimeoutIndex
+  current_default_adapter: Redisson
+  adapter_is_long_term_standard: false
+  retention:
+    pending_cleanup_forbidden: true
+    terminal_checkpoint_configurable: true
+    terminal_audit_configurable: true
+
+verification_focus:
+  - 默认关闭零持久化 IO 与现有完整回归
+  - 五类 Agent 审批点实际执行
+  - 审批创建与 checkpoint 原子公开
+  - 断线、重启对象丢失和跨实例恢复
+  - 最终决定 CAS、幂等、冲突审计和单恢复 fence
+  - 拒绝两模式、超时、取消和终态竞争
+  - 事件游标补发和重复 sequence 去重
+  - Plan WAITING 不释放 checkpoint
+  - Skills 恢复保持技能快照和权限
+  - 敏感数据、digest 篡改、限额、加密和日志扫描
+  - checkpoint/audit 独立清理
+
+acceptance_coverage:
+  covered: [AC-001, AC-002, AC-003, AC-004, AC-005, AC-006, AC-007, AC-008, AC-009, AC-010, AC-011, AC-012, AC-013, AC-014, AC-015, AC-016]
+  missing: []
+
+risks:
+  - 暂停被误当终态释放 checkpoint
+  - 恢复所有者崩溃导致无法安全自动重放
+  - checkpoint 过大或包含敏感数据
+  - 事件落盘与实时推送不一致
+  - 供应商 checkpoint 格式升级不兼容
+  - PENDING 数据长期占用资源
+
+knowledge_impact:
+  needed: true
+  capability: agent-orchestration
+  note: 实现验证后由 fons4ai-knowledge-summary 更新，不加入实现任务
+
+constraints:
+  - 任务规划必须保持实现确认 pending
+  - 不得创建业务审批 UI、鉴权或多人聚合任务
+  - 不得把 Redis 或 Spring AI Alibaba 作为唯一标准
+  - 不生成或执行数据库 DDL/DML
+  - S2 必须包含独立 Spec Review、Code Review、风险清单和人工 Gate

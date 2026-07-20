@@ -186,6 +186,28 @@ final class GuardedSkillRegistry implements SkillRegistry {
         return activatedSkills.stream().sorted().collect(java.util.stream.Collectors.toUnmodifiableSet());
     }
 
+    SkillPermissionSnapshot permissionSnapshot() {
+        if (!(delegate instanceof SkillCatalogSnapshot snapshot)) {
+            throw new IllegalStateException("Skills permission snapshot requires a fixed catalog");
+        }
+        return new SkillPermissionSnapshot(snapshot.fingerprint(), activatedSkills());
+    }
+
+    void restorePermissions(SkillPermissionSnapshot permissions) {
+        SkillPermissionSnapshot current = permissionSnapshot();
+        if (!current.catalogFingerprint().equals(permissions.catalogFingerprint())) {
+            throw new IllegalStateException("Skills catalog changed while approval was pending");
+        }
+        for (String skillName : permissions.activatedSkills()) {
+            validateName(skillName);
+            if (!delegate.contains(skillName)) {
+                throw new IllegalStateException("Activated skill is unavailable: " + skillName);
+            }
+        }
+        activatedSkills.clear();
+        activatedSkills.addAll(permissions.activatedSkills());
+    }
+
     private void validateSnapshot() {
         // listAll 已完成全量元数据校验和去重，这里只需校验技能工具绑定的引用完整性。
         Set<String> availableNames = listAll().stream()

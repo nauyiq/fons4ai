@@ -25,7 +25,7 @@ public class AiChatMessage implements Serializable {
     private String messageId;
     private String conversationId;
     private String content;
-    private AiMessageRole messageType;
+    private AiMessageType messageType;
     private Date created;
 
     /** @return 与调用方对象隔离的消息副本 */
