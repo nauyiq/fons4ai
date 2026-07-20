@@ -130,6 +130,11 @@ public class AgentResponse implements Serializable {
                 .build();
     }
 
+    /** 创建审批或 Run 生命周期事件响应，data 只能包含已脱敏的协议字段。 */
+    public static AgentResponse event(AgentMessageType type, String content, Object data) {
+        return new Builder().type(type).content(content).data(data).build();
+    }
+
 
     public static class Builder {
         private AgentMessageType type;

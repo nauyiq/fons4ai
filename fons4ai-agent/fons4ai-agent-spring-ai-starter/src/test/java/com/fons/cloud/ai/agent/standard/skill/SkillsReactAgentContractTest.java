@@ -140,6 +140,26 @@ class SkillsReactAgentContractTest {
                 .map(com.alibaba.cloud.ai.graph.skills.SkillMetadata::getName).toList());
     }
 
+    @Test
+    void oldRunMustReadItsCapturedContentVersionAfterReload() throws IOException {
+        GuardedSkillRegistryTest.InMemorySkillRegistry source = registryWith("demo-skill");
+        SkillsReactAgent agent = SkillsReactAgent.builder(
+                        mock(ChatModel.class), mock(AgentTaskManager.class), source,
+                        mock(SkillResourceResolver.class))
+                .enableRecommendations(false)
+                .autoReload(true)
+                .build();
+        AgentChatRequest request = AgentChatRequest.builder()
+                .conversationId("conversation").question("question").build();
+
+        SkillsAgentRunContext first = (SkillsAgentRunContext) agent.createRunContext(request, "run-1");
+        source.add("demo-skill", "description", "C:/skills/demo-skill", "changed instructions");
+        SkillsAgentRunContext second = (SkillsAgentRunContext) agent.createRunContext(request, "run-2");
+
+        assertEquals("instructions", first.getSkillRegistry().readSkillContent("demo-skill"));
+        assertEquals("changed instructions", second.getSkillRegistry().readSkillContent("demo-skill"));
+    }
+
     private GuardedSkillRegistryTest.InMemorySkillRegistry registryWith(String skillName) {
         GuardedSkillRegistryTest.InMemorySkillRegistry registry =
                 new GuardedSkillRegistryTest.InMemorySkillRegistry();

@@ -1,5 +1,6 @@
 package com.fons.cloud.ai.agent.standard.runtime;
 
+import com.fons.cloud.ai.agent.api.AgentRunOptions;
 import com.fons.cloud.ai.agent.api.AgentRunResult;
 import com.fons.cloud.ai.agent.api.AgentRunState;
 import com.fons.cloud.ai.agent.chat.AgentChatFinalContext;
@@ -31,8 +32,11 @@ public class AgentRunContext {
     private final AgentChatRequest request;
     private final AgentTaskHandle taskHandle;
     private final Sinks.Many<String> eventSink = Sinks.many().unicast().onBackpressureBuffer();
+    /** 当前连接分段的结果：普通分段返回终态，审批分段返回 WAITING_APPROVAL。 */
     private final Sinks.One<AgentRunResult> completionSink = Sinks.one();
     private final AtomicReference<AgentRunState> state = new AtomicReference<>(AgentRunState.CREATED);
+    /** 每个 Run 独立的编排参数快照，创建后只能初始化一次。 */
+    private final AtomicReference<AgentRunOptions> runOptions = new AtomicReference<>(AgentRunOptions.defaults());
     private final AtomicBoolean finalized = new AtomicBoolean();
     /**
      * 记录用户已经发出的取消意图。
@@ -47,13 +51,19 @@ public class AgentRunContext {
     private final StringBuffer thinking = new StringBuffer();
     private final long startedAt = System.currentTimeMillis();
     private final RunCancellation cancellation = new RunCancellation();
+    private final String messageId;
     private volatile String recommendations;
     private volatile String references;
     private volatile String skills;
+    /** WAITING_APPROVAL 时关联的审批请求；不得跨 Run 共享。 */
+    private volatile String pendingApprovalId;
+    /** checkpoint 恢复分段不应再次把同一个用户问题写入 ChatMemory。 */
+    private volatile boolean resumeSegment;
 
     public AgentRunContext(AgentType agentType, AgentChatRequest request, String runId) {
         this.agentType = agentType;
         this.request = request;
+        this.messageId = request.getMessageId();
         this.taskHandle = new AgentTaskHandle(request.getConversationId(), runId);
     }
 
@@ -81,11 +91,48 @@ public class AgentRunContext {
         return state.compareAndSet(AgentRunState.CREATED, AgentRunState.RUNNING);
     }
 
+    /** 在执行发布给调用方前设置本次 Run 的防御性编排参数快照。 */
+    public void initializeRunOptions(AgentRunOptions options) {
+        runOptions.set(options == null ? AgentRunOptions.defaults() : options);
+    }
+
+    /** @return 本次 Run 的只读编排参数 */
+    public AgentRunOptions runOptions() {
+        return runOptions.get();
+    }
+
+    public void markResumeSegment() {
+        resumeSegment = true;
+    }
+
+    public boolean isResumeSegment() {
+        return resumeSegment;
+    }
+
+    /** 原生 Graph 已保存可恢复 checkpoint 后，才允许从 RUNNING 进入审批等待。 */
+    public boolean tryPauseForApproval(String approvalId) {
+        if (approvalId == null || approvalId.isBlank()
+                || !state.compareAndSet(AgentRunState.RUNNING, AgentRunState.WAITING_APPROVAL)) {
+            return false;
+        }
+        pendingApprovalId = approvalId;
+        return true;
+    }
+
     public boolean tryFinalize(AgentRunState terminalState) {
+        AgentRunState current = state.get();
+        // 等待审批时，原生订阅被主动释放产生的 complete/error 回调不能抢占审批状态。
+        if (current == AgentRunState.WAITING_APPROVAL
+                && terminalState != AgentRunState.CANCELLED
+                && terminalState != AgentRunState.TIMED_OUT
+                && terminalState != AgentRunState.APPROVAL_REJECTED) {
+            return false;
+        }
         if (!terminalState.isTerminal() || !finalized.compareAndSet(false, true)) {
             return false;
         }
         state.set(terminalState);
+        pendingApprovalId = null;
         cancellation.markTerminated();
         return true;
     }
@@ -122,6 +169,16 @@ public class AgentRunContext {
 
     public void completeResult(AgentRunResult result) {
         completionSink.tryEmitValue(result);
+    }
+
+    /** 完成当前分段的真实终态。 */
+    public void completeTerminalResult(AgentRunResult result) {
+        completionSink.tryEmitValue(result);
+    }
+
+    /** 暂停只释放当前进程的原生执行，不触发用户取消语义。 */
+    public void pauseNativeExecution() {
+        cancellation.pauseCurrent();
     }
 
     public void recordResponse(AgentMessageType type, String content) {
@@ -172,6 +229,10 @@ public class AgentRunContext {
         this.skills = skills;
     }
 
+    public String getMessageId() {
+        return messageId;
+    }
+
     public long totalResponseTime() {
         return Math.max(0, System.currentTimeMillis() - startedAt);
     }
@@ -202,7 +263,19 @@ public class AgentRunContext {
     }
 
     public void bindNativeDisposable(Disposable disposable) {
+        if (disposable == null) {
+            return;
+        }
+        // 同步工具/Hook 可能在 subscribe() 返回 Disposable 之前触发审批暂停。
+        // 此处同时检查绑定前后状态，封闭“先暂停、后重新绑定原生订阅”的竞态窗口。
+        if (currentState() == AgentRunState.WAITING_APPROVAL) {
+            disposable.dispose();
+            return;
+        }
         cancellation.replace(disposable);
+        if (currentState() == AgentRunState.WAITING_APPROVAL) {
+            cancellation.pauseCurrent();
+        }
     }
 
     /**
@@ -257,6 +330,19 @@ public class AgentRunContext {
         void markTerminated() {
             disposed.set(true);
             current.set(null);
+        }
+
+        void pauseCurrent() {
+            Disposable nativeDisposable = current.getAndSet(null);
+            if (nativeDisposable != null && !nativeDisposable.isDisposed()) {
+                nativeDisposable.dispose();
+            }
+            for (Disposable companion : companions) {
+                if (!companion.isDisposed()) {
+                    companion.dispose();
+                }
+            }
+            companions.clear();
         }
 
         @Override

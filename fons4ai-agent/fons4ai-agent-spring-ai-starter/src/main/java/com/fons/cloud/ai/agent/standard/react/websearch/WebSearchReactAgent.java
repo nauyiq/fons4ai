@@ -24,15 +24,21 @@ import org.springframework.ai.chat.messages.AssistantMessage;
 import org.springframework.ai.chat.model.ChatModel;
 import org.springframework.ai.tool.ToolCallback;
 
-import java.util.ArrayList;
 import java.util.List;
 
 /**
- * 基于网络搜索的ReactAgent
+ * 在通用 {@link ReactAgent} 上聚合搜索/抓取结果的 Web Agent。
+ *
+ * <p>问题 → 模型选择搜索或抓取工具 → 复用 {@code react.before-tool} 可选 HITL → 工具执行 →
+ * 结果解析与引用聚合 → 下一轮模型 → 最终回答。Web 层只增加进度提示和引用解析，不定义专属审批点、
+ * 恢复协议或 checkpoint；下游只需启用原生工具审批并处理 checkpoint 恢复。搜索和提取结果保存在每个
+ * {@link WebSearchAgentRunContext}，共享 Agent 不保存请求数据。</p>
+ *
  * @author hongqy
  */
 @Slf4j
 public class WebSearchReactAgent extends ReactAgent {
+    /** 共享工具元数据注册表；每次调用结果仍写入当前 WebSearchAgentRunContext。 */
     private final ToolRegistry toolsRegistry;
 
     protected WebSearchReactAgent(List<ToolCallback> tools, ChatModel chatModel, AgentTaskManager agentTaskManager, ToolRegistry toolsRegistry) {
@@ -41,10 +47,9 @@ public class WebSearchReactAgent extends ReactAgent {
     }
 
     /**
-     * 新增工具输出, websearch工具调用之前可以输出一些提示语
-     * @param sink
-     * @param toolCall
-     * @param context
+     * Web 工具调用前输出脱敏进度提示，不改变 React 的统一审批边界。
+     * @param context 当前 Run 上下文
+     * @param toolCall 即将执行的工具调用
      */
     @Override
     protected void beforeToolCall(ReactAgentRunContext context, AssistantMessage.ToolCall toolCall) {
@@ -67,10 +72,10 @@ public class WebSearchReactAgent extends ReactAgent {
     }
 
     /**
-     * 工具调用之后 进行逻辑增强
-     * @param toolCall
-     * @param result
-     * @param context
+     * 工具成功后解析搜索/抓取结果，并写入当前 Run 的引用集合。
+     * @param context 当前 Run 上下文
+     * @param toolCall 已执行的工具调用
+     * @param result 工具原始返回值
      */
     @Override
     protected void afterToolCall(ReactAgentRunContext context,
@@ -103,10 +108,9 @@ public class WebSearchReactAgent extends ReactAgent {
     }
 
     /**
-     * 发送额外的消息， 输出网络搜索的结果
-     * @param sink
-     * @param finalText
-     * @param context
+     * 最终正文后追加当前 Run 收集到的引用事件。
+     * @param context 当前 Run 上下文
+     * @param finalText 已生成的最终正文
      */
     @Override
     protected void emitAdditionalFinalResponses(ReactAgentRunContext context, String finalText) {
@@ -125,6 +129,7 @@ public class WebSearchReactAgent extends ReactAgent {
     }
 
 
+    /** WebSearchReactAgent 构建器；所有字段在 build 后作为共享只读配置使用。 */
     public static class Builder {
         private final List<ToolCallback> tools;
         private final ChatModel chatModel;
@@ -147,41 +152,49 @@ public class WebSearchReactAgent extends ReactAgent {
 
         }
 
+        /** 配置共享 Spring AI Advisors。 */
         public Builder advisors(List<Advisor> advisors) {
             this.advisors = advisors;
             return this;
         }
 
+        /** 覆盖默认 ReAct 系统提示词。 */
         public Builder systemPrompt(ReactAgentSystemPrompt systemPrompt) {
             this.systemPrompt = systemPrompt;
             return this;
         }
 
+        /** 设置单个 Run 的最大 ReAct 轮数。 */
         public Builder maxRounds(int maxRounds) {
             this.maxRounds = maxRounds;
             return this;
         }
 
+        /** 是否启用按 conversationId 隔离的消息记忆。 */
         public Builder useChatMemory(boolean useChatMemory) {
             this.useChatMemory = useChatMemory;
             return this;
         }
 
+        /** 设置启用记忆时的窗口上限。 */
         public Builder maxMemoryMessages(int maxMemoryMessages) {
             this.maxMemoryMessages = maxMemoryMessages;
             return this;
         }
 
+        /** 配置共享生命周期 Hook。 */
         public Builder hook(AgentChatHook hook) {
             this.hook = hook;
             return this;
         }
 
+        /** 是否在完成后生成推荐问题。 */
         public Builder enableRecommendations(boolean enableRecommendations) {
             this.enableRecommendations = enableRecommendations;
             return this;
         }
 
+        /** 校验并创建可共享 Agent；请求态将在 start 时创建。 */
         public WebSearchReactAgent build() {
             WebSearchReactAgent reactAgent = new WebSearchReactAgent(tools, chatModel, agentTaskManager, toolsRegistry);
             reactAgent.systemPrompt = this.systemPrompt;

@@ -12,12 +12,16 @@ import lombok.Getter;
 import java.util.*;
 
 /**
- * 计划执行图, 保存每个图节点名称还有状态键名
+ * Plan-and-Execute 状态图的稳定节点名与状态键目录。
+ *
+ * <p>节点顺序由 {@link PlanExecuteAgent} 组图；本类只负责初始化每个 Run 的 Graph State，
+ * 不持有共享可变态。枚举值会写入 checkpoint，修改字符串值属于兼容性变更。</p>
  * @author hongqy
  */
 public class PlanExecuteGraph {
 
-    public static String SUMMARIZER_INSTRUCTION =
+    /** 共享只读的报告输入模板；禁止在运行期改写，所有 Run 仅通过 formatted 参数生成独立文本。 */
+    public static final String SUMMARIZER_INSTRUCTION =
             """
             【用户原始问题】
             {%s}
@@ -34,9 +38,9 @@ public class PlanExecuteGraph {
             State.FINALIZATION_STATUS.state);
 
     /**
-     * 初始化状态, 对应 OverAllState（StateGraph 的全局状态容器）中的字段名
-     * @param ctx
-     * @return
+     * 从单次执行上下文创建新的 Graph State；集合均为当前 Run 独享。
+     * @param ctx 当前 Run 的研究执行上下文
+     * @return 可交给 StateGraph 的初始状态
      */
     public static Map<String, Object> initState(DeepResearchExecuteContext ctx) {
         Assert.notNull(ctx, "执行上下文不能为空");
@@ -59,8 +63,8 @@ public class PlanExecuteGraph {
     }
 
     /**
-     * 获取所有状态键名
-     * @return
+     * 获取完整稳定状态键，用于 StateGraph Schema 注册。
+     * @return 不含重复项的状态键列表
      */
     public static List<String> allStateKeys() {
         return Arrays.stream(State.values()).map(State::getState).toList();
@@ -69,6 +73,7 @@ public class PlanExecuteGraph {
 
     @Getter
     @AllArgsConstructor
+    /** Graph 节点目录；值用于连边，描述用于诊断和阅读。 */
     public enum Node {
 
         CLARIFY("clarify", "需求澄清节点"),
@@ -103,6 +108,7 @@ public class PlanExecuteGraph {
 
     @Getter
     @AllArgsConstructor
+    /** Graph 状态目录；字符串值会进入 checkpoint，必须保持稳定。 */
     public enum State {
 
         QUESTION("question", "用户原始问题"),

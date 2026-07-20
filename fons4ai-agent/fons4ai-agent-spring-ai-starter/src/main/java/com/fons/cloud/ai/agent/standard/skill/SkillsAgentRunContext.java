@@ -2,46 +2,29 @@ package com.fons.cloud.ai.agent.standard.skill;
 
 import com.fons.cloud.ai.agent.chat.AgentChatRequest;
 import com.fons.cloud.ai.agent.constants.AgentType;
-import com.fons.cloud.ai.agent.standard.runtime.AgentRunContext;
+import com.fons.cloud.ai.agent.standard.adaptor.AlibabaAgentRunContext;
 import lombok.Getter;
 
-import java.util.concurrent.atomic.AtomicBoolean;
-
-/** Skills Agent 单次执行的 delegate、技能授权和流式聚合状态。 */
+/**
+ * Skills Agent 单次执行的技能授权和 delegate 状态。
+ * 通用 Graph 流、代次、checkpoint 和中断状态由 AlibabaAgentRunContext 统一提供。
+ */
 @Getter
-final class SkillsAgentRunContext extends AgentRunContext {
+final class SkillsAgentRunContext extends AlibabaAgentRunContext {
     private final GuardedSkillRegistry skillRegistry;
-    private final com.alibaba.cloud.ai.graph.agent.ReactAgent delegate;
-    private final AtomicBoolean nativeTerminated = new AtomicBoolean();
-    private final StringBuilder currentModelText = new StringBuilder();
-    private final StringBuilder nativeThinking = new StringBuilder();
-    private volatile boolean currentTurnStreamed;
-    private volatile boolean currentTurnReasoningStreamed;
-    private volatile String nativeFinalAnswer = "";
-
+    /** 本 Run 固定的资源视图；恢复重建 delegate 时必须复用，防止资源版本漂移。 */
+    private final SkillResourceResolver resourceResolver;
+    /** 当前一代 Alibaba delegate；原生中断恢复时会替换，但永不跨 Run 共享。 */
+    private volatile com.alibaba.cloud.ai.graph.agent.ReactAgent delegate;
     SkillsAgentRunContext(AgentType agentType, AgentChatRequest request, String runId,
                           GuardedSkillRegistry skillRegistry,
-                          com.alibaba.cloud.ai.graph.agent.ReactAgent delegate) {
+                          SkillResourceResolver resourceResolver) {
         super(agentType, request, runId);
         this.skillRegistry = skillRegistry;
-        this.delegate = delegate;
+        this.resourceResolver = resourceResolver;
     }
 
-    void markCurrentTurnStreamed() {
-        currentTurnStreamed = true;
-    }
-
-    void markCurrentTurnReasoningStreamed() {
-        currentTurnReasoningStreamed = true;
-    }
-
-    void setNativeFinalAnswer(String nativeFinalAnswer) {
-        this.nativeFinalAnswer = nativeFinalAnswer;
-    }
-
-    void resetCurrentTurn() {
-        currentModelText.setLength(0);
-        currentTurnStreamed = false;
-        currentTurnReasoningStreamed = false;
+    void replaceDelegate(com.alibaba.cloud.ai.graph.agent.ReactAgent delegate) {
+        this.delegate = java.util.Objects.requireNonNull(delegate, "delegate cannot be null");
     }
 }

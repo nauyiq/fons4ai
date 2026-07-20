@@ -9,12 +9,19 @@ import com.alibaba.cloud.ai.graph.agent.interceptor.ToolCallResponse;
 import com.alibaba.cloud.ai.graph.agent.interceptor.ToolInterceptor;
 import com.alibaba.cloud.ai.graph.agent.interceptor.toolretry.ToolRetryInterceptor;
 import com.alibaba.cloud.ai.graph.checkpoint.BaseCheckpointSaver;
+import com.alibaba.cloud.ai.graph.checkpoint.Checkpoint;
 import com.alibaba.cloud.ai.graph.checkpoint.config.SaverConfig;
+import com.alibaba.cloud.ai.graph.checkpoint.savers.MemorySaver;
+import com.alibaba.cloud.ai.graph.action.InterruptionMetadata;
 import com.alibaba.cloud.ai.graph.state.strategy.ReplaceStrategy;
 import com.alibaba.cloud.ai.graph.streaming.OutputType;
 import com.alibaba.cloud.ai.graph.streaming.StreamingOutput;
 import com.alibaba.fastjson2.JSON;
+import com.fons.cloud.ai.agent.api.AgentRun;
 import com.fons.cloud.ai.agent.chat.AgentChatRequest;
+import com.fons.cloud.ai.agent.approval.AgentApprovalPoint;
+import com.fons.cloud.ai.agent.approval.AgentApprovalAction;
+import com.fons.cloud.ai.agent.approval.ApprovalRejectionMode;
 import com.fons.cloud.ai.agent.constants.AgentMessageType;
 import com.fons.cloud.ai.agent.constants.AgentResultCode;
 import com.fons.cloud.ai.agent.constants.AgentType;
@@ -23,6 +30,8 @@ import com.fons.cloud.ai.agent.core.AgentTaskManager;
 import com.fons.cloud.ai.agent.infrastructure.prompt.PlanExecuteSystemPrompt;
 import com.fons.cloud.ai.agent.infrastructure.utils.ThinkMessageParser;
 import com.fons.cloud.ai.agent.standard.BaseAgent;
+import com.fons.cloud.ai.agent.standard.adaptor.AlibabaAgentResumeRequest;
+import com.fons.cloud.ai.agent.standard.adaptor.ResumableAgent;
 import com.fons.cloud.ai.agent.standard.runtime.AgentRunContext;
 import com.fons.cloud.ai.agent.standard.deepresearch.model.*;
 import com.fons.cloud.ai.agent.infrastructure.hook.AgentChatHook;
@@ -57,37 +66,48 @@ import java.util.concurrent.Executors;
 import java.util.concurrent.ExecutionException;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.TimeoutException;
-import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.stream.Collectors;
 
 import static com.alibaba.cloud.ai.graph.action.AsyncEdgeAction.edge_async;
 import static com.alibaba.cloud.ai.graph.action.AsyncNodeAction.node_async;
 
 /**
- * 计划执行智能体， 先计划 （LLM规划），后执行 （react模式）
- * 基于 Spring AI Alibaba 的 StateGraph（状态图）框架实现。将整个 Plan-Execute 流程建模为一张有向图
+ * 基于 Spring AI Alibaba StateGraph 的 Plan-and-Execute Agent。
+ *
  * <pre>
- *     START
- *     → clarify（需求澄清）
- *       → 需要补充？ → END
- *       → 不需要   → topic（研究主题生成）
- *         → plan（规划）
- *           → 有待执行任务？ → execute_wave（按 order 波次执行工具任务）
- *                              → 还有更多 order？ → 自身循环
- *                              → 全部完成        → critique（评审）
- *           → 无需执行       → prepare_summary → summarize → END
- *           critique 评审通过？
- *             → 通过  → prepare_summary → summarize → END
- *             → 未通过 → compress（上下文压缩） → plan（回到规划，开始下一轮）
+ * start → clarify → topic → plan → approval_after_plan
+ *   ├─ 无任务 → prepare_summary → approval_before_report → summarizer → END
+ *   └─ 有任务 → approval_before_task → execution
+ *                  ├─ 还有波次 → approval_before_task
+ *                  └─ critique → 通过后进入报告；未通过则 compress → plan
  * </pre>
- * <p>
- * 每个节点（Node）是一个纯函数：接收 OverAllState，返回需要更新的字段 Map。
- * StateGraph 框架自动把返回的 Map 合并进全局状态，再沿着边（Edge）/ 条件边（ConditionalEdge）流转到下一个节点。
+ *
+ * <p>三个 {@code approval_*} 节点本身不执行模型、工具或报告副作用。Run 显式启用审批时，
+ * StateGraph 在节点之后保存 checkpoint 并产生原生中断。框架发出 checkpoint 审批事件后结束
+ * 当前连接；下游完成审批，再以新请求从同一 checkpoint 恢复。批准继续后继节点，拒绝终止进入
+ * 明确终态，拒绝反馈或编辑则回到 plan。</p>
+ *
+ * <p>Agent 实例只共享模型、工具、线程池和构建配置；CompiledGraph、checkpoint、消息、计划、
+ * 订阅代次与最终结果全部保存在 {@link PlanExecuteRunContext}，同一实例可安全承载并发 Run。
+ * 流式与非流式入口共享同一 Graph：前者消费事件，后者等待 completion；审批时两者都得到 WAITING 快照。</p>
  *
  * @author hongqy
  */
 @Slf4j
-public class PlanExecuteAgent extends BaseAgent implements AutoCloseable {
+public class PlanExecuteAgent extends BaseAgent implements ResumableAgent, AutoCloseable {
+
+    /** 计划生成完成、任何任务调度前的审批点。 */
+    public static final AgentApprovalPoint AFTER_PLAN = AgentApprovalPoint.of("plan.after-plan");
+    /** 每个 order 任务波次开始前的审批点。 */
+    public static final AgentApprovalPoint BEFORE_TASK = AgentApprovalPoint.of("plan.before-task");
+    /** 汇总上下文准备完成、最终报告模型调用前的审批点。 */
+    public static final AgentApprovalPoint BEFORE_REPORT = AgentApprovalPoint.of("plan.before-report");
+
+    private static final String AFTER_PLAN_APPROVAL_NODE = "approval_after_plan";
+    private static final String BEFORE_TASK_APPROVAL_NODE = "approval_before_task";
+    private static final String BEFORE_REPORT_APPROVAL_NODE = "approval_before_report";
+
+    private static final String THREAD_PREFIX = "PLAN-EXECUTE-AGENT:";
 
     private static final int DEFAULT_MAX_ROUNDS = 5;
     private static final int DEFAULT_MAX_TOOL_RETRIES = 2;
@@ -145,6 +165,17 @@ public class PlanExecuteAgent extends BaseAgent implements AutoCloseable {
      */
     private BaseCheckpointSaver checkpointSaver;
 
+    /** 是否由下游显式要求普通 Run 也保存 Graph checkpoint；默认只为启用 HITL 的 Run 保存。 */
+    private boolean checkpointSaverConfigured;
+
+    /**
+     * 三个审批边界的不可变目录。Agent 共享该目录；动作摘要每次都从当前 Run 的 Graph 状态生成。
+     */
+    private final Map<String, HumanApprovalNode> approvalNodes;
+
+    /** 启用审批的 Run 实际安装哪些 Graph 中断点；由下游在构建 Agent 时选择。 */
+    private Set<AgentApprovalPoint> approvalPoints = Set.of(AFTER_PLAN, BEFORE_TASK, BEFORE_REPORT);
+
 
     /**
      * 构造方法
@@ -156,6 +187,8 @@ public class PlanExecuteAgent extends BaseAgent implements AutoCloseable {
         super(AgentType.PLAN_EXECUTOR, chatModel, agentTaskManager);
         this.toolExecutor = createToolExecutor(DEFAULT_MAX_CONCURRENT_TASKS);
         this.ownsToolExecutor = true;
+        this.checkpointSaver = MemorySaver.builder().build();
+        this.approvalNodes = createApprovalNodes();
     }
 
     /**
@@ -189,6 +222,8 @@ public class PlanExecuteAgent extends BaseAgent implements AutoCloseable {
         private int maxConcurrentTasks = DEFAULT_MAX_CONCURRENT_TASKS;
         private ExecutorService toolExecutor;
         private BaseCheckpointSaver checkpointSaver;
+        private Set<AgentApprovalPoint> approvalPoints = Set.of(
+                AFTER_PLAN, BEFORE_TASK, BEFORE_REPORT);
         private AgentChatHook hook;
         private boolean useChatMemory;
         private int maxMemoryMessages;
@@ -202,16 +237,19 @@ public class PlanExecuteAgent extends BaseAgent implements AutoCloseable {
             this.toolRegistry = Objects.requireNonNull(toolRegistry, "toolRegistry cannot be null");
         }
 
+        /** 覆盖规划、执行、反思和总结阶段使用的提示词集合。 */
         public Builder prompt(PlanExecuteSystemPrompt prompt) {
             this.prompt = Objects.requireNonNull(prompt, "prompt cannot be null");
             return this;
         }
 
+        /** 设置重新规划的最大轮数。 */
         public Builder maxRounds(int maxRounds) {
             this.maxRounds = requirePositive(maxRounds, "maxRounds");
             return this;
         }
 
+        /** 设置单次工具调用的最大重试次数；0 表示不重试。 */
         public Builder maxToolRetries(int maxToolRetries) {
             if (maxToolRetries < 0) {
                 throw new IllegalArgumentException("maxToolRetries cannot be negative");
@@ -220,11 +258,13 @@ public class PlanExecuteAgent extends BaseAgent implements AutoCloseable {
             return this;
         }
 
+        /** 设置进入最终报告前的工具上下文字符上限。 */
         public Builder contextCharLimit(int contextCharLimit) {
             this.contextCharLimit = requirePositive(contextCharLimit, "contextCharLimit");
             return this;
         }
 
+        /** 设置一个并行任务波次的等待上限。 */
         public Builder taskTimeout(Duration taskTimeout) {
             if (taskTimeout == null || taskTimeout.isZero() || taskTimeout.isNegative()) {
                 throw new IllegalArgumentException("taskTimeout must be positive");
@@ -233,41 +273,61 @@ public class PlanExecuteAgent extends BaseAgent implements AutoCloseable {
             return this;
         }
 
+        /** 设置内部线程池并发度；传入外部线程池时此值不生效。 */
         public Builder maxConcurrentTasks(int maxConcurrentTasks) {
             this.maxConcurrentTasks = requirePositive(maxConcurrentTasks, "maxConcurrentTasks");
             return this;
         }
 
+        /** 注入由调用方管理生命周期的工具线程池。 */
         public Builder toolExecutor(ExecutorService toolExecutor) {
             this.toolExecutor = Objects.requireNonNull(toolExecutor, "toolExecutor cannot be null");
             return this;
         }
 
+        /** 配置 Alibaba Graph checkpoint Saver；HITL 恢复必须复用同一实例。 */
         public Builder checkpointSaver(BaseCheckpointSaver checkpointSaver) {
             this.checkpointSaver = checkpointSaver;
             return this;
         }
 
+        /**
+         * 选择启用审批后需要暂停的阶段点。空集合表示即使 Run 启用审批也不安装阶段中断。
+         */
+        public Builder approvalPoints(Set<AgentApprovalPoint> approvalPoints) {
+            this.approvalPoints = Set.copyOf(Objects.requireNonNull(
+                    approvalPoints, "approvalPoints cannot be null"));
+            if (!Set.of(AFTER_PLAN, BEFORE_TASK, BEFORE_REPORT).containsAll(this.approvalPoints)) {
+                throw new IllegalArgumentException("unsupported Plan approval point");
+            }
+            return this;
+        }
+
+        /** 配置共享生命周期 Hook。 */
         public Builder hook(AgentChatHook hook) {
             this.hook = hook;
             return this;
         }
 
+        /** 是否启用按 conversationId 隔离的消息记忆。 */
         public Builder useChatMemory(boolean useChatMemory) {
             this.useChatMemory = useChatMemory;
             return this;
         }
 
+        /** 设置启用记忆后的窗口消息上限。 */
         public Builder maxMemoryMessages(int maxMemoryMessages) {
             this.maxMemoryMessages = maxMemoryMessages;
             return this;
         }
 
+        /** 是否在最终报告完成后生成推荐问题。 */
         public Builder enableRecommendations(boolean enableRecommendations) {
             this.enableRecommendations = enableRecommendations;
             return this;
         }
 
+        /** 创建可共享 Agent，并明确线程池所有权和 checkpoint 策略。 */
         public PlanExecuteAgent build() {
             PlanExecuteAgent agent = new PlanExecuteAgent(chatModel, agentTaskManager);
             agent.tools = tools;
@@ -277,7 +337,11 @@ public class PlanExecuteAgent extends BaseAgent implements AutoCloseable {
             agent.contextCharLimit = contextCharLimit;
             agent.taskTimeout = taskTimeout;
             agent.toolRegistry = toolRegistry;
-            agent.checkpointSaver = checkpointSaver;
+            if (checkpointSaver != null) {
+                agent.checkpointSaver = checkpointSaver;
+                agent.checkpointSaverConfigured = true;
+            }
+            agent.approvalPoints = approvalPoints;
             agent.hook = hook;
             agent.enableRecommendations = enableRecommendations;
             agent.maxMemoryMessages = maxMemoryMessages;
@@ -310,11 +374,48 @@ public class PlanExecuteAgent extends BaseAgent implements AutoCloseable {
     }
 
     /**
+     * 从持久化 checkpoint 开启新的 HTTP/SSE 执行分段。
+     *
+     * <p>该入口不依赖旧 JVM 中的对象或闭包；下游必须复用原 runId、threadId、checkpointId，
+     * 并自行完成审批单鉴权、幂等和审计。</p>
+     */
+    @Override
+    public AgentRun resume(AlibabaAgentResumeRequest request) {
+        Objects.requireNonNull(request, "request cannot be null");
+        String expectedThreadId = THREAD_PREFIX + request.request().getConversationId()
+                + ":" + request.runId();
+        if (!expectedThreadId.equals(request.threadId())) {
+            throw new IllegalArgumentException("conversationId does not match threadId");
+        }
+        RunnableConfig lookup = RunnableConfig.builder()
+                .threadId(request.threadId())
+                .checkPointId(request.checkpointId())
+                .build();
+        try {
+            checkpointSaver.get(lookup).orElseThrow(() -> new IllegalArgumentException(
+                    "Plan checkpoint not found: " + request.checkpointId()));
+        } catch (RuntimeException error) {
+            throw error;
+        } catch (Exception error) {
+            throw new IllegalStateException("failed to load Plan checkpoint", error);
+        }
+        PlanExecuteRunContext context = (PlanExecuteRunContext) createRunContext(
+                request.request(), request.runId());
+        context.markResumeSegment();
+        context.setRunnableConfig(lookup);
+        context.setResumeRequest(request);
+        return createRunHandle(context, request.options());
+    }
+
+    /**
      * 为单次请求创建并启动状态图。Agent 只保存共享配置，图运行态全部写入请求上下文。
      */
     @Override
     protected Disposable streamExecute(AgentRunContext baseContext) {
         PlanExecuteRunContext runContext = (PlanExecuteRunContext) baseContext;
+        if (runContext.getResumeRequest() != null) {
+            return streamResume(runContext);
+        }
         boolean memoryEnabled = useChatMemory();
         List<Message> messages = memoryEnabled
                 ? loadHistoryMessages(runContext, true, true)
@@ -327,28 +428,98 @@ public class PlanExecuteAgent extends BaseAgent implements AutoCloseable {
                 runContext, runContext.getConversationId(), runContext.getQuestion(), messages);
         runContext.setDeepResearchContext(ctx);
         RunnableConfig runnableConfig = RunnableConfig.builder()
-                .threadId("PLAN-EXECUTE-AGENT:" + runContext.getConversationId() + ":" + runContext.getRunId())
+                .threadId(THREAD_PREFIX + runContext.getConversationId() + ":" + runContext.getRunId())
                 .build();
         runContext.setRunnableConfig(runnableConfig);
 
         try {
             CompiledGraph graph = buildGraph(ctx);
-            Disposable graphDisposable = graph.stream(PlanExecuteGraph.initState(ctx), runnableConfig)
-                    .subscribeOn(Schedulers.boundedElastic())
-                     .doOnNext(output -> handleGraphOutput(runContext, output))
-                     .doOnComplete(() -> handleGraphComplete(runContext, ctx))
-                     .doOnError(error -> handleGraphError(runContext, error, ctx))
-                    // doFinally 在 Graph 完成、失败或取消信号真正传播后执行，避免运行中提前释放 checkpoint。
-                    .doFinally(signalType -> releaseCheckpoint(runContext))
-                     .subscribe();
-            bindDisposable(runContext, graphDisposable);
-            return graphDisposable;
+            runContext.setCompiledGraph(graph);
+            return subscribeGraph(runContext, ctx, PlanExecuteGraph.initState(ctx), runnableConfig);
          } catch (Exception error) {
              handleGraphError(runContext, error, ctx);
             // Graph 尚未形成订阅时不会触发 doFinally，由同步失败路径负责释放。
             releaseCheckpoint(runContext);
              return null;
          }
+    }
+
+    /** 根据 Saver 中的状态重建请求级 Graph 和执行上下文，然后应用审批决定。 */
+    private Disposable streamResume(PlanExecuteRunContext runContext) {
+        AlibabaAgentResumeRequest request = Objects.requireNonNull(
+                runContext.getResumeRequest(), "resumeRequest is required");
+        RunnableConfig lookup = Objects.requireNonNull(runContext.getRunnableConfig(),
+                "Plan runnableConfig is required");
+        try {
+            Checkpoint checkpoint = checkpointSaver.get(lookup).orElseThrow(() ->
+                    new IllegalArgumentException("Plan checkpoint not found: "
+                            + request.checkpointId()));
+            Map<String, Object> state = checkpoint.getState();
+            String question = Objects.toString(state.get(
+                    PlanExecuteGraph.State.QUESTION.getState()), runContext.getQuestion());
+            DeepResearchExecuteContext ctx = new DeepResearchExecuteContext(
+                    runContext, runContext.getConversationId(), question,
+                    checkpointMessages(state));
+            runContext.setDeepResearchContext(ctx);
+            runContext.setCompiledGraph(buildGraph(ctx));
+
+            if (request.action() == AgentApprovalAction.REJECT
+                    && request.rejectionMode() == ApprovalRejectionMode.TERMINATE) {
+                rejectApproval(runContext, request.comment());
+                return null;
+            }
+            if (request.action() == AgentApprovalAction.APPROVE) {
+                return subscribeGraph(runContext, ctx, Map.of(), lookup);
+            }
+            return resumePlanningWithFeedback(runContext, ctx, request, checkpoint, lookup);
+        } catch (Throwable error) {
+            handleGraphError(runContext, error, runContext.getDeepResearchContext());
+            releaseCheckpoint(runContext);
+            return null;
+        }
+    }
+
+    /** 从 checkpoint 恢复消息；非消息值不会进入模型上下文。 */
+    private List<Message> checkpointMessages(Map<String, Object> state) {
+        Object value = state.get(PlanExecuteGraph.State.MESSAGES.getState());
+        if (!(value instanceof List<?> values)) {
+            return new ArrayList<>();
+        }
+        return values.stream().filter(Message.class::isInstance)
+                .map(Message.class::cast).toList();
+    }
+
+    /**
+     * 启动一次初始或恢复 Graph 订阅。每次订阅都取得独立代次，旧订阅在被中断后即使迟到回调，
+     * 也不能覆盖新订阅的状态或提前结束同一 Run。
+     */
+    private Disposable subscribeGraph(PlanExecuteRunContext runContext,
+                                      DeepResearchExecuteContext ctx,
+                                      Map<String, Object> input,
+                                      RunnableConfig runnableConfig) {
+        long generation = runContext.nextGraphGeneration();
+        runContext.setRunnableConfig(runnableConfig);
+        Disposable graphDisposable = runContext.getCompiledGraph().stream(input, runnableConfig)
+                .subscribeOn(Schedulers.boundedElastic())
+                .doOnNext(output -> {
+                    if (runContext.isCurrentGraphGeneration(generation)) {
+                        handleGraphOutput(runContext, output);
+                    }
+                })
+                .doOnComplete(() -> {
+                    if (runContext.isCurrentGraphGeneration(generation)) {
+                        handleGraphComplete(runContext, ctx);
+                    }
+                })
+                .doOnError(error -> {
+                    if (runContext.isCurrentGraphGeneration(generation)) {
+                        handleGraphError(runContext, error, ctx);
+                    }
+                })
+                .doFinally(signalType -> releaseCheckpoint(runContext))
+                .subscribe();
+        bindDisposable(runContext, graphDisposable);
+        return graphDisposable;
     }
 
     @Override
@@ -358,6 +529,17 @@ public class PlanExecuteAgent extends BaseAgent implements AutoCloseable {
         if (deepContext != null) {
             deepContext.getFinished().set(true);
         }
+    }
+
+    /** 无论终态来自 Graph、拒绝、超时还是用户取消，都在真正终态后幂等释放原生 checkpoint。 */
+    @Override
+    protected void onRunTerminated(AgentRunContext baseContext,
+                                   com.fons.cloud.ai.agent.api.AgentRunState state) {
+        PlanExecuteRunContext context = (PlanExecuteRunContext) baseContext;
+        if (context.getDeepResearchContext() != null) {
+            context.getDeepResearchContext().getFinished().set(true);
+        }
+        releaseCheckpoint(context);
     }
 
 
@@ -374,6 +556,10 @@ public class PlanExecuteAgent extends BaseAgent implements AutoCloseable {
      */
     private void handleGraphOutput(PlanExecuteRunContext runContext, NodeOutput nodeOutput) {
         runContext.setLastOverAllState(nodeOutput.state());
+        if (nodeOutput instanceof InterruptionMetadata interruption) {
+            handleGraphInterruption(runContext, interruption);
+            return;
+        }
         if (!(nodeOutput instanceof StreamingOutput<?> streaming) || !nodeOutput.node().equals(PlanExecuteGraph.Node.SUMMARIZER.getNode())) {
             return;
         }
@@ -412,12 +598,100 @@ public class PlanExecuteAgent extends BaseAgent implements AutoCloseable {
 
     }
 
+    /** 把 Alibaba Graph 阶段中断映射为可跨进程恢复的 checkpoint 审批事件。 */
+    private void handleGraphInterruption(PlanExecuteRunContext runContext,
+                                         InterruptionMetadata interruption) {
+        HumanApprovalNode approvalNode = approvalNodes.get(interruption.node());
+        if (approvalNode == null || interruption.state() == null) {
+            throw new IllegalStateException("unknown Plan Graph interruption node");
+        }
+        DeepResearchExecuteContext ctx = Objects.requireNonNull(
+                runContext.getDeepResearchContext(), "deepResearchContext is required");
+        HumanApprovalNode.Action action = approvalNode.describe(interruption.state(), ctx);
+        GraphCheckpoint checkpoint = latestGraphCheckpoint(runContext);
+        String threadId = checkpoint.runnableConfig().threadId().orElseThrow();
+        pauseForNativeApproval(runContext, checkpoint.checkpoint().getId(), Map.ofEntries(
+                Map.entry("interruptId", checkpoint.checkpoint().getId()),
+                Map.entry("runId", runContext.getRunId()),
+                Map.entry("conversationId", runContext.getConversationId()),
+                Map.entry("threadId", threadId),
+                Map.entry("checkpointId", checkpoint.checkpoint().getId()),
+                Map.entry("point", approvalNode.point().value()),
+                Map.entry("actionId", action.actionId()),
+                Map.entry("actionName", action.actionName()),
+                Map.entry("redactedParameters", action.parameters()),
+                Map.entry("allowedActions", EnumSet.allOf(AgentApprovalAction.class))));
+    }
+
+    /**
+     * EDIT 或“拒绝后携意见恢复”不会直接放行原副作用，而是把意见标成不可信输入并把下一节点改为 plan。
+     * 这样 before-task/before-report 的拒绝反馈不会意外执行被拒绝的任务或报告。
+     */
+    private Disposable resumePlanningWithFeedback(
+            PlanExecuteRunContext runContext,
+            DeepResearchExecuteContext ctx,
+            AlibabaAgentResumeRequest decision,
+            Checkpoint checkpoint,
+            RunnableConfig lookup) {
+        try {
+            String edited = decision.editedArguments().entrySet().stream()
+                    .sorted(Map.Entry.comparingByKey())
+                    .map(entry -> entry.getKey() + "=" + entry.getValue())
+                    .collect(Collectors.joining(";"));
+            String feedback = StringUtils.defaultIfBlank(decision.comment(), edited);
+            ctx.addMessage(new UserMessage("[UNTRUSTED_HUMAN_FEEDBACK]\n"
+                    + StringUtils.defaultIfBlank(feedback, "Please revise the plan.")));
+
+            Map<String, Object> state = new LinkedHashMap<>(checkpoint.getState());
+            state.put(PlanExecuteGraph.State.MESSAGES.getState(), ctx.messageSnapshot());
+            Checkpoint rerouted = Checkpoint.builder()
+                    .id(checkpoint.getId())
+                    .state(state)
+                    .nodeId(PlanExecuteGraph.Node.COMPRESS.getNode())
+                    .nextNodeId(PlanExecuteGraph.Node.PLAN.getNode())
+                    .build();
+            RunnableConfig updated = checkpointSaver.put(lookup, rerouted);
+            RunnableConfig resumeConfig = RunnableConfig.builder(updated)
+                    .checkPointId(rerouted.getId())
+                    .build();
+            return subscribeGraph(runContext, ctx, Map.of(), resumeConfig);
+        } catch (Exception error) {
+            throw new IllegalStateException("failed to resume Plan Graph with feedback", error);
+        }
+    }
+
+    private GraphCheckpoint latestGraphCheckpoint(PlanExecuteRunContext runContext) {
+        RunnableConfig current = Objects.requireNonNull(runContext.getRunnableConfig(),
+                "Plan runnableConfig is unavailable");
+        RunnableConfig threadConfig = RunnableConfig.builder(current)
+                .checkPointId(null)
+                .clearContext()
+                .build();
+        try {
+            Checkpoint checkpoint = checkpointSaver.get(threadConfig)
+                    .orElseThrow(() -> new IllegalStateException("Plan Graph checkpoint is unavailable"));
+            RunnableConfig resumeConfig = RunnableConfig.builder(threadConfig)
+                    .checkPointId(checkpoint.getId())
+                    .build();
+            return new GraphCheckpoint(checkpoint, resumeConfig);
+        } catch (RuntimeException error) {
+            throw error;
+        } catch (Exception error) {
+            throw new IllegalStateException("failed to load Plan Graph checkpoint", error);
+        }
+    }
+
+    /** 当前 Run 的原生 checkpoint 与仅用于恢复的配置，不得写入事件或日志。 */
+    private record GraphCheckpoint(Checkpoint checkpoint, RunnableConfig runnableConfig) {
+    }
+
     /**
      * 处理图节点的完成事件。
      * 当图的执行完成时，StateGraph 引擎会回调此方法。
      */
     private void handleGraphComplete(PlanExecuteRunContext runContext, DeepResearchExecuteContext ctx) {
-        if (ctx.isStop()) {
+        if (ctx.isStop() || runContext.currentState()
+                != com.fons.cloud.ai.agent.api.AgentRunState.RUNNING) {
             return;
         }
 
@@ -463,7 +737,11 @@ public class PlanExecuteAgent extends BaseAgent implements AutoCloseable {
 
     private void handleGraphError(PlanExecuteRunContext runContext, Throwable error,
                                   DeepResearchExecuteContext ctx) {
-        if (ctx.isStop()) {
+        if (runContext.currentState()
+                == com.fons.cloud.ai.agent.api.AgentRunState.WAITING_APPROVAL) {
+            return;
+        }
+        if (ctx != null && ctx.isStop()) {
             log.info("PlanExecuteAgent execution stopped, conversationId={}, runId={}",
                     runContext.getConversationId(), runContext.getRunId());
             complete(ctx);
@@ -472,7 +750,9 @@ public class PlanExecuteAgent extends BaseAgent implements AutoCloseable {
         log.error("PlanExecuteAgent graph execution failed, conversationId={}, runId={}, errorType={}",
                 runContext.getConversationId(), runContext.getRunId(), error.getClass().getName());
         emit(runContext, Objects.toString(error.getMessage(), "Agent execution failed"), AgentMessageType.ERROR);
-        ctx.getFinished().set(true);
+        if (ctx != null) {
+            ctx.getFinished().set(true);
+        }
         failRun(runContext, error);
     }
 
@@ -522,6 +802,10 @@ public class PlanExecuteAgent extends BaseAgent implements AutoCloseable {
                 .addNode(PlanExecuteGraph.Node.COMPRESS.getNode(), node_async((state) -> this.compressNode(state, ctx)))
                 // 总结准备节点 将所有成功的工具执行结果汇总为一段文本，存入 TOOL_RESULTS。
                 .addNode(PlanExecuteGraph.Node.PREPARE_SUMMARY.getNode(), node_async((state) -> this.prepareSummarizerNode(state, ctx)))
+                // 三个节点只形成稳定 Graph 边界，不执行模型、工具，也不包含业务风险规则。
+                .addNode(AFTER_PLAN_APPROVAL_NODE, node_async(state -> this.afterPlanApprovalNode(state, ctx)))
+                .addNode(BEFORE_TASK_APPROVAL_NODE, node_async(state -> this.beforeTaskApprovalNode(state, ctx)))
+                .addNode(BEFORE_REPORT_APPROVAL_NODE, node_async(state -> this.beforeReportApprovalNode(state, ctx)))
                 // summarizer 是一个 ReactAgent，通过 asNode() 转换为图节点
                 // 参数 (false, false) 表示不使用工具、不自动记忆
                 .addNode(PlanExecuteGraph.Node.SUMMARIZER.getNode(), summarizer.asNode(false, false));
@@ -538,17 +822,23 @@ public class PlanExecuteAgent extends BaseAgent implements AutoCloseable {
         graph.addConditionalEdges(PlanExecuteGraph.Node.TOPIC.getNode(),
                 edge_async(state -> isContextOverLimit(state, ctx) ? PlanExecuteGraph.Node.COMPRESS.getNode() : PlanExecuteGraph.Node.PLAN.getNode()),
                 Map.of(PlanExecuteGraph.Node.COMPRESS.getNode(), PlanExecuteGraph.Node.COMPRESS.getNode(), PlanExecuteGraph.Node.PLAN.getNode(), PlanExecuteGraph.Node.PLAN.getNode()));
-        // plan 的条件边：根据 PENDING_ORDERS 是否为空判断 空（无需执行任务） → prepare_summary（直接总结）| 非空（有任务） → execute（开始执行）
-        graph.addConditionalEdges(PlanExecuteGraph.Node.PLAN.getNode(),
-                edge_async(state -> CollectionUtils.isEmpty(ctx.pendingOrders(state)) ? PlanExecuteGraph.Node.PREPARE_SUMMARY.getNode() : PlanExecuteGraph.Node.EXECUTION.getNode()),
-                Map.of(PlanExecuteGraph.Node.PREPARE_SUMMARY.getNode(), PlanExecuteGraph.Node.PREPARE_SUMMARY.getNode(), PlanExecuteGraph.Node.EXECUTION.getNode(), PlanExecuteGraph.Node.EXECUTION.getNode()));
+        // 计划结果先经过 after-plan；默认直通，有策略命中时在任何任务调度前暂停。
+        graph.addEdge(PlanExecuteGraph.Node.PLAN.getNode(), AFTER_PLAN_APPROVAL_NODE);
+        graph.addConditionalEdges(AFTER_PLAN_APPROVAL_NODE,
+                edge_async(state -> CollectionUtils.isEmpty(ctx.pendingOrders(state))
+                        ? PlanExecuteGraph.Node.PREPARE_SUMMARY.getNode() : BEFORE_TASK_APPROVAL_NODE),
+                Map.of(PlanExecuteGraph.Node.PREPARE_SUMMARY.getNode(), PlanExecuteGraph.Node.PREPARE_SUMMARY.getNode(),
+                        BEFORE_TASK_APPROVAL_NODE, BEFORE_TASK_APPROVAL_NODE));
+        graph.addEdge(BEFORE_TASK_APPROVAL_NODE, PlanExecuteGraph.Node.EXECUTION.getNode());
 
         // execute 的条件边：执行完一个 order 波次后判断是否还有剩余
         //  空（所有 order 执行完） → critique（进入评审）
         //   非空（还有更多 order）  → 自身循环（继续执行下一个 order）
         graph.addConditionalEdges(PlanExecuteGraph.Node.EXECUTION.getNode(),
-                edge_async(state -> CollectionUtils.isEmpty(ctx.pendingOrders(state)) ? PlanExecuteGraph.Node.CRITIQUE.getNode() : PlanExecuteGraph.Node.EXECUTION.getNode()),
-                Map.of(PlanExecuteGraph.Node.CRITIQUE.getNode(), PlanExecuteGraph.Node.CRITIQUE.getNode(), PlanExecuteGraph.Node.EXECUTION.getNode(), PlanExecuteGraph.Node.EXECUTION.getNode()));
+                edge_async(state -> CollectionUtils.isEmpty(ctx.pendingOrders(state))
+                        ? PlanExecuteGraph.Node.CRITIQUE.getNode() : BEFORE_TASK_APPROVAL_NODE),
+                Map.of(PlanExecuteGraph.Node.CRITIQUE.getNode(), PlanExecuteGraph.Node.CRITIQUE.getNode(),
+                        BEFORE_TASK_APPROVAL_NODE, BEFORE_TASK_APPROVAL_NODE));
 
         // critique 的条件边：根据评审结果和轮次判断
         // passed=true 或达到最大轮次 → prepare_summary（进入总结）
@@ -564,8 +854,9 @@ public class PlanExecuteAgent extends BaseAgent implements AutoCloseable {
         // compress → plan：上下文压缩完成后，回到规划节点开始新一轮
         graph.addEdge(PlanExecuteGraph.Node.COMPRESS.getNode(), PlanExecuteGraph.Node.PLAN.getNode());
 
-        // prepare_summary → summarize：准备好工具结果后，进入总结节点
-        graph.addEdge(PlanExecuteGraph.Node.PREPARE_SUMMARY.getNode(), PlanExecuteGraph.Node.SUMMARIZER.getNode());
+        // prepare_summary 后先进入 before-report，避免未经批准就调用最终报告模型。
+        graph.addEdge(PlanExecuteGraph.Node.PREPARE_SUMMARY.getNode(), BEFORE_REPORT_APPROVAL_NODE);
+        graph.addEdge(BEFORE_REPORT_APPROVAL_NODE, PlanExecuteGraph.Node.SUMMARIZER.getNode());
 
         // summarize → END：最终报告生成完毕，图运行结束
         graph.addEdge(PlanExecuteGraph.Node.SUMMARIZER.getNode(), StateGraph.END);
@@ -577,12 +868,100 @@ public class PlanExecuteAgent extends BaseAgent implements AutoCloseable {
                 // releaseThread=false：图运行结束后不释放线程（由调用方管理）
                 .releaseThread(false);
 
+        // 只有显式启用审批的 Run 才安装原生 Graph 中断；默认路径不增加暂停或恢复开销。
+        if (ctx.getRunContext() != null && ctx.getRunContext().runOptions().approvalEnabled()
+                && !approvalPoints.isEmpty()) {
+            List<String> interruptNodes = new ArrayList<>();
+            if (approvalPoints.contains(AFTER_PLAN)) {
+                interruptNodes.add(AFTER_PLAN_APPROVAL_NODE);
+            }
+            if (approvalPoints.contains(BEFORE_TASK)) {
+                interruptNodes.add(BEFORE_TASK_APPROVAL_NODE);
+            }
+            if (approvalPoints.contains(BEFORE_REPORT)) {
+                interruptNodes.add(BEFORE_REPORT_APPROVAL_NODE);
+            }
+            compileConfig.interruptAfter(interruptNodes.toArray(String[]::new));
+        }
+
         // 如果配置了 checkpointSaver（如 MySQL），则启用图状态持久化。
-        if (checkpointSaver != null) {
+        if (checkpointSaverConfigured
+                || (ctx.getRunContext() != null
+                && ctx.getRunContext().runOptions().approvalEnabled())) {
             compileConfig.saverConfig(SaverConfig.builder().register(checkpointSaver).build());
         }
 
         return graph.compile(compileConfig.build());
+    }
+
+    /**
+     * 计划生成后的纯审批节点。此时计划已进入 Graph 状态，但还没有调度任何工具任务。
+     */
+    Map<String, Object> afterPlanApprovalNode(OverAllState state, DeepResearchExecuteContext ctx) {
+        return approvalNodes.get(AFTER_PLAN_APPROVAL_NODE).execute(state, ctx);
+    }
+
+    /**
+     * 当前 order 波次执行前的纯审批节点。审批命中后 Graph 取消订阅，因此不会进入 execution 节点。
+     */
+    Map<String, Object> beforeTaskApprovalNode(OverAllState state, DeepResearchExecuteContext ctx) {
+        return approvalNodes.get(BEFORE_TASK_APPROVAL_NODE).execute(state, ctx);
+    }
+
+    /** 最终报告模型调用前的纯审批节点。 */
+    Map<String, Object> beforeReportApprovalNode(OverAllState state, DeepResearchExecuteContext ctx) {
+        return approvalNodes.get(BEFORE_REPORT_APPROVAL_NODE).execute(state, ctx);
+    }
+
+    /** 构建三个不可变审批节点；节点只描述边界，恢复状态由每个 Run 的 checkpoint 保存。 */
+    private Map<String, HumanApprovalNode> createApprovalNodes() {
+        Map<String, HumanApprovalNode> nodes = new LinkedHashMap<>();
+        nodes.put(AFTER_PLAN_APPROVAL_NODE, new HumanApprovalNode(
+                AFTER_PLAN_APPROVAL_NODE, AFTER_PLAN, this::describeAfterPlan));
+        nodes.put(BEFORE_TASK_APPROVAL_NODE, new HumanApprovalNode(
+                BEFORE_TASK_APPROVAL_NODE, BEFORE_TASK, this::describeBeforeTask));
+        nodes.put(BEFORE_REPORT_APPROVAL_NODE, new HumanApprovalNode(
+                BEFORE_REPORT_APPROVAL_NODE, BEFORE_REPORT, this::describeBeforeReport));
+        return Map.copyOf(nodes);
+    }
+
+    private HumanApprovalNode.Action describeAfterPlan(OverAllState state,
+                                                        DeepResearchExecuteContext ctx) {
+        List<PlanTask> tasks = ctx.planTasks(state);
+        int round = ctx.getRound(state);
+        String taskIds = tasks.stream().map(PlanTask::id).filter(Objects::nonNull)
+                .sorted().collect(Collectors.joining(","));
+        return new HumanApprovalNode.Action("round-" + round + "-plan",
+                "approve generated plan", Map.of(
+                "round", Integer.toString(round),
+                "taskCount", Integer.toString(tasks.size()),
+                "taskIds", taskIds));
+    }
+
+    private HumanApprovalNode.Action describeBeforeTask(OverAllState state,
+                                                         DeepResearchExecuteContext ctx) {
+        List<Integer> pendingOrders = ctx.pendingOrders(state);
+        int order = pendingOrders.isEmpty() ? -1 : pendingOrders.getFirst();
+        String taskIds = ctx.planTasks(state).stream()
+                .filter(task -> task.order() == order)
+                .map(PlanTask::id).filter(Objects::nonNull).sorted()
+                .collect(Collectors.joining(","));
+        return new HumanApprovalNode.Action(
+                "round-" + ctx.getRound(state) + "-order-" + order,
+                "execute planned task wave", Map.of(
+                "round", Integer.toString(ctx.getRound(state)),
+                "order", Integer.toString(order),
+                "taskIds", taskIds));
+    }
+
+    private HumanApprovalNode.Action describeBeforeReport(OverAllState state,
+                                                           DeepResearchExecuteContext ctx) {
+        int round = ctx.getRound(state);
+        return new HumanApprovalNode.Action("round-" + round + "-report",
+                "generate final report", Map.of(
+                "round", Integer.toString(round),
+                "resultCount", Integer.toString(ctx.allResults(state).size()),
+                "referenceCount", Integer.toString(ctx.references(state).size())));
     }
 
 
@@ -1150,16 +1529,19 @@ public class PlanExecuteAgent extends BaseAgent implements AutoCloseable {
         }
     }
 
-    private void releaseCheckpoint(PlanExecuteRunContext runContext) {
+    void releaseCheckpoint(PlanExecuteRunContext runContext) {
         RunnableConfig runnableConfig = runContext.getRunnableConfig();
-        if (checkpointSaver == null || runnableConfig == null
+        // WAITING_APPROVAL 是可恢复的非终态。只有完成、失败、取消、拒绝终止或超时后才能释放。
+        if (!runContext.currentState().isTerminal() || checkpointSaver == null || runnableConfig == null
                 || !runContext.getCheckpointReleased().compareAndSet(false, true)) {
             return;
         }
         try {
             checkpointSaver.release(runnableConfig);
         } catch (Exception e) {
-            log.warn("Failed to release graph checkpoint for {}", runnableConfig, e);
+            // RunnableConfig 可能携带 checkpoint metadata 或人工反馈，禁止整体写入普通日志。
+            log.warn("Failed to release graph checkpoint, conversationId={}, runId={}",
+                    runContext.getConversationId(), runContext.getRunId(), e);
         }
     }
 

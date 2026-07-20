@@ -83,7 +83,7 @@ class GuardedSkillRegistryTest {
         assertFalse(registry.isActivated("utf8-skill"));
     }
 
-    static final class InMemorySkillRegistry implements SkillRegistry {
+    static final class InMemorySkillRegistry implements SkillRegistrySnapshotProvider {
         private final Map<String, SkillMetadata> skills = new LinkedHashMap<>();
         private final Map<String, String> contents = new LinkedHashMap<>();
         private final AtomicInteger contentReads = new AtomicInteger();
@@ -120,6 +120,14 @@ class GuardedSkillRegistryTest {
 
         @Override
         public void reload() {
+        }
+
+        @Override
+        public SkillRegistry immutableSnapshot() {
+            InMemorySkillRegistry snapshot = new InMemorySkillRegistry();
+            skills.forEach((name, metadata) -> snapshot.add(name, metadata.getDescription(),
+                    metadata.getSkillPath(), contents.get(name)));
+            return snapshot;
         }
 
         @Override

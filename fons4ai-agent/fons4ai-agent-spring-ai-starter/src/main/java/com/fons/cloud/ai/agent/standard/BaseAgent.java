@@ -4,6 +4,7 @@ import com.fons.cloud.ai.agent.api.Agent;
 import com.fons.cloud.ai.agent.api.AgentRun;
 import com.fons.cloud.ai.agent.api.AgentRunResult;
 import com.fons.cloud.ai.agent.api.AgentRunState;
+import com.fons.cloud.ai.agent.api.AgentRunOptions;
 import com.fons.cloud.ai.agent.chat.AgentChatRequest;
 import com.fons.cloud.ai.agent.chat.AiChatMessage;
 import com.fons.cloud.ai.agent.constants.AgentMessageType;
@@ -42,22 +43,35 @@ import java.util.Objects;
 import java.util.UUID;
 
 /**
- * 可共享的基础智能体定义。
+ * 可共享的基础智能体生命周期骨架。
  *
- * <p>实例只保存模型、提示词、任务管理器和构建期配置；所有请求状态由
- * {@link AgentRunContext} 隔离。</p>
+ * <p>完整流程：{@code start -> 请求快照 -> RunContext -> TaskManager 注册 ->
+ * streamExecute -> 完成/失败/取消/等待审批 -> 终态清理与 Hook}。流式
+ * {@link AgentRun#events()} 与非流式 {@link AgentRun#completion()} 共享同一个 Run；
+ * 任一入口首次订阅都会且只会启动一次。</p>
+ *
+ * <p>Agent 实例只共享模型、提示词、工具定义和构建期配置。消息、答案、订阅、中断及
+ * 终态全部保存在 {@link AgentRunContext}。Base 不保存审批单、checkpoint 或 Java
+ * continuation；具体 Agent 直接把供应商原生 checkpoint 中断映射为统一事件。</p>
  */
 @Slf4j
 public abstract class BaseAgent implements Agent {
+    /** Agent 类型，属于共享的只读构建配置。 */
     protected final AgentType agentType;
+    /** 模型客户端，必须由供应商实现保证共享调用安全。 */
     protected final ChatModel chatModel;
+    /** 任务占用与取消协调器；保存的是每 Run 句柄而不是 Agent 请求态。 */
     protected final AgentTaskManager agentTaskManager;
+    /** 共享的系统提示词构造器；构建完成后子类不得按 Run 改写。 */
     protected ConstructSystemPrompt systemPrompt;
+    /** 可选对话记忆组件；实现必须按 conversationId 隔离消息。 */
     protected ChatMemory chatMemory;
+    /** 记忆窗口上限；仅在启用 ChatMemory 时生效。 */
     protected int maxMemoryMessages;
+    /** 完成后是否生成推荐问题；默认开启。 */
     protected boolean enableRecommendations = true;
+    /** 可选生命周期 Hook；不得在 Hook 实现中保存未隔离的 Run 状态。 */
     protected AgentChatHook hook;
-
     protected BaseAgent(AgentType agentType, ChatModel chatModel, AgentTaskManager agentTaskManager) {
         this.agentType = Objects.requireNonNull(agentType, "agentType cannot be null");
         this.chatModel = Objects.requireNonNull(chatModel, "chatModel cannot be null");
@@ -66,12 +80,29 @@ public abstract class BaseAgent implements Agent {
 
     @Override
     public final AgentRun start(@NotNull AgentChatRequest request) {
+        return start(request, AgentRunOptions.defaults());
+    }
+
+    @Override
+    public final AgentRun start(@NotNull AgentChatRequest request, AgentRunOptions options) {
         Objects.requireNonNull(request, "request cannot be null");
+        AgentRunOptions safeOptions = Objects.requireNonNullElseGet(options, AgentRunOptions::defaults);
         AgentChatRequest snapshot = request.snapshot();
         if (StringUtils.isBlank(snapshot.getConversationId()) || StringUtils.isBlank(snapshot.getQuestion())) {
             throw BusinessRuntimeException.of(AgentResultCode.CHAT_MESSAGES_IS_EMPTY);
         }
         AgentRunContext context = createRunContext(snapshot, UUID.randomUUID().toString());
+        return createRunHandle(context, safeOptions);
+    }
+
+    /**
+     * 为首次执行或 Alibaba checkpoint 恢复创建统一 Run 句柄。
+     * 子类可以提供指定 runId 的新 RunContext，但任务注册、取消和终态仍只能走 BaseAgent。
+     */
+    protected final AgentRun createRunHandle(AgentRunContext context, AgentRunOptions options) {
+        Objects.requireNonNull(context, "context cannot be null");
+        AgentRunOptions safeOptions = Objects.requireNonNullElseGet(options, AgentRunOptions::defaults);
+        context.initializeRunOptions(safeOptions);
         context.onCancel(() -> {
             onRunCancelled(context);
             finishRun(context, AgentRunState.CANCELLED, null,
@@ -141,6 +172,11 @@ public abstract class BaseAgent implements Agent {
     protected void onRunCancelled(AgentRunContext context) {
     }
 
+    /** 真实终态后的供应商资源释放扩展点；审批 WAITING 不会调用。 */
+    protected void onRunTerminated(AgentRunContext context, AgentRunState state) {
+    }
+
+    /** 把当前底层主订阅绑定到 Run，使取消和审批暂停可以精确释放它。 */
     protected final void bindDisposable(AgentRunContext context, Disposable disposable) {
         context.bindNativeDisposable(disposable);
     }
@@ -150,14 +186,59 @@ public abstract class BaseAgent implements Agent {
         context.trackDisposable(disposable);
     }
 
+    /** 以幂等方式完成当前 Run，并统一触发事件、结果、任务清理和 Hook。 */
     protected final void completeRun(AgentRunContext context) {
         finishRun(context, AgentRunState.COMPLETED, null, null, null);
+    }
+
+    /**
+     * 发布 Alibaba 原生 checkpoint 中断并结束当前 HTTP/SSE 分段。
+     *
+     * <p>该入口不注册 Java continuation。下游持久化审批单后，用 threadId/checkpointId
+     * 调用具体 Alibaba Adapter 的 resume 方法开启新连接；Graph 状态由配置的 Saver 保存。</p>
+     */
+    protected final void pauseForNativeApproval(AgentRunContext context,
+                                                String checkpointId,
+                                                Map<String, Object> eventData) {
+        if (!context.tryPauseForApproval(checkpointId)) {
+            throw new IllegalStateException("run cannot transition to native approval waiting");
+        }
+        Map<String, Object> safeData = eventData == null
+                ? Map.of("checkpointId", checkpointId) : Map.copyOf(eventData);
+        context.emitRaw(AgentResponse.event(AgentMessageType.APPROVAL_REQUIRED,
+                "Agent action requires approval", safeData).toJson());
+        context.emitRaw(AgentResponse.event(AgentMessageType.RUN_PAUSED,
+                "Agent run paused for approval", Map.of(
+                        "runId", context.getRunId(),
+                        "checkpointId", checkpointId)).toJson());
+        context.pauseNativeExecution();
+        agentTaskManager.completeTask(context.getTaskHandle());
+        context.completeResult(AgentRunResult.builder()
+                .runId(context.getRunId())
+                .conversationId(context.getConversationId())
+                .messageId(context.getMessageId())
+                .state(AgentRunState.WAITING_APPROVAL)
+                .pendingApprovalId(checkpointId)
+                .finalContext(context.finalContext())
+                .build());
+        // 原生恢复使用新的 RunContext 和新连接，当前分段不能无限占用 HTTP 连接。
+        context.completeEvents();
     }
 
     protected final void failRun(AgentRunContext context, Throwable error) {
         finishRun(context, AgentRunState.FAILED, error,
                 AgentResultCode.FAILED_EXECUTE_AGENT.getCode(),
                 AgentResultCode.FAILED_EXECUTE_AGENT.getMessage());
+    }
+
+    /**
+     * 审批拒绝且策略为终止时的统一收口。拒绝不是启动失败，使用独立终态区分。
+     *
+     */
+    protected final void rejectApproval(AgentRunContext context, String message) {
+        finishRun(context, AgentRunState.APPROVAL_REJECTED, null,
+                AgentResultCode.APPROVAL_MISMATCH.getCode(),
+                StringUtils.defaultIfBlank(message, "Agent action was rejected"));
     }
 
     private boolean cancelRun(AgentRunContext context) {
@@ -212,6 +293,13 @@ public abstract class BaseAgent implements Agent {
         if (!context.tryFinalize(state)) {
             return;
         }
+        try {
+            onRunTerminated(context, state);
+        } catch (RuntimeException releaseError) {
+            // 供应商 checkpoint 清理失败不能阻断任务租约、sink、completion 和 Hook 收口。
+            log.warn("Agent终态资源释放失败, conversationId={}, runId={}, state={}",
+                    context.getConversationId(), context.getRunId(), state, releaseError);
+        }
         agentTaskManager.completeTask(context.getTaskHandle());
         if (state == AgentRunState.FAILED || state == AgentRunState.REJECTED) {
             context.failEvents(eventError == null
@@ -221,14 +309,17 @@ public abstract class BaseAgent implements Agent {
             context.completeEvents();
         }
         AgentRunResult result = AgentRunResult.builder()
+                .messageId(context.getMessageId())
                 .runId(context.getRunId())
                 .conversationId(context.getConversationId())
                 .state(state)
                 .finalContext(context.finalContext())
                 .errorCode(errorCode)
                 .errorMessage(errorMessage)
+                // 只有 WAITING 快照可以携带 pendingApprovalId；真实终态不得暗示仍可恢复。
+                .pendingApprovalId(null)
                 .build();
-        context.completeResult(result);
+        context.completeTerminalResult(result);
         if (hook != null) {
             try {
                 hook.onFinish(result);
@@ -257,7 +348,7 @@ public abstract class BaseAgent implements Agent {
     }
 
     private void prepareChatMemory(AgentRunContext context) {
-        if (!useChatMemory()) {
+        if (!useChatMemory() || context.isResumeSegment()) {
             return;
         }
         if (CollectionUtils.isNotEmpty(context.getRequest().getHistoryMessages())) {
@@ -345,6 +436,8 @@ public abstract class BaseAgent implements Agent {
             case REFERENCE -> createReferenceResponse(content);
             case RECOMMEND -> createRecommendResponse(content);
             case ERROR -> createErrorResponse(content);
+            case APPROVAL_REQUIRED, APPROVAL_RESOLVED, RUN_PAUSED, RUN_RESUMED ->
+                    AgentResponse.event(type, content, null).toJson();
         });
     }
 

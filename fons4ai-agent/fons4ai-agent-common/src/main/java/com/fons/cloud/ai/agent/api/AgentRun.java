@@ -22,7 +22,10 @@ public interface AgentRun {
     /** @return 单播的客户端事件流 */
     Flux<String> events();
 
-    /** @return 成功、失败、取消或拒绝时恰好产生一次的终态结果 */
+    /**
+     * @return 首个结构化结果；普通执行为终态，审批暂停时为 WAITING_APPROVAL。
+     * 恢复后的终态由具体可恢复 Agent 的 checkpoint resume 入口返回
+     */
     Mono<AgentRunResult> completion();
 
     /**

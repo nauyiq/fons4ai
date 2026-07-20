@@ -27,12 +27,13 @@ import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.atomic.AtomicLong;
 
 /**
- * 简单的ReAct思想实现的Agent
+ * 早期的独立 ReAct 示例实现，不接入 {@link com.fons.cloud.ai.agent.standard.BaseAgent} 生命周期。
  * <pre>
- *      Thought（思考）：分析当前状态、制定下一步计划
- *      Action（行动）：调用工具（如搜索、计算、API）
- *      Observation（观察）：接收工具返回的结果
+ * 请求 → 创建局部消息和 Sink → 模型流 → 工具调用 → Observation → 下一轮 → 完成 Sink
  * </pre>
+ *
+ * <p>该类型保留用于兼容已有简单调用，不具备共享 Agent 的 RunContext 隔离、统一任务管理或
+ * HITL 能力；新接入应使用 {@link ReactAgent}。实例字段包含单次调用状态，不能并发复用。</p>
  * @author hongqy
  */
 @Slf4j

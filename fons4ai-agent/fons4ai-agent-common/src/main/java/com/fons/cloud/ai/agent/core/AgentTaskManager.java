@@ -108,11 +108,11 @@ public class AgentTaskManager implements InitializingBean, DisposableBean {
     }
 
     /**
-     * 注册任务
-     * @param conversationId 会话ID
+     * 注册当前 Run 的任务占用和流句柄。
+     * @param handle 同时包含 conversationId 和 runId 的精确任务句柄
      * @param sink           响应式流发布者
      * @param agentType      agent类型
-     * @return
+     * @return 注册结果；同一会话已有活跃任务时返回失败
      */
     public R<TaskInfo> registerTask(AgentTaskHandle handle, Sinks.Many<String> sink, AgentType agentType) {
         String conversationId = handle.conversationId();

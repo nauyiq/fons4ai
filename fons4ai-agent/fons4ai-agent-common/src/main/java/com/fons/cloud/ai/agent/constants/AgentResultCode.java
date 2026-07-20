@@ -5,6 +5,7 @@ import lombok.AllArgsConstructor;
 import lombok.Getter;
 
 /**
+ * Agent 公共错误码。错误码属于对外兼容契约，已发布值不得复用。
  * @author hongqy
  */
 @Getter
@@ -20,6 +21,10 @@ public enum AgentResultCode implements Result {
     AGENT_TASK_ALREADY_CLOSE("AG200003", "任务已关闭"),
     AGENT_BLOCKING_CALL_NOT_ALLOWED("AG200005", "不能在Reactor非阻塞线程调用Agent.call"),
     AGENT_RUN_RESULT_MISSING("AG200006", "Agent执行未产生终态结果"),
+    /** checkpoint 审批决定与当前 Run 关联不一致。 */
+    APPROVAL_MISMATCH("AG200009", "审批请求关联不匹配"),
+    /** 下游审批等待已超过允许时间。 */
+    APPROVAL_EXPIRED("AG200010", "审批请求已过期"),
     //  ==================== 认证异常 ====================
 
     //  ==================== 文件/oss异常 ====================

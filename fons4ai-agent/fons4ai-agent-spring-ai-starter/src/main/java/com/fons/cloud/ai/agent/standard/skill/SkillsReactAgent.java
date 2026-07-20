@@ -1,22 +1,31 @@
 package com.fons.cloud.ai.agent.standard.skill;
 
 import com.alibaba.cloud.ai.graph.NodeOutput;
-import com.alibaba.cloud.ai.graph.OverAllState;
 import com.alibaba.cloud.ai.graph.RunnableConfig;
+import com.alibaba.cloud.ai.graph.action.InterruptionMetadata;
 import com.alibaba.cloud.ai.graph.agent.hook.Hook;
+import com.alibaba.cloud.ai.graph.agent.hook.hip.HumanInTheLoopHook;
+import com.alibaba.cloud.ai.graph.checkpoint.BaseCheckpointSaver;
+import com.alibaba.cloud.ai.graph.checkpoint.savers.MemorySaver;
 import com.alibaba.cloud.ai.graph.agent.hook.modelcalllimit.ModelCallLimitHook;
 import com.alibaba.cloud.ai.graph.agent.hook.skills.ReadSkillTool;
 import com.alibaba.cloud.ai.graph.agent.hook.skills.SkillsAgentHook;
 import com.alibaba.cloud.ai.graph.agent.hook.toolcalllimit.ToolCallLimitHook;
 import com.alibaba.cloud.ai.graph.skills.registry.SkillRegistry;
-import com.alibaba.cloud.ai.graph.streaming.OutputType;
-import com.alibaba.cloud.ai.graph.streaming.StreamingOutput;
+import com.fons.cloud.ai.agent.api.AgentRunState;
 import com.fons.cloud.ai.agent.chat.AgentChatRequest;
+import com.fons.cloud.ai.agent.approval.AgentApprovalPoint;
+import com.fons.cloud.ai.agent.approval.AgentApprovalAction;
+import com.fons.cloud.ai.agent.approval.ApprovalRejectionMode;
 import com.fons.cloud.ai.agent.constants.AgentType;
 import com.fons.cloud.ai.agent.core.AgentTaskManager;
 import com.fons.cloud.ai.agent.infrastructure.hook.AgentChatHook;
 import com.fons.cloud.ai.agent.infrastructure.prompt.ReactAgentSystemPrompt;
 import com.fons.cloud.ai.agent.standard.BaseAgent;
+import com.fons.cloud.ai.agent.standard.adaptor.AlibabaAgentStreamBridge;
+import com.fons.cloud.ai.agent.standard.adaptor.AlibabaAgentResumeRequest;
+import com.fons.cloud.ai.agent.standard.adaptor.AlibabaHumanFeedbacks;
+import com.fons.cloud.ai.agent.standard.adaptor.ResumableAgent;
 import com.fons.cloud.ai.agent.standard.runtime.AgentRunContext;
 import lombok.extern.slf4j.Slf4j;
 import org.apache.commons.lang3.StringUtils;
@@ -31,6 +40,7 @@ import reactor.core.Disposable;
 import java.time.Duration;
 import java.util.ArrayList;
 import java.util.Collections;
+import java.util.EnumSet;
 import java.util.HashMap;
 import java.util.HashSet;
 import java.util.LinkedHashMap;
@@ -49,17 +59,27 @@ import java.util.concurrent.atomic.AtomicReference;
  *
  * <p>完整运行流程：</p>
  * <ol>
- *     <li>构建阶段校验技能、工具绑定和安全上限，并组装 Alibaba ReactAgent。</li>
- *     <li>首次模型调用只注入技能摘要，通用工具始终可见，技能工具和资源工具默认不可见。</li>
- *     <li>模型成功调用 read_skill 后激活技能，下一轮动态开放该技能工具及受控资源工具。</li>
- *     <li>Alibaba Graph 继续执行原生 ReAct 循环，Fons4AI 仅转换模型流和记录工具完成事件。</li>
- *     <li>Graph 正常、异常或取消后统一释放任务，并以幂等方式触发完成 Hook。</li>
+ *     <li>共享实例构建时校验技能目录、工具绑定和安全上限；每个 Run 再捕获独立目录快照、
+ *     资源视图、GuardedSkillRegistry 和 Alibaba delegate。</li>
+ *     <li>首次模型调用只注入技能摘要；模型成功调用 read_skill 后，下一轮才动态开放该技能
+ *     专属工具及受控资源工具。</li>
+ *     <li>未启用审批时 Alibaba 直接执行工具；启用后 HumanInTheLoopHook 在业务工具节点前
+ *     产生 InterruptionMetadata，Fons4AI 只映射为 checkpoint 审批事件。</li>
+ *     <li>批准、编辑或“拒绝并反馈”会重建 delegate，并以同一 thread、Saver、checkpoint 和
+ *     ToolFeedback 恢复 Graph；“拒绝并终止”不会执行工具。read_skill 和资源读取不设审批点，
+ *     始终由技能激活与资源白名单负责授权。</li>
+ *     <li>模型流和完整模型轮次分别适配流式、非流式输出；Graph 真实终态统一释放任务和
+ *     checkpoint，并以幂等方式触发完成 Hook。WAITING 不释放原生 checkpoint。</li>
  * </ol>
  *
  * @author hongqy
  */
 @Slf4j
-public class SkillsReactAgent extends BaseAgent {
+public class SkillsReactAgent extends BaseAgent implements ResumableAgent {
+
+    /** Alibaba 已产生工具调用、但工具节点尚未执行时的唯一 Skills 审批点。 */
+    public static final AgentApprovalPoint BEFORE_TOOL =
+            AgentApprovalPoint.of("skills.before-tool");
 
     private static final String AGENT_NAME = "fons-skills-react-agent";
     private static final String SKILL_SECURITY_PROMPT = """
@@ -79,18 +99,34 @@ public class SkillsReactAgent extends BaseAgent {
     private final SkillRegistry sourceSkillRegistry;
     /** 原子发布的只读目录快照；已启动 Run 始终持有自己创建时看到的版本。 */
     private final AtomicReference<SkillCatalogSnapshot> catalogSnapshot;
+    /** 共享资源解析器；每个 Run 会用激活技能集合包装成独立授权视图。 */
     private final SkillResourceResolver resourceResolver;
+    /** 始终对模型可见的无技能依赖工具。 */
     private final List<ToolCallback> commonTools;
+    /** 按技能名绑定的工具定义；read_skill 成功前不会暴露。 */
     private final Map<String, List<ToolCallback>> configuredSkillTools;
+    /** 由宿主追加的 Alibaba Hook；核心 Skills/HITL Hook 禁止重复注册。 */
     private final List<Hook> nativeHooks;
+    /** 每个 Run 启动前是否重新捕获 Registry 快照；默认 false。 */
     private final boolean autoReload;
+    /** 单个 Run 允许的模型调用上限。 */
     private final int maxModelCalls;
+    /** 单个 Run 允许的 read_skill 调用上限。 */
     private final int maxSkillLoads;
+    /** 可注入目录的最大技能数。 */
     private final int maxSkillCount;
+    /** 单个 SKILL.md 的 UTF-8 字节上限。 */
     private final int maxSkillContentBytes;
+    /** 单个文本资源的 UTF-8 字节上限。 */
     private final long maxResourceBytes;
+    /** 是否允许 Alibaba 并行执行同轮工具；默认关闭以降低副作用竞态。 */
     private final boolean parallelToolExecution;
+    /** 单次工具执行的超时上限。 */
     private final Duration toolExecutionTimeout;
+    /** 同一实例所有 Run 共享但按 threadId 隔离的原生 checkpoint 存储。 */
+    private final BaseCheckpointSaver checkpointSaver;
+    /** 普通 React 与 Skills 共用的 Alibaba 输出协议桥接。 */
+    private final AlibabaAgentStreamBridge<SkillsAgentRunContext> streamBridge;
 
     private SkillsReactAgent(Builder builder) {
         super(AgentType.SKILLS, builder.chatModel, builder.agentTaskManager);
@@ -108,6 +144,9 @@ public class SkillsReactAgent extends BaseAgent {
         this.resourceResolver = builder.resourceResolver;
         this.nativeHooks = validateNativeHooks(builder.nativeHooks);
         this.autoReload = builder.autoReload;
+        if (autoReload && !(sourceSkillRegistry instanceof SkillRegistrySnapshotProvider)) {
+            throw new IllegalStateException("autoReload requires SkillRegistrySnapshotProvider");
+        }
         this.maxModelCalls = builder.maxModelCalls;
         this.maxSkillLoads = builder.maxSkillLoads;
         this.maxSkillCount = builder.maxSkillCount;
@@ -115,6 +154,9 @@ public class SkillsReactAgent extends BaseAgent {
         this.maxResourceBytes = builder.maxResourceBytes;
         this.parallelToolExecution = builder.parallelToolExecution;
         this.toolExecutionTimeout = builder.toolExecutionTimeout;
+        this.checkpointSaver = builder.checkpointSaver == null
+                ? new MemorySaver() : builder.checkpointSaver;
+        this.streamBridge = new AlibabaAgentStreamBridge<>(new NativeStreamListener());
 
         // 3. 构建并验证首个只读目录快照。autoReload=false 时所有 Run 复用该不可变数据。
         SkillCatalogSnapshot initialSnapshot = SkillCatalogSnapshot.capture(
@@ -123,10 +165,9 @@ public class SkillsReactAgent extends BaseAgent {
                 configuredSkillTools.keySet());
         this.catalogSnapshot = new AtomicReference<>(initialSnapshot);
 
-        ReactAgentSystemPrompt prompt = builder.systemPrompt == null
+        this.systemPrompt = builder.systemPrompt == null
                 ? ReactAgentSystemPrompt.defaultPrompt()
                 : builder.systemPrompt;
-        this.systemPrompt = prompt;
 
         // 4. ChatMemory 由 BaseAgent 共享管理，并按 conversationId 隔离。
         if (builder.useChatMemory) {
@@ -144,22 +185,26 @@ public class SkillsReactAgent extends BaseAgent {
             catalogSnapshot.set(snapshot);
         }
         GuardedSkillRegistry registry = new GuardedSkillRegistry(
-                snapshot, maxSkillCount, maxSkillContentBytes, configuredSkillTools.keySet());
+                snapshot, maxSkillCount, maxSkillContentBytes,
+                configuredSkillTools.keySet());
         SkillResourceResolver runResourceResolver = resourceResolver.forRun(snapshot);
         if (runResourceResolver == null) {
             // 兼容尚未感知 forRun 默认方法的代理实现；其资源版本稳定性仍由实现方契约负责。
             runResourceResolver = resourceResolver;
         }
         return new SkillsAgentRunContext(
-                agentType, request, runId, registry, buildDelegate(registry, runResourceResolver));
+                agentType, request, runId, registry, runResourceResolver);
     }
 
-    /** 为一个 Run 组装独立的渐进式工具授权链和 Alibaba ReAct 内核。 */
+    /** 为一个 Run 组装独立的渐进式工具授权与 Alibaba ReAct 内核。 */
     private com.alibaba.cloud.ai.graph.agent.ReactAgent buildDelegate(
-            GuardedSkillRegistry registry, SkillResourceResolver runResourceResolver) {
-        Map<String, List<ToolCallback>> skillTools = guardSkillTools(configuredSkillTools, registry);
+            GuardedSkillRegistry registry, SkillResourceResolver runResourceResolver,
+            boolean hitlEnabled) {
+        Map<String, List<ToolCallback>> skillTools = guardSkillTools(
+                configuredSkillTools, registry);
         ToolCallback listResources = SkillResourceTools.listTool(registry, runResourceResolver);
-        ToolCallback readResource = SkillResourceTools.readTool(registry, runResourceResolver, maxResourceBytes);
+        ToolCallback readResource = SkillResourceTools.readTool(
+                registry, runResourceResolver, maxResourceBytes);
         SkillResourceInterceptor resourceInterceptor = new SkillResourceInterceptor(
                 registry, List.of(listResources, readResource));
 
@@ -174,6 +219,9 @@ public class SkillsReactAgent extends BaseAgent {
                 .exitBehavior(ModelCallLimitHook.ExitBehavior.ERROR).build());
         hooks.add(ToolCallLimitHook.builder().toolName(ReadSkillTool.READ_SKILL)
                 .runLimit(maxSkillLoads).exitBehavior(ToolCallLimitHook.ExitBehavior.ERROR).build());
+        if (hitlEnabled) {
+            hooks.add(buildNativeHitlHook());
+        }
         hooks.addAll(nativeHooks);
 
         return com.alibaba.cloud.ai.graph.agent.ReactAgent.builder()
@@ -184,11 +232,26 @@ public class SkillsReactAgent extends BaseAgent {
                 .tools(commonTools)
                 .hooks(hooks)
                 .interceptors(resourceInterceptor)
-                .releaseThread(true)
+                .saver(checkpointSaver)
+                // WAITING 必须保留 Graph thread；真实终态由 onRunTerminated 显式释放。
+                .releaseThread(false)
                 .parallelToolExecution(parallelToolExecution)
                 .toolExecutionTimeout(toolExecutionTimeout)
                 .wrapSyncToolsAsAsync(parallelToolExecution)
                 .build();
+    }
+
+    /**
+     * 为本次 delegate 配置 Alibaba 原生工具中断。
+     * read_skill 与资源工具不在列表中，它们继续只受技能权限和资源白名单约束。
+     */
+    private HumanInTheLoopHook buildNativeHitlHook() {
+        HumanInTheLoopHook.Builder builder = HumanInTheLoopHook.builder();
+        commonTools.forEach(tool -> builder.approvalOn(
+                tool.getToolDefinition().name(), "Fons4AI common tool"));
+        configuredSkillTools.values().stream().flatMap(List::stream).forEach(tool ->
+                builder.approvalOn(tool.getToolDefinition().name(), "Activated skill tool"));
+        return builder.build();
     }
 
     /**
@@ -200,21 +263,39 @@ public class SkillsReactAgent extends BaseAgent {
     @Override
     protected Disposable streamExecute(AgentRunContext baseContext) {
         SkillsAgentRunContext context = (SkillsAgentRunContext) baseContext;
-        RunnableConfig config = RunnableConfig.builder()
-                .threadId(context.getConversationId() + ":" + context.getRunId())
-                .build();
-        try {
-            Disposable disposable = context.getDelegate().stream(createInputMessages(context), config)
-                    .subscribe(
-                            output -> handleNativeOutput(context, output),
-                            error -> handleNativeError(context, error),
-                            () -> handleNativeComplete(context));
-            bindDisposable(context, disposable);
-            return disposable;
-        } catch (Exception error) {
-            handleNativeError(context, error);
+        if (context.getNativeResumeRejection() != null) {
+            context.getNativeTerminated().set(true);
+            rejectApproval(context, context.getNativeResumeRejection());
             return null;
         }
+        RunnableConfig config = context.getRunnableConfig();
+        boolean resuming = config != null;
+        if (!resuming) {
+            config = RunnableConfig.builder()
+                    .threadId(context.getConversationId() + ":" + context.getRunId())
+                    .build();
+            context.setRunnableConfig(config);
+        }
+        context.replaceDelegate(buildDelegate(context.getSkillRegistry(),
+                context.getResourceResolver(), context.runOptions().approvalEnabled()));
+        try {
+            // subscribeNative 自行按 generation 绑定订阅；返回 null 避免 BaseAgent 再次把
+            // 同步中断前的旧 Disposable 覆盖到恢复订阅之上。
+            reactor.core.publisher.Flux<NodeOutput> outputs = resuming
+                    ? context.getDelegate().stream(Map.of(), config)
+                    : context.getDelegate().stream(createInputMessages(context), config);
+            subscribeNative(context, outputs);
+            return null;
+        } catch (Exception error) {
+            terminateNativeWithError(context, error);
+            return null;
+        }
+    }
+
+    /** 订阅原生 Graph；流片段、代次和终态竞争统一交给公共桥接器。 */
+    private Disposable subscribeNative(SkillsAgentRunContext context,
+                                       reactor.core.publisher.Flux<NodeOutput> outputs) {
+        return streamBridge.subscribe(context, outputs);
     }
 
     /**
@@ -239,147 +320,56 @@ public class SkillsReactAgent extends BaseAgent {
     }
 
     /**
-     * 根据 Alibaba OutputType 分派原生 Graph 事件。
-     * 未知节点事件不向客户端透传，避免改变现有流协议。
+     * 把 Alibaba 原生工具中断映射为一个下游可见的安全中断。
+     * 完整参数只保留在当前 Run 的原生 metadata 中，不进入客户端事件。
      */
-    private void handleNativeOutput(SkillsAgentRunContext context, NodeOutput output) {
-        // Graph 已进入终态后忽略迟到事件，防止重复文本或工具记录。
-        if (output == null || context.getNativeTerminated().get()) {
+    private void handleNativeInterruption(SkillsAgentRunContext context,
+                                          InterruptionMetadata interruption) {
+        List<InterruptionMetadata.ToolFeedback> tools = interruption.toolFeedbacks();
+        if (tools.isEmpty()) {
+            handleNativeError(context, new IllegalStateException(
+                    "Alibaba HITL interruption contains no tool feedback"));
             return;
         }
-        OutputType outputType = output instanceof StreamingOutput<?> streamingOutput
-                ? streamingOutput.getOutputType()
-                : null;
-        if (outputType == null && output.node() != null) {
-            // 非 StreamingOutput 的节点结果需要结合节点名推导事件类型。
-            outputType = OutputType.from(output instanceof StreamingOutput<?>, output.node());
+        try {
+            String actionId = tools.stream().map(InterruptionMetadata.ToolFeedback::getId)
+                    .collect(java.util.stream.Collectors.joining(","));
+            String actionName = tools.stream().map(InterruptionMetadata.ToolFeedback::getName)
+                    .distinct().collect(java.util.stream.Collectors.joining(","));
+            Set<AgentApprovalAction> supportedActions = tools.size() == 1
+                    ? EnumSet.allOf(AgentApprovalAction.class)
+                    : EnumSet.of(AgentApprovalAction.APPROVE, AgentApprovalAction.REJECT);
+            RunnableConfig config = Objects.requireNonNull(context.getRunnableConfig(),
+                    "native runnable config cannot be null");
+            com.alibaba.cloud.ai.graph.checkpoint.Checkpoint checkpoint =
+                    checkpointSaver.get(config).orElseThrow(() ->
+                            new IllegalStateException("Alibaba interruption checkpoint is missing"));
+            String threadId = config.threadId().orElseThrow();
+            pauseForNativeApproval(context, checkpoint.getId(), Map.ofEntries(
+                    Map.entry("interruptId", checkpoint.getId()),
+                    Map.entry("runId", context.getRunId()),
+                    Map.entry("conversationId", context.getConversationId()),
+                    Map.entry("threadId", threadId),
+                    Map.entry("checkpointId", checkpoint.getId()),
+                    Map.entry("point", BEFORE_TOOL.value()),
+                    Map.entry("actionId", actionId),
+                    Map.entry("actionName", actionName),
+                    Map.entry("toolNames", actionName),
+                    Map.entry("toolCount", tools.size()),
+                    Map.entry("allowedActions", supportedActions)));
+        } catch (Throwable error) {
+            // suspendNative 已使旧 generation 失效，不能依赖旧订阅的 onError 收口；
+            // checkpoint 加载或事件映射异常必须在当前调用栈显式结束 Run。
+            context.clearNativeSuspension();
+            handleNativeError(context, error);
         }
-
-        if (outputType == OutputType.AGENT_MODEL_STREAMING) {
-            handleModelStreaming(context, (StreamingOutput<?>) output);
-        } else if (outputType == OutputType.AGENT_MODEL_FINISHED) {
-            handleModelFinished(context, output);
-        } else if (outputType == OutputType.AGENT_TOOL_FINISHED) {
-            handleToolFinished(context, output);
-        }
-    }
-
-    /**
-     * 处理单个模型流式片段：推理内容映射为 THINKING，普通答案文本映射为 TEXT。
-     * 含工具调用的 AssistantMessage 不输出文本，避免把中间 ReAct 轮次误当成最终答案。
-     */
-    private void handleModelStreaming(SkillsAgentRunContext context, StreamingOutput<?> output) {
-        if (!(output.message() instanceof AssistantMessage assistantMessage)) {
-            return;
-        }
-        String reasoning = Objects.toString(assistantMessage.getMetadata().get("reasoningContent"), "");
-        if (StringUtils.isNotBlank(reasoning)) {
-            // 累积完整思考内容供完成 Hook 使用，同时逐片发送给客户端。
-            context.getNativeThinking().append(reasoning);
-            context.markCurrentTurnReasoningStreamed();
-            emit(context, reasoning, com.fons.cloud.ai.agent.constants.AgentMessageType.THINKING);
-        }
-        if (!assistantMessage.hasToolCalls() && StringUtils.isNotBlank(assistantMessage.getText())) {
-            // currentModelText 仅表示当前模型轮次，进入工具轮次后会被 resetCurrentTurn 清空。
-            context.getCurrentModelText().append(assistantMessage.getText());
-            context.markCurrentTurnStreamed();
-            emit(context, assistantMessage.getText(), com.fons.cloud.ai.agent.constants.AgentMessageType.TEXT);
-        }
-    }
-
-    /**
-     * 处理一个完整模型轮次。
-     * 有工具调用表示 ReAct 尚未结束；只有无工具调用的 AssistantMessage 才能成为最终答案候选。
-     */
-    private void handleModelFinished(SkillsAgentRunContext context, NodeOutput output) {
-        // 优先使用事件携带的完整消息；部分节点只在 state.messages 中提供结果，因此保留回退读取。
-        AssistantMessage assistantMessage = null;
-        if (output instanceof StreamingOutput<?> streamingOutput
-                && streamingOutput.message() instanceof AssistantMessage message) {
-            assistantMessage = message;
-        }
-        if (assistantMessage == null) {
-            assistantMessage = lastMessage(output.state(), AssistantMessage.class);
-        }
-        if (assistantMessage == null) {
-            // 没有可识别的模型消息时丢弃当前轮缓存，等待后续 Graph 事件。
-            context.resetCurrentTurn();
-            return;
-        }
-        if (assistantMessage.hasToolCalls()) {
-            // 工具调用轮不是最终回答，清空当前轮文本后继续 ReAct 循环。
-            context.resetCurrentTurn();
-            return;
-        }
-
-        String fullText = Objects.toString(assistantMessage.getText(), "");
-        if (!context.isCurrentTurnStreamed() && StringUtils.isNotBlank(fullText)) {
-            // 非流式模型不会产生 AGENT_MODEL_STREAMING，在轮次结束处补发一次完整答案。
-            emit(context, fullText, com.fons.cloud.ai.agent.constants.AgentMessageType.TEXT);
-        }
-        // 完整 AssistantMessage 优先级高于片段拼接，确保 Hook 保存的是模型最终答案。
-        context.setNativeFinalAnswer(StringUtils.isNotBlank(fullText)
-                ? fullText
-                : context.getCurrentModelText().toString());
-
-        String reasoning = Objects.toString(assistantMessage.getMetadata().get("reasoningContent"), "");
-        if (!context.isCurrentTurnReasoningStreamed() && StringUtils.isNotBlank(reasoning)) {
-            // 同理兼容仅在完整响应中返回 reasoningContent 的非流式模型。
-            context.getNativeThinking().append(reasoning);
-            emit(context, reasoning, com.fons.cloud.ai.agent.constants.AgentMessageType.THINKING);
-        }
-    }
-
-    /**
-     * 记录已完成的工具调用。
-     * 仅保存工具名供最终上下文审计，工具结果继续留在 Graph 内部，不直接发送给客户端。
-     */
-    private void handleToolFinished(SkillsAgentRunContext context, NodeOutput output) {
-        // 与模型完成事件一致，优先读事件消息，缺失时回退到 Graph state。
-        ToolResponseMessage responseMessage = null;
-        if (output instanceof StreamingOutput<?> streamingOutput
-                && streamingOutput.message() instanceof ToolResponseMessage toolResponseMessage) {
-            responseMessage = toolResponseMessage;
-        }
-        if (responseMessage == null) {
-            responseMessage = lastMessage(output.state(), ToolResponseMessage.class);
-        }
-        if (responseMessage == null) {
-            return;
-        }
-        for (ToolResponseMessage.ToolResponse response : responseMessage.getResponses()) {
-            // read_skill 也按真实完成事件记录；技能激活集合由 GuardedSkillRegistry 单独维护。
-            recordUsedTool(context, response.name());
-        }
-    }
-
-    /** 从 Graph 的 messages 状态中倒序查找指定类型的最近一条消息。 */
-    private <T extends Message> T lastMessage(OverAllState state, Class<T> messageType) {
-        if (state == null) {
-            return null;
-        }
-        Object value = state.value("messages").orElse(null);
-        if (!(value instanceof List<?> messages)) {
-            return null;
-        }
-        for (int index = messages.size() - 1; index >= 0; index--) {
-            Object message = messages.get(index);
-            if (messageType.isInstance(message)) {
-                return messageType.cast(message);
-            }
-        }
-        return null;
     }
 
     /**
      * 正常完成原生 Graph。
      * 先固化最终内容和激活技能，再按配置生成推荐问题，最后交给 BaseAgent 统一完成。
      */
-    private void handleNativeComplete(SkillsAgentRunContext context) {
-        if (!context.getNativeTerminated().compareAndSet(false, true)) {
-            return;
-        }
-        String finalAnswer = Objects.toString(context.getNativeFinalAnswer(), "");
+    private void handleNativeComplete(SkillsAgentRunContext context, String finalAnswer) {
         context.replaceFinalAnswer(finalAnswer);
         context.setSkills(String.join(",", context.getSkillRegistry().activatedSkills()));
         if (enableRecommendations && StringUtils.isNotBlank(finalAnswer)) {
@@ -393,14 +383,104 @@ public class SkillsReactAgent extends BaseAgent {
         completeRun(context);
     }
 
-    /** 异常完成原生 Graph；原子标志保证异常与正常完成竞争时只有一个终态生效。 */
     private void handleNativeError(SkillsAgentRunContext context, Throwable error) {
-        if (!context.getNativeTerminated().compareAndSet(false, true)) {
-            return;
-        }
         log.error("Skills Agent执行失败, conversationId={}, runId={}, errorType={}",
                 context.getConversationId(), context.getRunId(), error.getClass().getName());
         failRun(context, error);
+    }
+
+    /** 处理订阅建立前的同步异常；异步异常的原子竞争由 StreamBridge 负责。 */
+    private void terminateNativeWithError(SkillsAgentRunContext context, Throwable error) {
+        if (context.getNativeTerminated().compareAndSet(false, true)) {
+            handleNativeError(context, error);
+        }
+    }
+
+    /** Skills 对公共 Alibaba 输出桥接器的最小生命周期实现。 */
+    private final class NativeStreamListener
+            implements AlibabaAgentStreamBridge.Listener<SkillsAgentRunContext> {
+        @Override
+        public void onText(SkillsAgentRunContext context, String text) {
+            emit(context, text, com.fons.cloud.ai.agent.constants.AgentMessageType.TEXT);
+        }
+
+        @Override
+        public void onThinking(SkillsAgentRunContext context, String reasoning) {
+            emit(context, reasoning, com.fons.cloud.ai.agent.constants.AgentMessageType.THINKING);
+        }
+
+        @Override
+        public void onToolFinished(SkillsAgentRunContext context,
+                                   AssistantMessage.ToolCall call,
+                                   ToolResponseMessage.ToolResponse response) {
+            recordUsedTool(context, response.name());
+        }
+
+        @Override
+        public void onInterrupted(SkillsAgentRunContext context,
+                                  InterruptionMetadata interruption) {
+            handleNativeInterruption(context, interruption);
+        }
+
+        @Override
+        public void onCompleted(SkillsAgentRunContext context, String finalAnswer) {
+            handleNativeComplete(context, finalAnswer);
+        }
+
+        @Override
+        public void onError(SkillsAgentRunContext context, Throwable error) {
+            handleNativeError(context, error);
+        }
+    }
+
+    @Override
+    protected void onRunTerminated(AgentRunContext baseContext, AgentRunState state) {
+        SkillsAgentRunContext context = (SkillsAgentRunContext) baseContext;
+        RunnableConfig config = context.getRunnableConfig();
+        if (config == null) {
+            return;
+        }
+        try {
+            checkpointSaver.release(config);
+        } catch (Exception error) {
+            log.warn("Skills Graph checkpoint release failed, conversationId={}, runId={}",
+                    context.getConversationId(), context.getRunId(), error);
+        }
+    }
+
+    /**
+     * 使用新的 RunContext 从 Alibaba Saver 恢复 Skills Graph。
+     * Registry 和资源解析器会重新创建当前快照视图，Graph 消息与技能工具状态来自 checkpoint。
+     */
+    @Override
+    public com.fons.cloud.ai.agent.api.AgentRun resume(AlibabaAgentResumeRequest request) {
+        Objects.requireNonNull(request, "request cannot be null");
+        String expectedThreadId = request.request().getConversationId() + ":" + request.runId();
+        if (!expectedThreadId.equals(request.threadId())) {
+            throw new IllegalArgumentException("conversationId does not match threadId");
+        }
+        SkillsAgentRunContext context = (SkillsAgentRunContext) createRunContext(
+                request.request(), request.runId());
+        context.markResumeSegment();
+        RunnableConfig lookup = RunnableConfig.builder()
+                .threadId(request.threadId())
+                .checkPointId(request.checkpointId())
+                .build();
+        com.alibaba.cloud.ai.graph.checkpoint.Checkpoint checkpoint = checkpointSaver.get(lookup)
+                .orElseThrow(() -> new IllegalArgumentException(
+                        "Alibaba checkpoint not found: " + request.checkpointId()));
+        if (request.action() == AgentApprovalAction.REJECT
+                && request.rejectionMode() == ApprovalRejectionMode.TERMINATE) {
+            context.setRunnableConfig(lookup);
+            context.rejectNativeResume(request.comment());
+            return createRunHandle(context, request.options());
+        }
+        InterruptionMetadata source = AlibabaHumanFeedbacks.fromCheckpoint(checkpoint);
+        InterruptionMetadata feedback = AlibabaHumanFeedbacks.apply(source, request.action(),
+                request.comment(), request.editedArguments());
+        context.setRunnableConfig(RunnableConfig.builder(lookup)
+                .addHumanFeedback(feedback).build());
+        return createRunHandle(context, request.options());
     }
 
     public static Builder builder(ChatModel chatModel,
@@ -425,7 +505,8 @@ public class SkillsReactAgent extends BaseAgent {
         // Alibaba 负责“何时暴露工具”，ActivatedSkillToolCallback 负责“执行时是否仍有权限”。
         Map<String, List<ToolCallback>> result = new LinkedHashMap<>();
         source.forEach((skillName, tools) -> result.put(skillName, tools.stream()
-                .map(tool -> (ToolCallback) new ActivatedSkillToolCallback(skillName, registry, tool))
+                .map(tool -> (ToolCallback) new ActivatedSkillToolCallback(
+                        skillName, registry, tool))
                 .toList()));
         return Collections.unmodifiableMap(result);
     }
@@ -458,13 +539,15 @@ public class SkillsReactAgent extends BaseAgent {
             // 核心 Hook 的顺序和配置由 Agent 内部控制，禁止外部重复注册造成双重计数或重复注入。
             if (hook instanceof SkillsAgentHook
                     || hook instanceof ModelCallLimitHook
-                    || hook instanceof ToolCallLimitHook) {
+                    || hook instanceof ToolCallLimitHook
+                    || hook instanceof HumanInTheLoopHook) {
                 throw new IllegalArgumentException("Core Skills hooks are managed internally: " + hook.getClass().getName());
             }
         }
         return result;
     }
 
+    /** SkillsReactAgent 构建器；区分共享定义、每 Run 快照和动态授权边界。 */
     public static class Builder {
         // 必选依赖：模型和任务管理属于执行层，Registry 和 Resolver 属于技能数据访问层。
         private final ChatModel chatModel;
@@ -490,6 +573,7 @@ public class SkillsReactAgent extends BaseAgent {
         // 原生 Graph 执行配置。
         private boolean parallelToolExecution;
         private Duration toolExecutionTimeout = Duration.ofMinutes(5);
+        private BaseCheckpointSaver checkpointSaver;
 
         // Fons4AI 外层响应增强和扩展 Hook。
         private boolean enableRecommendations = true;
@@ -506,31 +590,37 @@ public class SkillsReactAgent extends BaseAgent {
             this.resourceResolver = Objects.requireNonNull(resourceResolver, "resourceResolver cannot be null");
         }
 
+        /** 配置无需激活技能即可使用的通用工具。 */
         public Builder commonTools(List<ToolCallback> commonTools) {
             this.commonTools = List.copyOf(commonTools);
             return this;
         }
 
+        /** 按技能名绑定 read_skill 成功后才开放的专属工具。 */
         public Builder skillTools(Map<String, List<ToolCallback>> skillTools) {
             this.skillTools = new HashMap<>(skillTools);
             return this;
         }
 
+        /** 覆盖默认系统提示词；框架仍会追加不可覆盖的 Skill 安全约束。 */
         public Builder systemPrompt(ReactAgentSystemPrompt systemPrompt) {
             this.systemPrompt = systemPrompt;
             return this;
         }
 
+        /** 是否在每个 Run 开始前重新捕获 Registry 快照；默认 false。 */
         public Builder autoReload(boolean autoReload) {
             this.autoReload = autoReload;
             return this;
         }
 
+        /** 是否启用按 conversationId 隔离的消息记忆。 */
         public Builder useChatMemory(boolean useChatMemory) {
             this.useChatMemory = useChatMemory;
             return this;
         }
 
+        /** 设置消息记忆窗口上限，必须大于 0。 */
         public Builder maxMemoryMessages(int maxMemoryMessages) {
             if (maxMemoryMessages <= 0) {
                 throw new IllegalArgumentException("maxMemoryMessages must be greater than 0");
@@ -539,6 +629,7 @@ public class SkillsReactAgent extends BaseAgent {
             return this;
         }
 
+        /** 设置单个 Run 的模型调用上限，防止 ReAct 无限循环。 */
         public Builder maxModelCalls(int maxModelCalls) {
             if (maxModelCalls <= 0) {
                 throw new IllegalArgumentException("maxModelCalls must be greater than 0");
@@ -547,6 +638,7 @@ public class SkillsReactAgent extends BaseAgent {
             return this;
         }
 
+        /** 设置单个 Run 的技能正文加载上限。 */
         public Builder maxSkillLoads(int maxSkillLoads) {
             if (maxSkillLoads <= 0) {
                 throw new IllegalArgumentException("maxSkillLoads must be greater than 0");
@@ -555,11 +647,13 @@ public class SkillsReactAgent extends BaseAgent {
             return this;
         }
 
+        /** 设置目录快照允许注入的最大技能数。 */
         public Builder maxSkillCount(int maxSkillCount) {
             this.maxSkillCount = maxSkillCount;
             return this;
         }
 
+        /** 设置单个 SKILL.md 的 UTF-8 字节上限。 */
         public Builder maxSkillContentBytes(int maxSkillContentBytes) {
             this.maxSkillContentBytes = maxSkillContentBytes;
             return this;
@@ -571,6 +665,7 @@ public class SkillsReactAgent extends BaseAgent {
             return maxSkillContentBytes(maxSkillContentChars);
         }
 
+        /** 设置单个可读文本资源的 UTF-8 字节上限。 */
         public Builder maxResourceBytes(long maxResourceBytes) {
             if (maxResourceBytes <= 0) {
                 throw new IllegalArgumentException("maxResourceBytes must be greater than 0");
@@ -579,11 +674,13 @@ public class SkillsReactAgent extends BaseAgent {
             return this;
         }
 
+        /** 是否允许 Alibaba 并行执行同轮工具；副作用工具建议保持 false。 */
         public Builder parallelToolExecution(boolean parallelToolExecution) {
             this.parallelToolExecution = parallelToolExecution;
             return this;
         }
 
+        /** 设置单次工具执行超时。 */
         public Builder toolExecutionTimeout(Duration toolExecutionTimeout) {
             this.toolExecutionTimeout = Objects.requireNonNull(toolExecutionTimeout, "toolExecutionTimeout cannot be null");
             if (toolExecutionTimeout.isZero() || toolExecutionTimeout.isNegative()) {
@@ -592,23 +689,39 @@ public class SkillsReactAgent extends BaseAgent {
             return this;
         }
 
+        /** 是否在完成后生成推荐问题。 */
         public Builder enableRecommendations(boolean enableRecommendations) {
             this.enableRecommendations = enableRecommendations;
             return this;
         }
 
+        /** 配置共享 Fons4AI 生命周期 Hook。 */
         public Builder hook(AgentChatHook hook) {
             this.hook = hook;
             return this;
         }
 
+        /**
+         * 配置原生 Graph checkpoint 存储。默认使用当前 Agent 内的 MemorySaver。
+         * 持久化 Saver 只能增强 Graph checkpoint 耐久性；当前 Fons4AI 公共中断路由仍是同进程能力，
+         * 不能据此宣称应用重启后可通过原 interruptId 恢复。
+         */
+        public Builder checkpointSaver(BaseCheckpointSaver checkpointSaver) {
+            this.checkpointSaver = Objects.requireNonNull(checkpointSaver,
+                    "checkpointSaver cannot be null");
+            return this;
+        }
+
+        /** 追加非核心 Alibaba Hook；Skills、限流和 HITL 核心 Hook 禁止重复。 */
         public Builder nativeHooks(List<Hook> nativeHooks) {
             this.nativeHooks = List.copyOf(nativeHooks);
             return this;
         }
 
+        /** 校验目录、工具和 Hook 后创建可共享 Agent。 */
         public SkillsReactAgent build() {
             return new SkillsReactAgent(this);
         }
     }
+
 }

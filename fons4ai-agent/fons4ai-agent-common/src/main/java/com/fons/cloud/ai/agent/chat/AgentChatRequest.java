@@ -21,6 +21,8 @@ import java.util.Map;
 @NoArgsConstructor
 @AllArgsConstructor
 public class AgentChatRequest extends BaseRequest {
+    /** 消息标识 */
+    private String messageId;
     /** 会话标识。 */
     private String conversationId;
     /** 当前问题或提示词。 */

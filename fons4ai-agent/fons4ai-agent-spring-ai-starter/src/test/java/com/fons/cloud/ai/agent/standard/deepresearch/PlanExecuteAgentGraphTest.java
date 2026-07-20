@@ -4,6 +4,7 @@ import com.alibaba.cloud.ai.graph.RunnableConfig;
 import com.alibaba.cloud.ai.graph.checkpoint.BaseCheckpointSaver;
 import com.fons.cloud.ai.agent.chat.AgentChatRequest;
 import com.fons.cloud.ai.agent.api.AgentRunResult;
+import com.fons.cloud.ai.agent.api.AgentRunState;
 import com.fons.cloud.ai.agent.core.AgentTaskHandle;
 import com.fons.cloud.common.result.R;
 import com.fons.cloud.ai.agent.core.AgentTaskManager;
@@ -42,6 +43,39 @@ import static org.mockito.Mockito.never;
 import static org.mockito.ArgumentMatchers.any;
 
 class PlanExecuteAgentGraphTest {
+
+    @Test
+    void planApprovalPointsShouldDefaultToPassThrough() {
+        PlanExecuteAgent agent = newAgent();
+        PlanExecuteRunContext runContext = initializedRunContext(agent, "plan-default");
+        DeepResearchExecuteContext executeContext = runContext.getDeepResearchContext();
+        com.alibaba.cloud.ai.graph.OverAllState state = planState(executeContext);
+
+        assertDoesNotThrow(() -> agent.afterPlanApprovalNode(state, executeContext));
+        assertDoesNotThrow(() -> agent.beforeTaskApprovalNode(state, executeContext));
+        assertDoesNotThrow(() -> agent.beforeReportApprovalNode(state, executeContext));
+        assertEquals(AgentRunState.RUNNING, runContext.currentState());
+    }
+
+    @Test
+    void waitingApprovalMustKeepCheckpointUntilARealTerminalState() throws Exception {
+        BaseCheckpointSaver checkpointSaver = mock(BaseCheckpointSaver.class);
+        PlanExecuteAgent agent = PlanExecuteAgent.builder(
+                        List.of(), mock(ChatModel.class), mock(AgentTaskManager.class),
+                        mock(ToolRegistry.class))
+                .checkpointSaver(checkpointSaver)
+                .build();
+        PlanExecuteRunContext context = initializedRunContext(agent, "checkpoint-waiting");
+        context.setRunnableConfig(RunnableConfig.builder().threadId("thread-waiting").build());
+        context.tryPauseForApproval("approval-1");
+
+        agent.releaseCheckpoint(context);
+        verify(checkpointSaver, never()).release(any(RunnableConfig.class));
+
+        assertTrue(context.tryFinalize(AgentRunState.CANCELLED));
+        agent.releaseCheckpoint(context);
+        verify(checkpointSaver).release(any(RunnableConfig.class));
+    }
 
     @Test
     void shouldKeepNewContextOpenAndMarkFinishedContextClosed() {
@@ -224,6 +258,28 @@ class PlanExecuteAgentGraphTest {
 
     private AgentChatRequest request(String conversationId, String question) {
         return AgentChatRequest.builder().conversationId(conversationId).question(question).build();
+    }
+
+    private PlanExecuteRunContext initializedRunContext(PlanExecuteAgent agent, String conversationId) {
+        PlanExecuteRunContext runContext = (PlanExecuteRunContext) agent.createRunContext(
+                request(conversationId, "question"), "run-" + conversationId);
+        assertTrue(runContext.tryStart());
+        runContext.setRunnableConfig(RunnableConfig.builder()
+                .threadId("PLAN-EXECUTE-AGENT:" + conversationId + ":run-" + conversationId)
+                .build());
+        DeepResearchExecuteContext executeContext = new DeepResearchExecuteContext(
+                runContext, conversationId, "question", new java.util.ArrayList<>());
+        runContext.setDeepResearchContext(executeContext);
+        return runContext;
+    }
+
+    private com.alibaba.cloud.ai.graph.OverAllState planState(DeepResearchExecuteContext context) {
+        Map<String, Object> state = PlanExecuteGraph.initState(context);
+        state.put(PlanExecuteGraph.State.ROUND.getState(), 1);
+        state.put(PlanExecuteGraph.State.PLAN.getState(), List.of(
+                new PlanTask("task-1", "search", "调用 search 工具", 1)));
+        state.put(PlanExecuteGraph.State.PENDING_ORDERS.getState(), new java.util.ArrayList<>(List.of(1)));
+        return new com.alibaba.cloud.ai.graph.OverAllState(state);
     }
 
     private PlanExecuteAgent newAgent() {

@@ -15,6 +15,7 @@ import org.springframework.ai.chat.model.ChatResponse;
 import org.springframework.ai.chat.model.Generation;
 import org.springframework.ai.chat.prompt.Prompt;
 import org.springframework.ai.tool.ToolCallback;
+import org.springframework.ai.chat.model.ToolContext;
 import reactor.core.Disposable;
 import reactor.core.publisher.Flux;
 
@@ -136,7 +137,7 @@ class ReactAgentSharedInstanceTest {
         CountDownLatch toolFinished = new CountDownLatch(1);
         ToolCallback tool = mock(ToolCallback.class, RETURNS_DEEP_STUBS);
         when(tool.getToolDefinition().name()).thenReturn("blocking_tool");
-        when(tool.call(anyString())).thenAnswer(invocation -> {
+        when(tool.call(anyString(), any(ToolContext.class))).thenAnswer(invocation -> {
             toolEntered.countDown();
             try {
                 releaseTool.await(2, TimeUnit.SECONDS);

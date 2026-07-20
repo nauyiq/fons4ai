@@ -12,25 +12,30 @@ import java.util.List;
 import java.util.Map;
 import java.util.Objects;
 import java.util.Optional;
+import java.util.concurrent.ConcurrentHashMap;
 
 /**
  * 单次运行固定的技能目录快照。
  *
  * <p>共享 Registry 可以在请求之间 reload，但已经启动的 Run 必须继续看到启动时的
- * 元数据和正文，避免一次执行中授权依据发生漂移。</p>
+ * 元数据。正文不在目录构建阶段预读，而是在第一次 read_skill 时加载并缓存；
+ * Registry 实现应保证同一运行期间技能版本稳定。</p>
  */
 final class SkillCatalogSnapshot implements SkillRegistry {
     private final Map<String, SkillMetadata> metadata;
-    private final Map<String, String> content;
+    /** 正文按 read_skill 首次请求加载并缓存，构建目录时不执行正文 I/O。 */
+    private final Map<String, String> content = new ConcurrentHashMap<>();
+    private final SkillRegistry source;
+    private final int maxContentBytes;
     private final String registryType;
     private final String loadInstructions;
     private final SystemPromptTemplate promptTemplate;
 
     private SkillCatalogSnapshot(Map<String, SkillMetadata> metadata,
-                                 Map<String, String> content,
-                                 SkillRegistry source) {
+                                 SkillRegistry source, int maxContentBytes) {
         this.metadata = Map.copyOf(metadata);
-        this.content = Map.copyOf(content);
+        this.source = source;
+        this.maxContentBytes = maxContentBytes;
         this.registryType = "Snapshot(" + source.getRegistryType() + ")";
         this.loadInstructions = source.getSkillLoadInstructions();
         this.promptTemplate = source.getSystemPromptTemplate();
@@ -46,8 +51,20 @@ final class SkillCatalogSnapshot implements SkillRegistry {
             if (reload) {
                 source.reload();
             }
+            SkillRegistry runSource;
+            if (source instanceof SkillRegistrySnapshotProvider snapshotting) {
+                runSource = Objects.requireNonNull(snapshotting.immutableSnapshot(),
+                        "immutable skill snapshot cannot be null");
+            } else {
+                if (reload) {
+                    throw new IllegalStateException(
+                            "autoReload requires SkillRegistrySnapshotProvider");
+                }
+                // 兼容不 reload 的既有 Registry；其实现仍必须遵守运行期间内容版本稳定契约。
+                runSource = source;
+            }
             // 必须先限制元数据数量，再读取任何正文，避免非法大目录触发全量 I/O 和内存放大。
-            List<SkillMetadata> sourceMetadata = source.listAll();
+            List<SkillMetadata> sourceMetadata = runSource.listAll();
             if (sourceMetadata == null) {
                 throw new IllegalStateException("SkillRegistry.listAll() cannot return null");
             }
@@ -55,7 +72,6 @@ final class SkillCatalogSnapshot implements SkillRegistry {
                 throw new IllegalStateException("Skill count exceeds limit: " + maxSkills);
             }
             Map<String, SkillMetadata> metadata = new LinkedHashMap<>();
-            Map<String, String> content = new LinkedHashMap<>();
             HashSet<String> names = new HashSet<>();
             for (SkillMetadata item : sourceMetadata) {
                 if (item == null || item.getName() == null) {
@@ -66,23 +82,9 @@ final class SkillCatalogSnapshot implements SkillRegistry {
                 }
                 metadata.put(item.getName(), copy(item));
             }
-            // Alibaba SkillRegistry 只提供 String 读取接口，无法流式限流；返回后立即按 UTF-8 字节拒绝，
-            // 且目录数量已先受限，因此快照最多保留 maxSkills * maxContentBytes 的正文。
-            for (String skillName : metadata.keySet()) {
-                try {
-                    String skillContent = source.readSkillContent(skillName);
-                    if (skillContent == null) {
-                        throw new IOException("Skill content is empty: " + skillName);
-                    }
-                    if (skillContent.getBytes(StandardCharsets.UTF_8).length > maxContentBytes) {
-                        throw new IOException("Skill content exceeds byte limit: " + maxContentBytes);
-                    }
-                    content.put(skillName, skillContent);
-                } catch (IOException error) {
-                    throw new IllegalStateException("Failed to snapshot skill: " + skillName, error);
-                }
-            }
-            return new SkillCatalogSnapshot(metadata, content, source);
+            // 这里只冻结目录元数据；正文由 GuardedSkillRegistry 在 read_skill 时按需读取。
+            // 首次读取后缓存在当前快照中，避免同一 Run 内重复访问底层 Registry。
+            return new SkillCatalogSnapshot(metadata, runSource, maxContentBytes);
         }
     }
 
@@ -112,11 +114,23 @@ final class SkillCatalogSnapshot implements SkillRegistry {
     }
 
     @Override
-    public String readSkillContent(String name) throws IOException {
-        if (!content.containsKey(name)) {
+    public synchronized String readSkillContent(String name) throws IOException {
+        if (!metadata.containsKey(name)) {
             throw new IOException("Skill not found: " + name);
         }
-        return content.get(name);
+        String cached = content.get(name);
+        if (cached != null) {
+            return cached;
+        }
+        String loaded = source.readSkillContent(name);
+        if (loaded == null) {
+            throw new IOException("Skill content is empty: " + name);
+        }
+        if (loaded.getBytes(StandardCharsets.UTF_8).length > maxContentBytes) {
+            throw new IOException("Skill content exceeds byte limit: " + maxContentBytes);
+        }
+        content.put(name, loaded);
+        return loaded;
     }
 
     @Override
