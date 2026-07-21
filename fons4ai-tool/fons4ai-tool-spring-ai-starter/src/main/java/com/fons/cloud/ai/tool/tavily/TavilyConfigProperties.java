@@ -11,7 +11,7 @@ import org.springframework.boot.context.properties.ConfigurationProperties;
  */
 @Getter
 @Setter
-@ConfigurationProperties("sys.tool.tavily")
+@ConfigurationProperties("sys.tavily")
 public class TavilyConfigProperties {
 
     /** Tavily API Key。 */

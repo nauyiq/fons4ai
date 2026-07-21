@@ -8,5 +8,8 @@ package com.fons.cloud.ai.capability.image;
 public enum ImageGenProvider {
 
     /** 千问。 */
-    QWEN
+    QWEN,
+
+    /** 火山。 */
+    VOLCANO,
 }

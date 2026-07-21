@@ -31,7 +31,7 @@ public class ToolsAutoConfiguration {
     @Bean
     @ConditionalOnMissingBean
     @ConditionalOnProperty(
-            prefix = "sys.tool.tavily",
+            prefix = "sys.tavily",
             name = {"api-key", "mcp-url"})
     public TavilyWebSearchTools tavilyWebSearchTools(
             TavilyConfigProperties properties,

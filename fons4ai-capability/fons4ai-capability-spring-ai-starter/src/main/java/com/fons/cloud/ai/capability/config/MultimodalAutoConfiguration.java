@@ -15,7 +15,7 @@ import org.springframework.context.annotation.Configuration;
  */
 @Configuration
 @EnableConfigurationProperties(MultimodalProperties.class)
-@ConditionalOnProperty(name = "sys.ai.multimodal.enabled", havingValue = "true")
+@ConditionalOnProperty(name = "sys.multimodal.enabled", havingValue = "true")
 public class MultimodalAutoConfiguration {
 
     @Bean

@@ -1,5 +1,6 @@
 package com.fons.cloud.ai.agent.standard.react.websearch;
 
+import com.alibaba.cloud.ai.graph.agent.interceptor.Interceptor;
 import com.alibaba.fastjson2.JSON;
 import com.alibaba.fastjson2.JSONObject;
 import com.fons.cloud.ai.agent.chat.AgentChatRequest;
@@ -153,6 +154,7 @@ public class WebSearchReactAgent extends ReactAgent {
     public static class Builder extends BaseAgentBuilder<Builder> {
         private final List<ToolCallback> tools;
         private final ToolRegistry toolsRegistry;
+        private List<Interceptor> nativeInterceptors;
 
         private ReactAgentSystemPrompt systemPrompt;
         private int maxRounds = 5;
@@ -177,12 +179,23 @@ public class WebSearchReactAgent extends ReactAgent {
             return this;
         }
 
+        /** 直接追加 Alibaba 原生 Interceptor，不再为高级能力创建 Fons4AI 镜像接口。 */
+        public Builder nativeInterceptors(List<Interceptor> nativeInterceptors) {
+            this.nativeInterceptors = nativeInterceptors == null
+                    ? List.of() : List.copyOf(nativeInterceptors);
+            return this;
+        }
+
         /** 校验并创建可共享 Agent；请求态将在 start 时创建。 */
         public WebSearchReactAgent build() {
             WebSearchReactAgent reactAgent = new WebSearchReactAgent(tools, chatModel, agentTaskManager, toolsRegistry);
             reactAgent.systemPrompt = this.systemPrompt == null
                     ? ReactAgentSystemPrompt.defaultPrompt() : this.systemPrompt;
             reactAgent.maxRounds = this.maxRounds;
+            if (this.nativeInterceptors == null) {
+                this.nativeInterceptors = List.of();
+            }
+            reactAgent.nativeInterceptors = this.nativeInterceptors;
             applySharedConfig(reactAgent);
             return reactAgent;
         }

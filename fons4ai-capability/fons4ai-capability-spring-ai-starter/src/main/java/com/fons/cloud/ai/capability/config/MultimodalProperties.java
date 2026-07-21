@@ -11,7 +11,7 @@ import org.springframework.boot.context.properties.ConfigurationProperties;
  */
 @Getter
 @Setter
-@ConfigurationProperties("sys.ai.multimodal")
+@ConfigurationProperties("sys.multimodal")
 public class MultimodalProperties {
 
     /** 是否启用多模态能力。 */

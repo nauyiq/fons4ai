@@ -74,7 +74,7 @@ public class ReactAgent extends BaseAgent implements ResumableAgent {
     protected int maxRounds = 5;
 
     private List<Hook> nativeHooks = List.of();
-    private List<Interceptor> nativeInterceptors = List.of();
+    protected List<Interceptor> nativeInterceptors = List.of();
     private BaseCheckpointSaver checkpointSaver = new MemorySaver();
     private boolean parallelToolExecution;
     private Duration toolExecutionTimeout = Duration.ofMinutes(5);
@@ -87,18 +87,6 @@ public class ReactAgent extends BaseAgent implements ResumableAgent {
         this.streamBridge = new AgentStreamBridge<>(new NativeStreamListener());
     }
 
-    /**
-     * 固化共享配置。该方法不创建 Graph 或请求态 delegate，仅构建线程安全 ChatClient
-     * 并按需初始化 BaseAgent 的会话记忆。
-     */
-    protected void init(boolean initChatMemory) {
-        if (systemPrompt == null) {
-            systemPrompt = ReactAgentSystemPrompt.defaultPrompt();
-        }
-        if (initChatMemory) {
-            initChatMemory();
-        }
-    }
 
     /** 为一个 Run 创建 Alibaba delegate；请求级工具拦截器不会跨 Run 共享。 */
     protected com.alibaba.cloud.ai.graph.agent.ReactAgent buildDelegate(

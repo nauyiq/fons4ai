@@ -1,7 +1,7 @@
 package com.fons.cloud.ai.capability.config;
 
 import com.fons.cloud.ai.capability.image.ImageGenerationService;
-import com.fons.cloud.ai.capability.image.QwenImageGenerationService;
+import com.fons.cloud.ai.capability.image.DefaultImageGenerationService;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnMissingBean;
 import org.springframework.boot.context.properties.EnableConfigurationProperties;
 import org.springframework.context.annotation.Bean;
@@ -19,6 +19,6 @@ public class ImageGenerationAutoConfiguration {
     @Bean
     @ConditionalOnMissingBean
     public ImageGenerationService imageGenerationService(ImageGenerationProperties properties) {
-        return new QwenImageGenerationService(properties);
+        return new DefaultImageGenerationService(properties);
     }
 }

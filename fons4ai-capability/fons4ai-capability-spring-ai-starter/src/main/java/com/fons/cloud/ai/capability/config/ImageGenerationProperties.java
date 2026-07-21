@@ -12,7 +12,7 @@ import org.springframework.boot.context.properties.ConfigurationProperties;
  */
 @Getter
 @Setter
-@ConfigurationProperties("sys.ai.image-generation")
+@ConfigurationProperties("sys.image-generation")
 public class ImageGenerationProperties {
 
     /** 图像生成服务提供者。 */

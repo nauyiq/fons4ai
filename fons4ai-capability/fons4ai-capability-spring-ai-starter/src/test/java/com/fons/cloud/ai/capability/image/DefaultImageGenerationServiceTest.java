@@ -12,7 +12,7 @@ import java.util.concurrent.atomic.AtomicReference;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
-class QwenImageGenerationServiceTest {
+class DefaultImageGenerationServiceTest {
 
     @Test
     void shouldPreserveQwenRequestAndResponseMapping() throws IOException {
@@ -38,7 +38,7 @@ class QwenImageGenerationServiceTest {
             properties.setModel("image-model");
             properties.setBaseUrl("http://127.0.0.1:" + server.getAddress().getPort() + "/generate");
 
-            String imageUrl = new QwenImageGenerationService(properties).generateImage("draw a lake");
+            String imageUrl = new DefaultImageGenerationService(properties).generateImage("draw a lake");
 
             assertEquals("https://example.com/image.png", imageUrl);
             assertEquals("Bearer test-key", authorization.get());
