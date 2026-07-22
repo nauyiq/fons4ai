@@ -49,11 +49,7 @@ public class PgVectorStoreEmbeddingService implements EmbeddingService {
 
     @Override
     public void embedAndStore(List<Document> documents) {
-        int embeddingBatchSize = vectorConfigProperties.getEmbedding().getEmbeddingBatchSize();
-        for (int i = 0; i < documents.size(); i += embeddingBatchSize) {
-            List<Document> batches = documents.subList(i, Math.min(i + embeddingBatchSize, documents.size()));
-            vectorStore.doAdd(batches);
-        }
+        vectorStore.doAdd(documents);
     }
 
     @Override

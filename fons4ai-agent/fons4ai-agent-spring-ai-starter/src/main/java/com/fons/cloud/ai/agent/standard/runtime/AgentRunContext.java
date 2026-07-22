@@ -217,9 +217,7 @@ public class AgentRunContext {
     }
 
     public void recordResponse(AgentMessageType type, String content) {
-        long start = startedAt.get();
-        long elapsed = start == 0 ? 0 : Math.max(0, System.currentTimeMillis() - start);
-        firstResponseTime.compareAndSet(-1, elapsed);
+        firstResponseTime.compareAndSet(-1, System.currentTimeMillis());
         if (type == AgentMessageType.TEXT) {
             finalAnswer.append(content);
         } else if (type == AgentMessageType.THINKING) {

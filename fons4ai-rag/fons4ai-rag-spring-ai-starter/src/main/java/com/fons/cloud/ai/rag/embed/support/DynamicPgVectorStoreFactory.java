@@ -3,20 +3,19 @@ package com.fons.cloud.ai.rag.embed.support;
 import cn.hutool.core.lang.Assert;
 import com.fons.cloud.ai.rag.infrastructure.config.VectorConfigProperties;
 import com.fons.cloud.common.base.exception.SystemIntervalException;
-import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.ai.embedding.EmbeddingModel;
 import org.springframework.ai.vectorstore.pgvector.PgVectorStore;
 import org.springframework.jdbc.core.JdbcTemplate;
 
 import javax.sql.DataSource;
+import java.util.Objects;
 
 /**
  * 动态创建 PgVectorStore 实例的工厂类
  * @author hongqy
  */
 @Slf4j
-@RequiredArgsConstructor
 public class DynamicPgVectorStoreFactory {
 
     // pgVector 配置属性
@@ -25,6 +24,15 @@ public class DynamicPgVectorStoreFactory {
     private final DataSource pgVectorDataSource;
     // 向量化模型
     private final EmbeddingModel embeddingModel;
+
+    public DynamicPgVectorStoreFactory(VectorConfigProperties properties, DataSource pgVectorDataSource,
+                                       EmbeddingModel embeddingModel) {
+        this.properties = Objects.requireNonNull(properties, "向量存储配置不能为 null");
+        this.pgVectorDataSource = Objects.requireNonNull(pgVectorDataSource, "PgVector 数据源不能为 null");
+        EmbeddingRequestRateLimiter rateLimiter = new EmbeddingRequestRateLimiter(
+                properties.getEmbedding().getMinRequestIntervalMs());
+        this.embeddingModel = new RateLimitedEmbeddingModel(embeddingModel, rateLimiter);
+    }
 
     /**
      * 创建 PgVectorStore 实例
@@ -60,6 +68,9 @@ public class DynamicPgVectorStoreFactory {
                 .vectorTableName(actualTableName)
                 // 每次批量处理的最大文档数
                 .maxDocumentBatchSize(properties.getStore().getMaxDocumentBatchSize())
+                // 向量模型按固定文档数分批，但所有批次完成后才开始写入数据库
+                .batchingStrategy(new DocumentCountBatchingStrategy(
+                        properties.getEmbedding().getEmbeddingBatchSize()))
                 .build();
 
         try {

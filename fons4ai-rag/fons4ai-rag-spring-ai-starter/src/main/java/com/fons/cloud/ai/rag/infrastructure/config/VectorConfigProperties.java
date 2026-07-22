@@ -63,6 +63,18 @@ public class VectorConfigProperties {
     public static class Embedding {
         private int embeddingBatchSize = 9;
         private String tableName = "vector_file_info";
+
+        /**
+         * 同一应用实例内相邻向量模型请求的最小启动间隔，单位毫秒；0 表示关闭主动限速。
+         */
+        private long minRequestIntervalMs = 0L;
+
+        /**
+         * 保留原有构造方式；请求限速默认关闭。
+         */
+        public Embedding(int embeddingBatchSize, String tableName) {
+            this(embeddingBatchSize, tableName, 0L);
+        }
     }
 
 

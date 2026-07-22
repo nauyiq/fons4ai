@@ -416,8 +416,6 @@ public abstract class BaseAgent implements Agent {
 
     private List<Message> convertHistoryMessages(String conversationId, List<AiChatMessage> source) {
         List<AiChatMessage> messages = new ArrayList<>(source);
-        messages.sort(Comparator.comparing(AiChatMessage::getCreated,
-                Comparator.nullsLast(Comparator.naturalOrder())));
         List<Message> results = new ArrayList<>(messages.size());
         for (AiChatMessage message : messages) {
             if (StringUtils.isNotBlank(message.getConversationId())
