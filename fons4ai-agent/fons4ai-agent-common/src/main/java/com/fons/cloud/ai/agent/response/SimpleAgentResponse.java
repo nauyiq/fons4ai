@@ -18,7 +18,7 @@ public class SimpleAgentResponse implements Serializable {
     /**
      * 消息类型
      */
-    private AgentMessageType type;
+    private String type;
 
     /**
      * 内容
@@ -72,7 +72,7 @@ public class SimpleAgentResponse implements Serializable {
 
         public SimpleAgentResponse build() {
             SimpleAgentResponse response = new SimpleAgentResponse();
-            response.type = this.type;
+            response.type = this.type.getCode();
             response.content = this.content;
             return response;
         }
