@@ -54,7 +54,7 @@ public class DefaultImageGenerationService implements ImageGenerationService {
             // 模型
             requestBody.put("model", properties.getModel());
             // 提示词
-            requestBody.put("prompt ", prompt);
+            requestBody.put("prompt", prompt);
             // 尺寸
             requestBody.put("size", "2560x1440");
             // 水印
