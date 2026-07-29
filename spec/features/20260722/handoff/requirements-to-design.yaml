@@ -1,0 +1,39 @@
+schema_version: "1.0"
+handoff:
+  from: fons4ai-sdd-requirements
+  to: fons4ai-sdd-design
+  allowed: true
+feature:
+  name: 向量化请求限速
+  slug: embedding-request-rate-limit
+  directory: spec/features/20260722
+  sdd_level: S2
+artifacts:
+  - spec/features/20260722/向量化请求限速-需求说明书.md
+requirements:
+  - REQ-001
+  - REQ-002
+  - REQ-003
+  - REQ-004
+acceptance_criteria:
+  - AC-001
+  - AC-002
+  - AC-003
+  - AC-004
+  - AC-005
+confirmed_facts:
+  - 单应用实例内全局共享固定最小请求间隔
+  - 只主动限速，不新增 429 自动重试
+  - 最小请求间隔单位为毫秒，默认 0 表示关闭
+  - 不做多实例分布式协调，不引入新限流框架
+  - 不改变公共调用接口、文档批次、异常传播和持久化结构
+data_impact:
+  persistent_structure: none
+  business_data_semantics: unchanged
+risks:
+  - 配置过小仍可能触发 429
+  - 配置过大会增加导入耗时
+  - 多实例聚合请求量不受本能力协调
+knowledge_impact:
+  needed: true
+  description: 新增 RAG 向量模型请求间隔配置及单实例共享限速语义

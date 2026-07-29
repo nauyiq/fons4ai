@@ -1,0 +1,69 @@
+schema_version: "1.0"
+handoff_type: tasks-to-implement
+status: waiting-implementation-approval
+source_stage: tasks
+target_stage: implementation
+next_skill: fons4ai-sdd-implement
+
+feature:
+  name: RAG文档解析器扩展
+  slug: rag-document-parser-extension
+  date: "20260728"
+  sdd_level: S2
+  requirements_path: spec/features/20260728/RAG文档解析器扩展-需求说明书.md
+  design_path: spec/features/20260728/RAG文档解析器扩展-技术设计说明书.md
+  tasks_path: spec/features/20260728/RAG文档解析器扩展-任务规划.md
+
+implementation_approval:
+  status: pending
+  evidence: 尚未获得用户对任务规划的实现授权
+  default_scope_on_approval: all-unfinished
+  example_scoped_command: 执行 T001,T002
+
+completed_tasks: []
+unfinished_tasks: [T001, T002, T003, T004, T005]
+dependency_order:
+  - T001
+  - T002
+  - [T003, T004]
+  - T005
+
+parallel_groups:
+  - [T003, T004]
+
+risk_tasks:
+  - T001
+  - T002
+  - T003
+  - T004
+  - T005
+
+data_structure:
+  database_ddl: false
+  logical_structure_tasks: []
+  runtime_seed: false
+
+acceptance_coverage:
+  covered: [AC-001, AC-002, AC-003, AC-004, AC-005, AC-006, AC-007, AC-008, AC-009]
+  deferred: []
+  missing: []
+
+required_gates:
+  - implementer-self-check
+  - spec-review
+  - code-review
+  - evidence-matrix
+  - human-gate
+
+constraints:
+  - 未获得用户最新明确实现授权前不得修改业务代码
+  - DEFAULT 固定使用 native，native 不支持或失败时不得调用 MinerU
+  - 只有 EXPLICIT 且 provider 为 mineru 时才允许向配置的 MinerU 服务发送文档
+  - 不新增 fons4ai-rag-mineru-starter，不重命名现有 LangChain4j 模块
+  - common 不得依赖 Spring AI、LangChain4j 或 Spring 类型
+  - DocumentParseProvider、Registry、Selector 和 DocumentParseResult 必须泛型化，统一选择与 trace 但不统一抹平框架原生 payload
+  - Spring AI 与 LangChain4j native 结果必须原生对象直通，不得执行 native Document 到 ParsedDocument 再回到同框架 Document 的往返转换
+  - 框架 DocumentAdapter 仅用于 MinerU 等中立 ParsedDocument，native 路径 adapter 调用次数必须为零
+  - MinerU V1 只实现同步 Markdown，不下载 ZIP、不处理资产、不接 MinIO 或视觉模型
+  - 不生成或执行数据库 DDL/DML，不修改向量化、切片、检索或持久化结构
+  - 不记录文档正文、认证信息或外部原始响应，所有临时资源必须释放

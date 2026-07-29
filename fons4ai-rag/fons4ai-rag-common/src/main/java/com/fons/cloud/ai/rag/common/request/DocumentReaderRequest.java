@@ -4,6 +4,7 @@ import cn.hutool.core.map.MapUtil;
 import com.alibaba.fastjson2.JSON;
 import com.alibaba.fastjson2.annotation.JSONField;
 import com.fons.cloud.ai.rag.common.constants.DocumentType;
+import com.fons.cloud.ai.rag.common.document.ParserSelection;
 import com.fons.cloud.common.request.ParameterRequest;
 import lombok.Getter;
 import lombok.Setter;
@@ -70,6 +71,12 @@ public class DocumentReaderRequest extends ParameterRequest {
     @JSONField(serialize = false)
     private InputStream inputStream;
 
+    /**
+     * 解析器选型，为 null 时使用 DEFAULT（native）。
+     * 显式指定时可选择 MinerU 等外部 provider。
+     */
+    private ParserSelection parserSelection;
+
     @Override
     public String toString() {
         return JSON.toJSONString(this);
@@ -92,6 +99,7 @@ public class DocumentReaderRequest extends ParameterRequest {
         private Map<String, Object> params;
         private boolean cleanDocument;
         private InputStream inputStream;
+        private ParserSelection parserSelection;
 
         public DocumentReaderContextBuilder cleanDocument(boolean cleanDocument) {
             this.cleanDocument = cleanDocument;
@@ -115,6 +123,17 @@ public class DocumentReaderRequest extends ParameterRequest {
 
         public DocumentReaderContextBuilder inputStream(InputStream inputStream) {
             this.inputStream = inputStream;
+            return this;
+        }
+
+        /**
+         * 设置解析器选型，未调用时使用 DEFAULT（native）。
+         *
+         * @param parserSelection 解析器选型
+         * @return 当前 builder
+         */
+        public DocumentReaderContextBuilder parserSelection(ParserSelection parserSelection) {
+            this.parserSelection = parserSelection;
             return this;
         }
 
@@ -144,6 +163,7 @@ public class DocumentReaderRequest extends ParameterRequest {
             }
             context.setCleanDocument(this.cleanDocument);
             context.setFileName(this.fileName);
+            context.setParserSelection(this.parserSelection);
             return context;
         }
 
