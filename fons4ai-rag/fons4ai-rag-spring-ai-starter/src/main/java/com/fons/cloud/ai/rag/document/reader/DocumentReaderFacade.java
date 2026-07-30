@@ -123,23 +123,20 @@ public class DocumentReaderFacade {
                     DEFAULT_MAX_FILE_SIZE
             );
 
-            DocumentParseRequest parseRequest = new DocumentParseRequest(
-                    source,
-                    documentType,
-                    request.getFileType(),
-                    selection,
-                    request.getParameters(),
-                    null
-            );
-
-            try {
+            try (source) {
+                DocumentParseRequest parseRequest = new DocumentParseRequest(
+                        source,
+                        documentType,
+                        request.getFileType(),
+                        selection,
+                        request.getParameters(),
+                        null
+                );
                 DocumentParseResult<List<Document>> result = selector.parse(parseRequest);
                 log.info("文档解析完成, provider:{}, 耗时:{}ms",
                         result.parseTrace().provider(),
                         result.parseTrace().durationMillis());
                 return result;
-            } finally {
-                source.close();
             }
         } catch (DocumentParseException e) {
             log.warn("文档解析失败, error:{}, provider:{}, message:{}",

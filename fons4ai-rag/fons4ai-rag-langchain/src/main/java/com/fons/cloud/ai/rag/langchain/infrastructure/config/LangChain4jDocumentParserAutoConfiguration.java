@@ -7,6 +7,7 @@ import com.fons.cloud.ai.rag.common.integration.mineru.MinerUDocumentParser;
 import com.fons.cloud.ai.rag.langchain.document.LangChain4jDocumentAdapter;
 import com.fons.cloud.ai.rag.langchain.document.LangChain4jDocumentParserAdapterFactory;
 import com.fons.cloud.ai.rag.langchain.document.LangChain4jDocumentParserFacade;
+import com.fons.cloud.ai.rag.langchain.document.LangChain4jDocumentSplitter;
 import com.fons.cloud.ai.rag.langchain.document.LangChain4jMinerUDocumentParser;
 import com.fons.cloud.ai.rag.langchain.document.LangChain4jNativeDocumentParser;
 import dev.langchain4j.data.document.Document;
@@ -29,7 +30,7 @@ import org.springframework.context.annotation.Configuration;
  */
 @Configuration
 @ConditionalOnClass(Document.class)
-@EnableConfigurationProperties(LangChain4jDocumentParserProperties.class)
+@EnableConfigurationProperties({LangChain4jDocumentParserProperties.class, LangChain4jDocumentSplitterProperties.class})
 public class LangChain4jDocumentParserAutoConfiguration {
 
     /**
@@ -120,15 +121,33 @@ public class LangChain4jDocumentParserAutoConfiguration {
     }
 
     /**
+     * 注册 LangChain4j 文档分块器。
+     *
+     * @param properties 分块配置属性
+     * @return 文档分块器
+     */
+    @Bean
+    @ConditionalOnMissingBean
+    public LangChain4jDocumentSplitter langChain4jDocumentSplitter(LangChain4jDocumentSplitterProperties properties) {
+        return new LangChain4jDocumentSplitter(
+                properties.getStrategy(),
+                properties.getChunkSize(),
+                properties.getOverlap(),
+                properties.getTitleLevel());
+    }
+
+    /**
      * 注册 LangChain4j 文档解析 Facade。
      *
      * @param selector 泛型选择器
+     * @param splitter 文档分块器
      * @return LangChain4j 文档解析 Facade
      */
     @Bean
     public LangChain4jDocumentParserFacade langChain4jDocumentParserFacade(
-            DocumentParserSelector<Document> selector) {
-        return new LangChain4jDocumentParserFacade(selector);
+            DocumentParserSelector<Document> selector,
+            LangChain4jDocumentSplitter splitter) {
+        return new LangChain4jDocumentParserFacade(selector, splitter);
     }
 
     /**

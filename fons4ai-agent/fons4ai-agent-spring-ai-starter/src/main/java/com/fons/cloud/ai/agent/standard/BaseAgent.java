@@ -25,6 +25,7 @@ import org.apache.commons.collections4.CollectionUtils;
 import org.apache.commons.lang3.StringUtils;
 import org.springframework.ai.chat.client.ChatClient;
 import org.springframework.ai.chat.memory.ChatMemory;
+import org.springframework.ai.chat.memory.ChatMemoryRepository;
 import org.springframework.ai.chat.memory.MessageWindowChatMemory;
 import org.springframework.ai.chat.messages.AssistantMessage;
 import org.springframework.ai.chat.messages.Message;
@@ -37,9 +38,11 @@ import reactor.core.Disposable;
 
 import java.util.ArrayList;
 import java.util.Comparator;
+import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
+import java.util.Set;
 import java.util.UUID;
 
 /**
@@ -370,9 +373,16 @@ public abstract class BaseAgent implements Agent {
         context.recordUsedTool(toolName);
     }
 
-    protected final void initChatMemory() {
+    protected final void initChatMemory(ChatMemoryRepository repository) {
         int limit = maxMemoryMessages <= 0 ? 20 : maxMemoryMessages;
-        chatMemory = MessageWindowChatMemory.builder().maxMessages(limit).build();
+        if (repository != null) {
+            chatMemory = MessageWindowChatMemory.builder()
+                    .chatMemoryRepository(repository)
+                    .maxMessages(limit)
+                    .build();
+        } else {
+            chatMemory = MessageWindowChatMemory.builder().maxMessages(limit).build();
+        }
     }
 
     protected final boolean useChatMemory() {
@@ -402,12 +412,12 @@ public abstract class BaseAgent implements Agent {
             context.stageChatMemory(inputMessages, pendingMessages);
             return;
         }
-        if (CollectionUtils.isEmpty(storedMessages)
-                && CollectionUtils.isNotEmpty(context.getRequest().getHistoryMessages())) {
+        if (CollectionUtils.isNotEmpty(context.getRequest().getHistoryMessages())) {
             List<Message> historyMessages = convertHistoryMessages(
                     context.getConversationId(), context.getRequest().getHistoryMessages());
-            inputMessages.addAll(historyMessages);
-            pendingMessages.addAll(historyMessages);
+            List<Message> deduplicated = deduplicateMessages(storedMessages, historyMessages);
+            inputMessages.addAll(deduplicated);
+            pendingMessages.addAll(deduplicated);
         }
         inputMessages.add(currentQuestion);
         pendingMessages.add(currentQuestion);
@@ -431,6 +441,36 @@ public abstract class BaseAgent implements Agent {
             }
         }
         return results;
+    }
+
+    private List<Message> deduplicateMessages(List<Message> existing, List<Message> incoming) {
+        Set<String> fingerprints = new HashSet<>();
+        if (CollectionUtils.isNotEmpty(existing)) {
+            for (Message msg : existing) {
+                try {
+                    fingerprints.add(messageFingerprint(msg));
+                } catch (RuntimeException e) {
+                    // 跳过无法生成指纹的已有消息
+                }
+            }
+        }
+        List<Message> result = new ArrayList<>();
+        for (Message msg : incoming) {
+            try {
+                String fp = messageFingerprint(msg);
+                if (!fingerprints.contains(fp)) {
+                    result.add(msg);
+                    fingerprints.add(fp);
+                }
+            } catch (RuntimeException e) {
+                log.warn("跳过无法生成指纹的历史消息", e);
+            }
+        }
+        return result;
+    }
+
+    private String messageFingerprint(Message msg) {
+        return msg.getMessageType().getValue() + "|" + Objects.toString(msg.getText(), "");
     }
 
     private void commitChatMemory(AgentRunContext context) {

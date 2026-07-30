@@ -2,6 +2,7 @@ package com.fons.cloud.ai.agent.standard;
 
 import com.fons.cloud.ai.agent.core.AgentTaskManager;
 import com.fons.cloud.ai.agent.infrastructure.hook.AgentChatHook;
+import org.springframework.ai.chat.memory.ChatMemoryRepository;
 import org.springframework.ai.chat.model.ChatModel;
 
 import java.util.Objects;
@@ -28,6 +29,8 @@ public abstract class BaseAgentBuilder<B extends BaseAgentBuilder<B>> {
     protected boolean useChatMemory = false;
     /** 记忆窗口上限，默认 20。 */
     protected int maxMemoryMessages = 20;
+    /** 可配置的记忆存储仓库，null 时使用框架默认 InMemory 实现。 */
+    protected ChatMemoryRepository chatMemoryRepository;
     /** 完成后是否生成推荐问题，默认开启。 */
     protected boolean enableRecommendations = true;
     /** 可选生命周期 Hook。 */
@@ -54,6 +57,12 @@ public abstract class BaseAgentBuilder<B extends BaseAgentBuilder<B>> {
     }
 
     @SuppressWarnings("unchecked")
+    public B chatMemoryRepository(ChatMemoryRepository repository) {
+        this.chatMemoryRepository = repository;
+        return (B) this;
+    }
+
+    @SuppressWarnings("unchecked")
     public B enableRecommendations(boolean enableRecommendations) {
         this.enableRecommendations = enableRecommendations;
         return (B) this;
@@ -75,7 +84,7 @@ public abstract class BaseAgentBuilder<B extends BaseAgentBuilder<B>> {
         agent.enableRecommendations = enableRecommendations;
         agent.hook = hook;
         if (useChatMemory) {
-            agent.initChatMemory();
+            agent.initChatMemory(chatMemoryRepository);
         }
     }
 
