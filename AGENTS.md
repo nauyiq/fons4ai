@@ -42,7 +42,7 @@ Fons4AI 是持续迭代的可插拔 AI Agent 开发框架，以 Spring Boot Star
 - 物理模块是当前实现组织，不等同于不可变的最终能力边界。
 - Spring AI 是当前实现适配，不能被表述为项目长期唯一框架。
 - Spring Boot Starter、AutoConfiguration 和当前运行组件只代表已实现的参考接入、初始化与运行链路，不得直接表述为平台不可变标准。
-- LangChain4j 等适配仍处于演进过程中，未完成的实现、TODO 或占位能力不得表述为已交付能力。
+- LangChain4j 适配已在 Agent 编排（`fons4ai-agent-langchain-starter`）和 RAG 文档解析（`fons4ai-rag-langchain-starter`）中实现；工具管理和 AI 能力接入的 LangChain4j 适配仍待补充，未完成的实现、TODO 或占位能力不得表述为已交付能力。
 
 ## 知识库建设工作流
 

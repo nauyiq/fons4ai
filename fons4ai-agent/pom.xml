@@ -15,7 +15,7 @@
     <modules>
         <module>fons4ai-agent-common</module>
         <module>fons4ai-agent-spring-ai-starter</module>
-        <module>fons4ai-agent-langchain</module>
+        <module>fons4ai-agent-langchain-starter</module>
     </modules>
 
 </project>

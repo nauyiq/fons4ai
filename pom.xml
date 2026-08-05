@@ -42,6 +42,7 @@
 
         <!-- langChain4j相关 -->
         <langChain4j.version>1.11.0</langChain4j.version>
+        <langChain4j.elastic.version>1.11.0-beta19</langChain4j.elastic.version>
         <langChain4j.springboot.version>1.11.0-beta19</langChain4j.springboot.version>
     </properties>
 
@@ -98,6 +99,11 @@
                 <groupId>dev.langchain4j</groupId>
                 <artifactId>langchain4j</artifactId>
                 <version>${langChain4j.version}</version>
+            </dependency>
+            <dependency>
+                <groupId>dev.langchain4j</groupId>
+                <artifactId>langchain4j-elasticsearch</artifactId>
+                <version>${langChain4j.elastic.version}</version>
             </dependency>
             <dependency>
                 <groupId>dev.langchain4j</groupId>
