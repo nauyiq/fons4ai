@@ -73,12 +73,11 @@ public class ReactAgentSystemPrompt implements ConstructSystemPrompt {
     public String toString() {
         return role + "\n\n" +
                 goal + "\n\n" +
-                AgentPrompts.getSystemTimePromptEn() + "\n\n" +
                 workflow + "\n\n" +
                 toolUsageRule + "\n\n" +
                 constraints + "\n\n" +
                 errorHandling + "\n\n" +
-                format;
+                format + "\n\n" + AgentPrompts.getSystemTimePromptEn();
     }
 
 
