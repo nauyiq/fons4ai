@@ -2,6 +2,7 @@ package com.fons.cloud.ai.agent.organization;
 
 import cn.hutool.core.codec.Base64;
 import cn.hutool.core.util.StrUtil;
+import io.opentelemetry.api.GlobalOpenTelemetry;
 import io.opentelemetry.api.common.Attributes;
 import io.opentelemetry.exporter.otlp.http.trace.OtlpHttpSpanExporter;
 import io.opentelemetry.sdk.OpenTelemetrySdk;
@@ -46,6 +47,7 @@ public class OrganizationAutoConfiguration {
                         .setResource(resource)
                         .addSpanProcessor(BatchSpanProcessor.builder(exporter).build()).build();
 
+        GlobalOpenTelemetry.resetForTest();
         return OpenTelemetrySdk.builder()
                 .setTracerProvider(tracerProvider)
                 .buildAndRegisterGlobal();
