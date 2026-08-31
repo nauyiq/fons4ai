@@ -1,1 +1,2 @@
 com.fons.cloud.ai.agent.infrastructure.config.AgentAutoConfiguration
+com.fons.cloud.ai.agent.organization.OrganizationAutoConfiguration

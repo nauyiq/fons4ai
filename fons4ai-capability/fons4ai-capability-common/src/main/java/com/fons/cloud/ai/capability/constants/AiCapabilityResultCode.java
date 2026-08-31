@@ -17,7 +17,11 @@ public enum AiCapabilityResultCode implements Result {
 
     RECOGNIZE_IMAGE_FILE_IS_EMPTY("RA100002", "识别图片文件为空"),
     NOT_SUPPORT_IMAGE_GEN_PROVIDER("AG200003", "不支持的图片生成提供者"),
-    FAILED_EXECUTE_MULTIMODAL_IMAGE_RECOGNITION("RA999993", "多模态图片识别异常");
+    FAILED_EXECUTE_MULTIMODAL_IMAGE_RECOGNITION("RA999993", "多模态图片识别异常"),
+    PADDLEOCR_DOCUMENT_REQUEST_INVALID("RA100003", "PaddleOCR 文档解析请求参数异常"),
+    PADDLEOCR_DOCUMENT_PARSE_TIMEOUT("RA999994", "PaddleOCR 文档解析超时"),
+    PADDLEOCR_DOCUMENT_PARSE_FAILED("RA999995", "PaddleOCR 文档解析异常"),
+    PADDLEOCR_DOCUMENT_RESPONSE_INVALID("RA999996", "PaddleOCR 文档解析响应异常");
 
     private final String code;
     private final String message;
