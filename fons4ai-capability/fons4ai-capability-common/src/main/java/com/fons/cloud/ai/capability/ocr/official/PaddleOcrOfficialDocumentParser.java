@@ -4,6 +4,7 @@ import com.fons.cloud.ai.capability.ocr.PaddleOcrDocumentParser;
 import com.fons.cloud.ai.capability.ocr.PaddleOcrDocumentPageResult;
 import com.fons.cloud.ai.capability.ocr.PaddleOcrDocumentRequest;
 import com.fons.cloud.ai.capability.ocr.PaddleOcrDocumentResult;
+import com.fons.cloud.ai.capability.ocr.PaddleOcrDocumentStreamRequest;
 import com.fons.cloud.ai.capability.ocr.PaddleOcrJsonSupport;
 import com.fons.cloud.ai.capability.ocr.PaddleOcrProvider;
 import com.fons.cloud.ai.capability.constants.AiCapabilityResultCode;
@@ -60,6 +61,20 @@ public final class PaddleOcrOfficialDocumentParser implements PaddleOcrDocumentP
         }
         Instant startedAt = Instant.now();
         String jobId = submit(request);
+        return fetchResult(jobId, startedAt);
+    }
+
+    @Override
+    public PaddleOcrDocumentResult parse(PaddleOcrDocumentStreamRequest request) {
+        if (request == null) {
+            throw BusinessRuntimeException.of(AiCapabilityResultCode.PADDLEOCR_DOCUMENT_REQUEST_INVALID);
+        }
+        Instant startedAt = Instant.now();
+        String jobId = submit(request);
+        return fetchResult(jobId, startedAt);
+    }
+
+    private PaddleOcrDocumentResult fetchResult(String jobId, Instant startedAt) {
         String resultUrl = pollForResultUrl(jobId);
         List<PaddleOcrDocumentPageResult> pages = parsePages(downloadResult(resultUrl));
         String markdown = pages.stream().map(PaddleOcrDocumentPageResult::markdown).collect(Collectors.joining("\n\n"));
@@ -74,6 +89,23 @@ public final class PaddleOcrOfficialDocumentParser implements PaddleOcrDocumentP
                 .header("Authorization", "Bearer " + options.accessToken())
                 .header("Content-Type", "multipart/form-data; boundary=" + boundary)
                 .POST(HttpRequest.BodyPublishers.ofByteArray(multipartBody(boundary, request)))
+                .build();
+        Map<String, Object> data = unwrap(send(httpRequest, "提交官方解析任务"));
+        try {
+            return PaddleOcrJsonSupport.requiredString(data, "jobId");
+        } catch (IllegalArgumentException exception) {
+            throw invalidResponse(exception);
+        }
+    }
+
+    private String submit(PaddleOcrDocumentStreamRequest request) {
+        String boundary = "----fons4aiPaddleOcr" + UUID.randomUUID().toString().replace("-", "");
+        HttpRequest httpRequest = HttpRequest.newBuilder()
+                .uri(pathUri(JOBS_PATH))
+                .timeout(options.requestTimeout())
+                .header("Authorization", "Bearer " + options.accessToken())
+                .header("Content-Type", "multipart/form-data; boundary=" + boundary)
+                .POST(multipartBodyPublisher(boundary, request))
                 .build();
         Map<String, Object> data = unwrap(send(httpRequest, "提交官方解析任务"));
         try {
@@ -235,6 +267,20 @@ public final class PaddleOcrOfficialDocumentParser implements PaddleOcrDocumentP
         System.arraycopy(content, 0, result, prefixBytes.length, content.length);
         System.arraycopy(suffix, 0, result, prefixBytes.length + content.length, suffix.length);
         return result;
+    }
+
+    private HttpRequest.BodyPublisher multipartBodyPublisher(
+            String boundary, PaddleOcrDocumentStreamRequest request) {
+        String prefix = "--" + boundary + "\r\n"
+                + "Content-Disposition: form-data; name=\"model\"\r\n\r\n" + MODEL + "\r\n"
+                + "--" + boundary + "\r\n"
+                + "Content-Disposition: form-data; name=\"file\"; filename=\"" + safeFileName(request.fileName()) + "\"\r\n"
+                + "Content-Type: application/octet-stream\r\n\r\n";
+        byte[] suffix = ("\r\n--" + boundary + "--\r\n").getBytes(StandardCharsets.UTF_8);
+        return HttpRequest.BodyPublishers.concat(
+                HttpRequest.BodyPublishers.ofByteArray(prefix.getBytes(StandardCharsets.UTF_8)),
+                HttpRequest.BodyPublishers.ofInputStream(request::openStream),
+                HttpRequest.BodyPublishers.ofByteArray(suffix));
     }
 
     private String safeFileName(String fileName) {

@@ -220,4 +220,14 @@ class MarkdownHeaderParentSplitterTest {
         assertFalse(segments.isEmpty());
         assertEquals("test.md", segments.get(0).metadata().toMap().get("source"));
     }
+
+    /** 空行属于 Markdown 原文，不应在标题 splitter 中被静默删除。 */
+    @Test
+    void shouldPreserveBlankLinesInsideMarkdownSection() {
+        MarkdownHeaderParentSplitter splitter = new MarkdownHeaderParentSplitter(1, 0, 0);
+
+        List<TextSegment> segments = splitter.split(Document.from("# 标题\n\n第一段\n\n第二段"));
+
+        assertTrue(segments.stream().anyMatch(segment -> segment.text().contains("第一段\n\n第二段")));
+    }
 }

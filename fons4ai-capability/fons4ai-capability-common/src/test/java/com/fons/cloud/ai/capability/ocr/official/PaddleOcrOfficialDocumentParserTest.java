@@ -4,6 +4,7 @@ import com.fons.cloud.ai.capability.ocr.PaddleOcrDocumentParser;
 import com.fons.cloud.ai.capability.ocr.PaddleOcrDocumentParsers;
 import com.fons.cloud.ai.capability.ocr.PaddleOcrDocumentRequest;
 import com.fons.cloud.ai.capability.ocr.PaddleOcrDocumentResult;
+import com.fons.cloud.ai.capability.ocr.PaddleOcrDocumentStreamRequest;
 import com.fons.cloud.ai.capability.ocr.PaddleOcrProvider;
 import com.fons.cloud.ai.capability.constants.AiCapabilityResultCode;
 import com.fons.cloud.common.base.exception.BusinessRuntimeException;
@@ -13,12 +14,14 @@ import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.Test;
 
 import java.io.IOException;
+import java.io.ByteArrayInputStream;
 import java.net.InetSocketAddress;
 import java.net.URI;
 import java.nio.charset.StandardCharsets;
 import java.time.Duration;
 import java.util.Map;
 import java.util.concurrent.atomic.AtomicReference;
+import java.util.concurrent.atomic.AtomicInteger;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
@@ -43,6 +46,7 @@ class PaddleOcrOfficialDocumentParserTest {
     void shouldSubmitPollAndDownloadMarkdownWithoutExposingToken() throws Exception {
         AtomicReference<String> requestBody = new AtomicReference<>();
         AtomicReference<String> authorization = new AtomicReference<>();
+        AtomicInteger sourceOpenCount = new AtomicInteger();
         server = startServer();
         server.createContext("/api/v2/ocr/jobs", exchange -> {
             authorization.set(exchange.getRequestHeaders().getFirst("Authorization"));
@@ -54,7 +58,11 @@ class PaddleOcrOfficialDocumentParserTest {
         server.createContext("/result.jsonl", exchange -> reply(exchange, 200,
                 "{\"result\":{\"layoutParsingResults\":[{\"markdown\":{\"text\":\"# official\",\"images\":{\"images/chart.png\":\"https://image.example/chart.png\"}},\"outputImages\":{\"layout\":\"https://image.example/layout.jpg\"}}]}}\n"));
 
-        PaddleOcrDocumentResult result = officialParser().parse(new PaddleOcrDocumentRequest("report.pdf", new byte[]{1, 2}));
+        PaddleOcrDocumentResult result = officialParser().parse(new PaddleOcrDocumentStreamRequest(
+                "report.pdf", () -> {
+                    sourceOpenCount.incrementAndGet();
+                    return new ByteArrayInputStream(new byte[]{1, 2});
+                }));
 
         assertEquals(PaddleOcrProvider.PADDLEOCR_OFFICIAL, result.provider());
         assertEquals("# official", result.markdown());
@@ -63,6 +71,7 @@ class PaddleOcrOfficialDocumentParserTest {
         assertEquals("Bearer test-token", authorization.get());
         assertTrue(requestBody.get().contains("PaddleOCR-VL-1.6"));
         assertTrue(requestBody.get().contains("name=\"file\""));
+        assertEquals(1, sourceOpenCount.get());
         assertFalse(result.toString().contains("test-token"));
     }
 
