@@ -16,11 +16,10 @@ import com.fons.cloud.ai.agent.standard.deepresearch.model.DeepResearchExecuteCo
 import com.fons.cloud.ai.agent.standard.deepresearch.model.PlanTask;
 import com.fons.cloud.ai.agent.standard.deepresearch.model.TaskExecution;
 import com.fons.cloud.ai.agent.standard.deepresearch.model.TaskResult;
-import com.fons.cloud.ai.tool.model.ToolMeta;
-import com.fons.cloud.ai.tool.model.WebToolResult;
-import com.fons.cloud.ai.tool.registry.ToolRegistry;
-import com.fons.cloud.ai.tool.spi.ToolProvider;
-import com.fons.cloud.ai.tool.spi.ToolResultParser;
+import com.fons.cloud.ai.tool.api.ToolProvider;
+import com.fons.cloud.ai.tool.api.ToolResultParser;
+import com.fons.cloud.ai.tool.common.model.web.WebBaseResult;
+import com.fons.cloud.ai.tool.core.ToolRegistry;
 import com.fons.cloud.common.base.exception.BusinessRuntimeException;
 import lombok.extern.slf4j.Slf4j;
 import org.apache.commons.collections4.CollectionUtils;
@@ -122,7 +121,7 @@ final class PlanTaskExecutor {
                 .build();
         ModelCallLimitHook callLimit = ModelCallLimitHook.builder().runLimit(5)
                 .exitBehavior(ModelCallLimitHook.ExitBehavior.END).build();
-        List<WebToolResult> references = new ArrayList<>();
+        List<WebBaseResult> references = new ArrayList<>();
         Set<String> invokedTools = java.util.concurrent.ConcurrentHashMap.newKeySet();
         String fullContext = """
                 【Available Results】
@@ -141,8 +140,7 @@ final class PlanTaskExecutor {
                             + prompt.getExecutePrompt())
                     .hooks(callLimit)
                     .interceptors(retry,
-                            new ReferenceCaptureInterceptor(
-                                    context, references, invokedTools, cancelled))
+                            new ReferenceCaptureInterceptor(context, references, invokedTools, cancelled))
                     .enableLogging(true)
                     .build();
             AssistantMessage response = taskAgent.call(fullContext);
@@ -153,8 +151,7 @@ final class PlanTaskExecutor {
                         + "，但未检测到该工具的成功调用");
             }
             emitter.emit(context, "执行结果:" + answer + "\n\n", AgentMessageType.THINKING);
-            return new TaskExecution(new TaskResult(task.id(), true, answer, null),
-                    List.copyOf(references));
+            return new TaskExecution(new TaskResult(task.id(), true, answer, null), List.copyOf(references));
         } catch (Exception error) {
             if (isInactive(context, cancelled)) {
                 return TaskExecution.failed(task.id(), "任务被用户停止");
@@ -224,12 +221,12 @@ final class PlanTaskExecutor {
 
     private final class ReferenceCaptureInterceptor extends ToolInterceptor {
         private final DeepResearchExecuteContext context;
-        private final Collection<WebToolResult> references;
+        private final Collection<WebBaseResult> references;
         private final Set<String> invokedTools;
         private final AtomicBoolean cancelled;
 
         private ReferenceCaptureInterceptor(DeepResearchExecuteContext context,
-                                            Collection<WebToolResult> references,
+                                            Collection<WebBaseResult> references,
                                             Set<String> invokedTools,
                                             AtomicBoolean cancelled) {
             this.context = context;
@@ -250,17 +247,15 @@ final class PlanTaskExecutor {
             String toolName = StringUtils.defaultIfBlank(
                     response.getToolName(), request.getToolName());
             invokedTools.add(toolName);
-            ToolMeta metadata = toolRegistry.getToolMeta(toolName);
-            ToolProvider provider = metadata == null ? null : toolRegistry.getToolProvider(metadata);
-            if (metadata == null || !metadata.isWebTool() || provider == null) {
+            ToolProvider provider =  toolRegistry.getProvider(toolName);
+            if (provider == null) {
                 return response;
             }
-            ToolResultParser<WebToolResult> parser = provider.getResultParser(metadata.category());
+            ToolResultParser<WebBaseResult> parser = toolRegistry.getToolResultParser(toolName);
             if (parser != null) {
                 try {
-                    List<WebToolResult> parsed = parser.parse(response.getResult());
-                    if (CollectionUtils.isNotEmpty(parsed)
-                            && !isInactive(context, cancelled)) {
+                    List<WebBaseResult> parsed = parser.parse(response.getResult());
+                    if (CollectionUtils.isNotEmpty(parsed) && !isInactive(context, cancelled)) {
                         references.addAll(parsed);
                     }
                 } catch (RuntimeException parseError) {

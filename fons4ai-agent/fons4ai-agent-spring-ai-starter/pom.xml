@@ -21,7 +21,7 @@
 
         <dependency>
             <groupId>com.fons.cloud.ai</groupId>
-            <artifactId>fons4ai-tool-common</artifactId>
+            <artifactId>fons4ai-common-tools</artifactId>
             <version>${revision}</version>
         </dependency>
 
@@ -41,6 +41,12 @@
             <artifactId>spring-boot-starter-test</artifactId>
             <version>${springboot.version}</version>
             <scope>test</scope>
+        </dependency>
+
+
+        <dependency>
+            <groupId>org.springframework.ai</groupId>
+            <artifactId>spring-ai-starter-mcp-client</artifactId>
         </dependency>
     </dependencies>
 

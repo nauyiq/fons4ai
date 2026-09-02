@@ -4,36 +4,33 @@
          xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 http://maven.apache.org/xsd/maven-4.0.0.xsd">
 
     <modelVersion>4.0.0</modelVersion>
-    <parent>
-        <groupId>com.fons.cloud</groupId>
-        <artifactId>fons4cloud</artifactId>
-        <version>1.0.0</version>
-    </parent>
-
 
     <groupId>com.fons.cloud.ai</groupId>
     <artifactId>fons4ai</artifactId>
     <version>${revision}</version>
     <packaging>pom</packaging>
-
     <description>AI FRAMEWORK</description>
 
     <modules>
         <module>fons4ai-agent</module>
-        <module>fons4ai-tool</module>
         <module>fons4ai-rag</module>
         <module>fons4ai-capability</module>
+        <module>fons4ai-common</module>
     </modules>
 
     <properties>
+        <!-- 框架依赖统一版本 -->
+        <revision>1.0.0</revision>
+        <jdk.version>21</jdk.version>
+        <fons4cloud.revision>1.0.0</fons4cloud.revision>
+        <flatten.maven.plugin>1.1.0</flatten.maven.plugin>
         <maven.compiler.source>21</maven.compiler.source>
         <maven.compiler.target>21</maven.compiler.target>
         <project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
-
-        <!-- 框架依赖统一版本 -->
-        <revision>1.0.0</revision>
-        <fons4cloud-revision>1.0.0</fons4cloud-revision>
+        <maven.compiler.plugin>3.8.1</maven.compiler.plugin>
+        <source.plugin.version>3.0.1</source.plugin.version>
         <flatten.maven.plugin>1.1.0</flatten.maven.plugin>
+        <maven.jar.plugin.version>3.1.1</maven.jar.plugin.version>
 
         <!-- spring相关 -->
         <springboot.version>3.5.8</springboot.version>
@@ -48,6 +45,15 @@
 
     <dependencyManagement>
         <dependencies>
+            <!-- spring boot -->
+            <dependency>
+                <groupId>org.springframework.boot</groupId>
+                <artifactId>spring-boot-dependencies</artifactId>
+                <version>${springboot.version}</version>
+                <type>pom</type>
+                <scope>import</scope>
+            </dependency>
+
             <!-- spring alibaba ai -->
             <dependency>
                 <groupId>com.alibaba.cloud.ai</groupId>
@@ -92,7 +98,6 @@
                 <artifactId>spring-ai-starter-mcp-server-webflux</artifactId>
                 <version>${spring.ai.version}</version>
             </dependency>
-
 
             <!-- LangChain4j start -->
             <dependency>
@@ -155,18 +160,75 @@
                 <artifactId>spring-ai-starter-model-openai</artifactId>
                 <version>${spring.ai.version}</version>
             </dependency>
-
         </dependencies>
     </dependencyManagement>
 
-    <dependencies>
-        <!-- 全局引入基础包 -->
-        <dependency>
-            <groupId>com.fons.cloud</groupId>
-            <artifactId>fons4cloud-common-base</artifactId>
-            <version>${fons4cloud-revision}</version>
-        </dependency>
-    </dependencies>
+    <build>
+        <resources>
+            <resource>
+                <directory>src/main/resources</directory>
+                <filtering>true</filtering>
+            </resource>
+        </resources>
 
+        <plugins>
+            <plugin>
+                <groupId>org.apache.maven.plugins</groupId>
+                <artifactId>maven-compiler-plugin</artifactId>
+                <version>${maven.compiler.plugin}</version>
+                <configuration>
+                    <source>${jdk.version}</source>
+                    <target>${jdk.version}</target>
+                    <encoding>${project.build.sourceEncoding}</encoding>
+                    <excludes>
+                        <exclude>**/apache/bval/**</exclude>
+                    </excludes>
+                    <compilerArgs>
+                        <arg>-parameters</arg>
+                    </compilerArgs>
+                    <annotationProcessorPaths>
+                        <path>
+                            <groupId>org.projectlombok</groupId>
+                            <artifactId>lombok</artifactId>
+                            <version>1.18.42</version>
+                        </path>
+                        <path>
+                            <groupId>org.mapstruct</groupId>
+                            <artifactId>mapstruct-processor</artifactId>
+                            <version>1.5.2.Final</version>
+                        </path>
+                    </annotationProcessorPaths>
+                </configuration>
+            </plugin>
+
+            <!-- 全局采用flatten-maven-plugin统一版本号， 所有的pom和子项目版本只需要使用${revision}即可 -->
+            <plugin>
+                <groupId>org.codehaus.mojo</groupId>
+                <artifactId>flatten-maven-plugin</artifactId>
+                <version>${flatten.maven.plugin}</version>
+                <configuration>
+                    <updatePomFile>true</updatePomFile>
+                    <flattenMode>resolveCiFriendliesOnly</flattenMode>
+                </configuration>
+                <executions>
+                    <execution>
+                        <id>flatten</id>
+                        <phase>process-resources</phase>
+                        <goals>
+                            <goal>flatten</goal>
+                        </goals>
+                    </execution>
+                    <execution>
+                        <id>flatten.clean</id>
+                        <phase>clean</phase>
+                        <goals>
+                            <goal>clean</goal>
+                        </goals>
+                    </execution>
+                </executions>
+            </plugin>
+        </plugins>
+
+    </build>
 
 </project>

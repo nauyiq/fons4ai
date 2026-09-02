@@ -1,0 +1,2 @@
+com.fons.cloud.ai.tool.autoconfigure.ToolAutoConfiguration
+com.fons.cloud.ai.tool.support.tavily.TavilyConfigProperties
