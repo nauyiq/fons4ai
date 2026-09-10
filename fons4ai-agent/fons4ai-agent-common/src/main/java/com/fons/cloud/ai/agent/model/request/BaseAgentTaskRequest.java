@@ -1,19 +1,23 @@
 package com.fons.cloud.ai.agent.model.request;
 
-import com.fons.cloud.common.request.BaseRequest;
 import lombok.Getter;
 import lombok.Setter;
 import lombok.ToString;
 import lombok.experimental.SuperBuilder;
+
+import java.io.Serial;
+import java.io.Serializable;
 
 /**
  * @author hongqy
  */
 @Getter
 @Setter
-@SuperBuilder
 @ToString
-public class BaseAgentTaskRequest extends BaseRequest {
+@SuperBuilder
+public class BaseAgentTaskRequest implements Serializable {
+    @Serial
+    private static final long serialVersionUID = 1L;
 
     /**
      * 运行ID

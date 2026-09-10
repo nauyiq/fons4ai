@@ -1,25 +1,18 @@
 package com.fons.cloud.ai.rag.infrastructure.config;
 
-import com.fons.cloud.ai.capability.multimodal.ImageRecognitionService;
+import com.fons.cloud.ai.rag.common.document.DocumentParserRegistry;
+import com.fons.cloud.ai.rag.common.document.DocumentParserSelector;
 import com.fons.cloud.ai.rag.common.integration.mineru.MinerUClient;
 import com.fons.cloud.ai.rag.common.integration.mineru.MinerUClientOptions;
 import com.fons.cloud.ai.rag.common.integration.mineru.MinerUDocumentParser;
-import com.fons.cloud.ai.rag.common.document.DocumentParserRegistry;
-import com.fons.cloud.ai.rag.common.document.DocumentParserSelector;
-import com.fons.cloud.ai.rag.document.reader.DocumentReaderFacade;
-import com.fons.cloud.ai.rag.document.reader.DocumentReaderStrategy;
-import com.fons.cloud.ai.rag.document.reader.SpringAiDocumentAdapter;
-import com.fons.cloud.ai.rag.document.reader.SpringAiMinerUDocumentParser;
-import com.fons.cloud.ai.rag.document.reader.SpringAiNativeDocumentParser;
+import com.fons.cloud.ai.rag.document.reader.*;
 import com.fons.cloud.ai.rag.document.reader.support.*;
-import org.springframework.boot.autoconfigure.condition.ConditionalOnBean;
+import org.springframework.ai.document.Document;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnMissingBean;
-import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.boot.context.properties.ConfigurationProperties;
 import org.springframework.boot.context.properties.EnableConfigurationProperties;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
-import org.springframework.ai.document.Document;
 
 import java.time.Duration;
 import java.util.List;
@@ -76,14 +69,6 @@ public class DocumentReaderAutoConfiguration {
         return new DocReaderStrategy();
     }
 
-    /**
-     * 创建图片读取策略，需要多模态识别服务。
-     */
-    @Bean
-    @ConditionalOnBean(ImageRecognitionService.class)
-    public DocumentReaderStrategy imageReaderStrategy(ImageRecognitionService imageRecognitionService) {
-        return new ImageReadStrategy(imageRecognitionService);
-    }
 
     // ---- MinerU 共享组件 ----
 

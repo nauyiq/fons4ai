@@ -1,28 +1,30 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <project xmlns="http://maven.apache.org/POM/4.0.0"
          xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
-         xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 http://maven.apache.org/xsd/maven-4.0.0.xsd">
+         xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 https://maven.apache.org/xsd/maven-4.0.0.xsd">
     <modelVersion>4.0.0</modelVersion>
+
     <parent>
         <groupId>com.fons.cloud.ai</groupId>
-        <artifactId>fons4ai-agent</artifactId>
+        <artifactId>fons4ai-agent-observability</artifactId>
         <version>${revision}</version>
         <relativePath>../pom.xml</relativePath>
     </parent>
 
-    <artifactId>fons4ai-agentscope-starter</artifactId>
-    <description>基于 AgentScope Harness 实现的智能体模块</description>
+    <artifactId>fons4ai-agent-observability-core</artifactId>
+    <description>Framework-neutral observability contracts and implementations for Fons4AI agents</description>
 
     <dependencies>
         <dependency>
             <groupId>com.fons.cloud.ai</groupId>
-            <artifactId>fons4ai-agent-common</artifactId>
+            <artifactId>fons4ai-common-api</artifactId>
             <version>${revision}</version>
         </dependency>
 
         <dependency>
-            <groupId>io.agentscope</groupId>
-            <artifactId>agentscope-harness</artifactId>
+            <groupId>io.opentelemetry</groupId>
+            <artifactId>opentelemetry-api</artifactId>
+            <version>${opentelemetry.version}</version>
         </dependency>
     </dependencies>
 

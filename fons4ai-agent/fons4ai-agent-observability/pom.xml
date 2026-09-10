@@ -12,15 +12,28 @@
     </parent>
 
     <artifactId>fons4ai-agent-observability</artifactId>
-    <description>Framework-neutral observability contracts for Fons4AI agents</description>
+    <packaging>pom</packaging>
+    <description>Fons4AI Agent observability modules</description>
 
+    <properties>
+        <opentelemetry.version>1.61.0</opentelemetry.version>
+    </properties>
 
-    <dependencies>
-        <dependency>
-            <groupId>com.fons.cloud.ai</groupId>
-            <artifactId>fons4ai-common-api</artifactId>
-            <version>${revision}</version>
-        </dependency>
-    </dependencies>
+    <dependencyManagement>
+        <dependencies>
+            <dependency>
+                <groupId>io.opentelemetry</groupId>
+                <artifactId>opentelemetry-bom</artifactId>
+                <version>${opentelemetry.version}</version>
+                <type>pom</type>
+                <scope>import</scope>
+            </dependency>
+        </dependencies>
+    </dependencyManagement>
+
+    <modules>
+        <module>fons4ai-agent-observability-core</module>
+        <module>fons4ai-agent-observability-spring-boot-autoconfigure</module>
+    </modules>
 
 </project>

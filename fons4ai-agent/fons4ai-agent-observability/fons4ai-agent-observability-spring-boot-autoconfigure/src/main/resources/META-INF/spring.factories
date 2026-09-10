@@ -1,0 +1,2 @@
+org.springframework.context.ApplicationContextInitializer=\
+com.fons.cloud.ai.agent.observability.autoconfigure.AgentObservabilityGlobalInitializer

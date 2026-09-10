@@ -169,7 +169,9 @@ public class RuntimeActions implements Serializable {
 
         try {
             doCancelExecution();
-            releaseManagedDisposables();
+            if (shouldReleaseManagedDisposablesAfterCancel()) {
+                releaseManagedDisposables();
+            }
             return true;
         } catch (RuntimeException exception) {
             cancellationRequested.compareAndSet(true, false);
@@ -184,6 +186,19 @@ public class RuntimeActions implements Serializable {
      * 统一释放 Reactor 主订阅与伴生任务；如果抛出异常，本次取消失败并允许重试。</p>
      */
     protected void doCancelExecution() {
+    }
+
+    /**
+     * 判断原生取消动作返回后是否立即释放框架管理的订阅。
+     *
+     * <p>默认返回 {@code true}，保持common的强制终止语义。需要异步整理状态的执行引擎
+     * 可以返回 {@code false}，由原生流自然结束时调用 {@link #releaseAll()}，同时必须提供
+     * 超时强制释放，避免原生中断长期未响应导致资源泄漏。</p>
+     *
+     * @return true 表示立即释放，false 表示由子类异步完成取消
+     */
+    protected boolean shouldReleaseManagedDisposablesAfterCancel() {
+        return true;
     }
 
     /**
