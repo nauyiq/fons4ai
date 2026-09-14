@@ -17,8 +17,9 @@ import java.util.concurrent.atomic.AtomicReference;
 /**
  * Agent运行时上下文（框架级基类）。
  *
- * <p>一次 Run 的请求级状态容器，只维护执行状态机、请求标识、编排参数和完成信息。
- * 事件流、完成结果与可中断资源均由 {@link RuntimeActions} 持有。</p>
+ * <p>一次Run的请求级状态容器，只保存执行状态、请求标识、编排参数和完成信息。
+ * 状态流转由{@link AgentRunStateMachine}负责，事件流、完成结果与可中断资源均由
+ * {@link RuntimeActions}持有。</p>
  *
  * @author hongqy
  */
@@ -45,24 +46,26 @@ public abstract class AgentRunContext {
     protected String conversationId;
 
     /**
-     * WAITING_APPROVAL 时关联的审批请求标识；仅暂停分段有效，进入终态后清空。
+     * WAITING_APPROVAL 时尚未解决的人工交互快照；仅暂停分段有效，进入终态后清空。
      */
-    protected HumanInTheLoopInfo humanInTheLoopInfo;
+    private final AtomicReference<List<HumanInTheLoopInfo>> humanInTheLoopInfos =
+            new AtomicReference<>(List.of());
 
     /**
      * 执行状态机：CREATED -> RUNNING -> 终态 / WAITING_APPROVAL。
      */
-    protected final AtomicReference<AgentRunState> state = new AtomicReference<>(AgentRunState.CREATED);
+    private final AtomicReference<AgentRunState> state =
+            new AtomicReference<>(AgentRunState.CREATED);
 
     /**
      * 执行启动时间戳，0 表示尚未启动。
      */
-    protected final AtomicLong startedAt = new AtomicLong();
+    private final AtomicLong startedAt = new AtomicLong();
 
     /**
      * 执行结束时间戳，0 表示尚未结束。
      */
-    protected final AtomicLong finishedAt = new AtomicLong();
+    private final AtomicLong finishedAt = new AtomicLong();
 
     /**
      * 整个 Run 累积的思考过程。
@@ -129,67 +132,50 @@ public abstract class AgentRunContext {
     }
 
     /**
-     * 尝试启动执行。
+     * 获取执行启动时间戳。
      *
-     * @return 是否成功启动
+     * @return 启动时间戳，0表示尚未启动
      */
-    public boolean tryStart() {
-        if (!state.compareAndSet(AgentRunState.CREATED, AgentRunState.RUNNING)) {
-            return false;
-        }
-        startedAt.compareAndSet(0, System.currentTimeMillis());
-        return true;
+    public long getStartedAt() {
+        return startedAt.get();
     }
 
     /**
-     * 原生引擎已保存可恢复的 checkpoint 后，才允许从 RUNNING 进入审批等待。
+     * 获取执行结束时间戳。
      *
-     * <p>CAS 保证唯一性：并发或重复调用只有一次成功；成功后本分段的订阅、租约和
-     * 事件流收口由调用方（暂停原语）负责。</p>
-     *
-     * @param humanInTheLoopInfo HITL信息
-     * @return 是否首次成功进入审批等待
+     * @return 结束时间戳，0表示尚未结束
      */
-    public boolean tryPauseForApproval(HumanInTheLoopInfo humanInTheLoopInfo) {
-        if (humanInTheLoopInfo == null || !state.compareAndSet(AgentRunState.RUNNING, AgentRunState.WAITING_APPROVAL)) {
-            return false;
-        }
-        this.humanInTheLoopInfo = humanInTheLoopInfo;
-        return true;
+    public long getFinishedAt() {
+        return finishedAt.get();
     }
 
     /**
-     * 尝试进入不可逆终态。
+     * 获取当前执行分段尚未解决的人工交互快照。
      *
-     * <p>审批等待（WAITING_APPROVAL）只允许被取消、超时或审批拒绝终结，其他
-     * 终态会被拒绝；随后释放 Run 持有的一切资源。</p>
-     *
-     * @param terminalState 终态状态
-     * @return 是否首次成功进入终态
+     * @return 不可变的HITL信息列表
      */
-    public boolean tryFinalize(AgentRunState terminalState) {
-        if (!terminalState.isTerminal()) {
-            return false;
-        }
+    public List<HumanInTheLoopInfo> getHumanInTheLoopInfos() {
+        return humanInTheLoopInfos.get();
+    }
 
-        while (true) {
-            AgentRunState current = state.get();
-            if (current.isTerminal()) {
-                return false;
-            }
-            // 当前处于审批等待时，非异常/取消/超时/审批拒绝不允许设置结束状态
-            if (current == AgentRunState.WAITING_APPROVAL
-                    && terminalState != AgentRunState.CANCELLED
-                    && terminalState != AgentRunState.TIMED_OUT
-                    && terminalState != AgentRunState.APPROVAL_REJECTED) {
-                return false;
-            }
-            if (state.compareAndSet(current, terminalState)) {
-                finishedAt.compareAndSet(0, System.currentTimeMillis());
-                humanInTheLoopInfo = null;
-                return true;
-            }
-        }
+    boolean compareAndSetState(AgentRunState expected, AgentRunState target) {
+        return state.compareAndSet(expected, target);
+    }
+
+    void markStarted(long timestamp) {
+        startedAt.compareAndSet(0, timestamp);
+    }
+
+    void markFinished(long timestamp) {
+        finishedAt.compareAndSet(0, timestamp);
+    }
+
+    void replaceHumanInTheLoopInfos(List<HumanInTheLoopInfo> hitlInfos) {
+        humanInTheLoopInfos.set(List.copyOf(hitlInfos));
+    }
+
+    void clearHumanInTheLoopInfos() {
+        humanInTheLoopInfos.set(List.of());
     }
 
     /**

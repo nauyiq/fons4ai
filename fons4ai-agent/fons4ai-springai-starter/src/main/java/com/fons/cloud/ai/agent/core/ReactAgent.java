@@ -375,10 +375,10 @@ public class ReactAgent extends BaseAgent<DefaultAgentRunContext> {
         var latestConfig = RunnableConfig.builder(context.getRunnableConfig()).checkPointId(null).build();
         StateSnapshot checkpoint = delegate.getAndCompileGraph().getState(latestConfig);
 
-        // 将检查点转换成审批信息 进行状态中断并且发送审批消息到SSE
+        // 将检查点转换成单项审批信息，以多审批快照结束当前执行分段。
         HumanInTheLoopInfo humanInTheLoopInfo = createHitlInfo(context, context.getInterruption(), checkpoint);
         Assert.notNull(humanInTheLoopInfo, () -> new SystemIntervalException("hitlInfo cannot be null"));
-        pauseForApproval(context, actions, humanInTheLoopInfo);
+        pauseForApprovals(context, actions, List.of(humanInTheLoopInfo));
     }
 
     /**
@@ -389,20 +389,31 @@ public class ReactAgent extends BaseAgent<DefaultAgentRunContext> {
                                                 InterruptionMetadata interruption,
                                                 StateSnapshot checkpoint) {
         String checkpointId = checkpoint.config().checkPointId().orElseThrow(() -> new SystemIntervalException("Interrupted graph has no checkpointId"));
-        return this.humanInTheLoopDataConverter.toHitlInfo(checkpointId, context, interruption);
+        return this.humanInTheLoopDataConverter.toHitlInfo(checkpointId, agentName, context, interruption);
     }
 
+    /**
+     * 释放当前运行终态对应的 checkpoint saver 资源。
+     *
+     * <p>审批暂停不是终态，BaseAgent不会在WAITING_APPROVAL分段调用该方法，
+     * 因此用于恢复的checkpoint仍由Saver保留。</p>
+     *
+     * @param context 当前运行上下文
+     * @param actions 当前运行行为
+     * @param terminalState 当前终态
+     */
     @Override
-    protected void safelyReleaseResource(AgentRunState terminalState, DefaultAgentRunContext context, RuntimeActions actions) {
-        super.safelyReleaseResource(terminalState, context, actions);
-        if (terminalState.isTerminal() && checkpointSaver != null) {
-            if (context.getRunnableConfig() != null) {
-                try {
-                    checkpointSaver.release(context.getRunnableConfig());
-                } catch (Exception e) {
-                    log.error("Failed execute release checkpoint saver, threadId:{}", context.getRunnableConfig().threadId().orElse(null), e);
-                }
-            }
+    protected void releaseNativeResource(DefaultAgentRunContext context,
+                                         RuntimeActions actions,
+                                         AgentRunState terminalState) {
+        if (checkpointSaver == null || context.getRunnableConfig() == null) {
+            return;
+        }
+        try {
+            checkpointSaver.release(context.getRunnableConfig());
+        } catch (Exception exception) {
+            log.error("Failed execute release checkpoint saver, threadId:{}",
+                    context.getRunnableConfig().threadId().orElse(null), exception);
         }
     }
 }

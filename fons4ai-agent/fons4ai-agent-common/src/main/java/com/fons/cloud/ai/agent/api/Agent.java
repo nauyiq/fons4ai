@@ -47,7 +47,7 @@ public interface Agent {
      *
      * <p>会占用当前线程，不能在 Reactor 非阻塞线程中调用（响应式调用方应使用
      * {@link #stream} 或 {@code run(request).completion()}）。遇到审批暂停时返回
-     * WAITING_APPROVAL 快照，不在调用线程中无限等待人工决定。</p>
+     * 携带一个或多个HITL信息的WAITING_APPROVAL快照，不在调用线程中无限等待人工决定。</p>
      *
      * @param request 智能体请求
      * @return 终态结果或审批等待快照

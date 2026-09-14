@@ -28,6 +28,7 @@ public enum AgentResultCode implements Result {
     APPROVAL_MISMATCH("AG200008", "审批请求关联不匹配"),
     APPROVAL_EXPIRED("AG200019", "审批请求已过期"),
     TRANSITION_APPROVAL_STATE_ERROR("AG200020", "审批状态转换错误"),
+    HITL_INFO_INVALID("AG200021", "人工交互信息不合法"),
 
 
     //  ==================== 认证异常 ====================

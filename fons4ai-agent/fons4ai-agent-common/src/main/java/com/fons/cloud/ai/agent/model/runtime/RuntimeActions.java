@@ -20,7 +20,7 @@ import java.util.concurrent.locks.Lock;
 import java.util.concurrent.locks.ReentrantLock;
 
 /**
- * 封装单次 Agent 运行的事件通道、执行取消与资源释放动作
+ * 封装单次Agent运行的状态机、事件通道、执行取消与资源释放动作
  * @author hongqy
  */
 @Slf4j
@@ -36,6 +36,13 @@ public class RuntimeActions implements Serializable {
     @Getter
     @NonNull
     private final AgentRunContext agentRunContext;
+
+    /**
+     * 当前Run的状态机。
+     */
+    @Getter
+    @NonNull
+    private final AgentRunStateMachine stateMachine;
 
     /**
      * 当前连接分段的完成结果。

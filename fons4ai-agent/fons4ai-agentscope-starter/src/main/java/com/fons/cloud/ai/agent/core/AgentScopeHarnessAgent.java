@@ -1,55 +1,26 @@
 package com.fons.cloud.ai.agent.core;
 
 import cn.hutool.core.util.IdUtil;
-import com.fons.cloud.ai.agent.api.AgentScopeExternalToolExecutor;
 import com.fons.cloud.ai.agent.api.HumanInTheLoopDataConverter;
+import com.fons.cloud.ai.agent.infrastructure.handler.AgentScopeApprovalHandler;
+import com.fons.cloud.ai.agent.infrastructure.middleware.AgentScopeApprovalRejectMiddleware;
+import com.fons.cloud.ai.agent.infrastructure.observability.AgentScopeTraceLifecycle;
+import com.fons.cloud.ai.agent.infrastructure.utils.AgentScopeMessageConverter;
 import com.fons.cloud.ai.agent.model.hitl.HumanInTheLoopInfo;
-import com.fons.cloud.ai.agent.model.hitl.HumanInTheLoopKind;
 import com.fons.cloud.ai.agent.model.message.MessageContentType;
-import com.fons.cloud.ai.agent.model.request.AgentApprovalAction;
-import com.fons.cloud.ai.agent.model.request.AgentInputContent;
-import com.fons.cloud.ai.agent.model.request.AgentInputContentType;
 import com.fons.cloud.ai.agent.model.request.AgentRequest;
 import com.fons.cloud.ai.agent.model.request.HitlRequestInfo;
 import com.fons.cloud.ai.agent.model.response.AgentResultCode;
-import com.fons.cloud.ai.agent.model.runtime.AgentScopeToolResultBuffer;
-import com.fons.cloud.ai.agent.model.runtime.AgentScopeToolResultKey;
-import com.fons.cloud.ai.agent.model.runtime.AgentRunState;
-import com.fons.cloud.ai.agent.model.runtime.RuntimeActions;
+import com.fons.cloud.ai.agent.model.runtime.*;
 import com.fons.cloud.common.base.exception.BizException;
 import com.fons.cloud.common.base.exception.SystemIntervalException;
 import io.agentscope.core.agent.RuntimeContext;
-import io.agentscope.core.event.AgentEvent;
-import io.agentscope.core.event.AgentResultEvent;
-import io.agentscope.core.event.AllToolsDeniedEvent;
-import io.agentscope.core.event.ExceedMaxItersEvent;
-import io.agentscope.core.event.RequireExternalExecutionEvent;
-import io.agentscope.core.event.RequireUserConfirmEvent;
-import io.agentscope.core.event.RequestStopEvent;
-import io.agentscope.core.event.SubagentExposedEvent;
-import io.agentscope.core.event.TextBlockDeltaEvent;
-import io.agentscope.core.event.ThinkingBlockDeltaEvent;
-import io.agentscope.core.event.ToolResultDataDeltaEvent;
-import io.agentscope.core.event.ToolResultEndEvent;
-import io.agentscope.core.event.ToolResultStartEvent;
-import io.agentscope.core.event.ToolResultTextDeltaEvent;
-import io.agentscope.core.message.Base64Source;
-import io.agentscope.core.message.ContentBlock;
-import io.agentscope.core.message.DataBlock;
+import io.agentscope.core.event.*;
 import io.agentscope.core.message.GenerateReason;
 import io.agentscope.core.message.Msg;
-import io.agentscope.core.message.MsgRole;
-import io.agentscope.core.message.Source;
-import io.agentscope.core.message.TextBlock;
-import io.agentscope.core.message.ToolCallState;
-import io.agentscope.core.message.ToolResultBlock;
-import io.agentscope.core.message.ToolResultMessage;
-import io.agentscope.core.message.ToolResultState;
-import io.agentscope.core.message.ToolUseBlock;
-import io.agentscope.core.message.URLSource;
 import io.agentscope.core.message.UserMessage;
-import io.agentscope.core.state.AgentState;
 import io.agentscope.harness.agent.HarnessAgent;
+import lombok.AccessLevel;
 import lombok.Builder;
 import lombok.Getter;
 import lombok.NonNull;
@@ -58,30 +29,61 @@ import lombok.extern.slf4j.Slf4j;
 import org.apache.commons.lang3.StringUtils;
 import reactor.core.Disposable;
 import reactor.core.publisher.Flux;
-import reactor.core.publisher.Mono;
 import reactor.core.publisher.SignalType;
 import reactor.core.scheduler.Schedulers;
 
-import java.util.ArrayList;
-import java.util.Base64;
-import java.util.LinkedHashMap;
+import java.io.Closeable;
+import java.io.IOException;
 import java.util.List;
-import java.util.Map;
+import java.util.concurrent.atomic.AtomicReference;
 
 /**
  * 按common BaseAgent契约适配AgentScope HarnessAgent。
  *
- * <p>原生HarnessAgent由下游构建并注入，本类只负责Fons Run与AgentScope单次调用之间的协议适配。
- * AgentScope负责Harness能力和ReAct循环，本类负责输入转换、流式消息以及common生命周期收口。
- * 需要支持审批REJECT时，下游构建HarnessAgent必须注册
- * {@link AgentScopeApprovalRejectMiddleware}。</p>
+ * <p>下游只负责提供原生HarnessAgent Builder，本类统一注入框架必需的Middleware并完成构建。
+ * AgentScope负责Harness能力和ReAct循环，本类只负责顶层输入转换、流式消息、工具结果观察、
+ * 顶层工具审批以及common生命周期收口。子Agent、远程任务和外部工具编排继续使用AgentScope
+ * 原生能力，或由下游自定义Agent负责。</p>
+ *
+ * <p>当前适配器提供以下能力：</p>
+ * <ul>
+ *     <li>将common多模态输入转换为AgentScope {@link UserMessage}。</li>
+ *     <li>桥接顶层文本、思考过程和纯文本工具结果。</li>
+ *     <li>将顶层工具审批转换为common HITL消息，并支持APPROVE、EDIT和REJECT恢复。</li>
+ *     <li>将common取消请求转换为顶层HarnessAgent原生中断，并提供超时强制释放。</li>
+ *     <li>通过{@link #onNativeEvent}开放原生事件的只读观察能力。</li>
+ * </ul>
+ *
+ * <p>以下能力不由当前适配器提供闭环：</p>
+ * <ul>
+ *     <li>子Agent审批恢复、父子Agent结果聚合和依赖屏障。</li>
+ *     <li>远程子Agent任务提交、轮询、取消和结果确认。</li>
+ *     <li>{@link RequireExternalExecutionEvent}对应的外部工具执行与结果回填。</li>
+ *     <li>任意Middleware暂停恢复、非工具INPUT_REQUIRED和业务工作流编排。</li>
+ *     <li>AgentScope StateStore、Memory、Plan、Skill和多Agent团队的具体配置。</li>
+ * </ul>
+ *
+ * <p>推荐的扩展方式：</p>
+ * <ul>
+ *     <li>只调整输入、原生事件观察或者顶层审批数据格式时，继承本类并覆盖
+ *     {@link #createUserMessage}、{@link #onNativeEvent}或注入
+ *     {@link HumanInTheLoopDataConverter}。</li>
+ *     <li>StateStore、Memory、Plan、Skill和原生Middleware等Harness能力，直接通过下游传入的
+ *     {@link HarnessAgent.Builder}配置，不在common适配层重复抽象。</li>
+ *     <li>需要子Agent恢复、远程任务、外部工具回填或者业务工作流闭环时，直接继承
+ *     {@link BaseAgent}并创建业务RunContext和RuntimeActions，使用AgentScope原生API完成编排，
+ *     再调用BaseAgent提供的完成、失败、取消、审批暂停和工具结果入口。</li>
+ * </ul>
+ *
+ * <p>{@code onNativeEvent}是失败不影响主链的观察扩展点，不拥有顶层Run状态流转权。
+ * 下游不得在该方法中阻塞事件线程、修改Context状态或者触发common终态。</p>
  *
  * @author hongqy
  */
 @Slf4j
 @Getter
 @SuperBuilder
-public class AgentScopeHarnessAgent extends BaseAgent<AgentScopeRunContext> {
+public class AgentScopeHarnessAgent extends BaseAgent<AgentScopeRunContext> implements Closeable {
 
     /**
      * Fons运行ID在AgentScope RuntimeContext中的属性名称。
@@ -94,15 +96,38 @@ public class AgentScopeHarnessAgent extends BaseAgent<AgentScopeRunContext> {
     protected static final String MESSAGE_ID_ATTRIBUTE = "fons.messageId";
 
     /**
-     * 调用方构建完成的AgentScope HarnessAgent。
+     * Fons原始运行ID在AgentScope RuntimeContext中的属性名称。
+     */
+    protected static final String ORIGIN_RUN_ID_ATTRIBUTE = "fons.originRunId";
+
+    /**
+     * AgentScope消息转换器。
+     */
+    private static final AgentScopeMessageConverter MESSAGE_CONVERTER = AgentScopeMessageConverter.getInstance();
+
+    /**
+     * AgentScope人工审批处理器。
+     */
+    private static final AgentScopeApprovalHandler APPROVAL_HANDLER = AgentScopeApprovalHandler.getInstance();
+
+    /**
+     * 下游提供的原生HarnessAgent Builder。
      */
     @NonNull
-    protected final HarnessAgent delegate;
+    @Getter(AccessLevel.NONE)
+    private HarnessAgent.Builder delegateBuilder;
+
+    /**
+     * 框架构建完成的AgentScope HarnessAgent。
+     *
+     * <p>使用容器保存，避免Lombok将原生HarnessAgent暴露为下游可注入的Builder参数。</p>
+     */
+    @Getter(AccessLevel.NONE)
+    private final AtomicReference<HarnessAgent> delegateHolder = new AtomicReference<>();
 
     /**
      * AgentScope HITL信息转换器。
      */
-    @NonNull
     @Builder.Default
     protected HumanInTheLoopDataConverter humanInTheLoopDataConverter = DefaultHumanInTheLoopDataConverter.getInstance();
 
@@ -112,10 +137,121 @@ public class AgentScopeHarnessAgent extends BaseAgent<AgentScopeRunContext> {
     @Builder.Default
     protected long interruptGracePeriodMillis = AgentScopeRuntimeActions.DEFAULT_INTERRUPT_GRACE_PERIOD_MILLIS;
 
+
     /**
-     * AgentScope外部工具执行入口；未配置时保持外部工具不支持语义。
+     * 创建AgentScope HarnessAgent适配器。
+     *
+     * <p>原生Builder只在构造期间使用，完成框架默认配置和原生Agent构建后不再持有。</p>
+     *
+     * @param builder Fons Agent构建器
      */
-    protected AgentScopeExternalToolExecutor externalToolExecutor;
+    protected AgentScopeHarnessAgent(AgentScopeHarnessAgentBuilder<?, ?> builder) {
+        super(builder);
+        this.humanInTheLoopDataConverter = builder.humanInTheLoopDataConverter$set
+                ? builder.humanInTheLoopDataConverter$value
+                : DefaultHumanInTheLoopDataConverter.getInstance();
+        this.interruptGracePeriodMillis = builder.interruptGracePeriodMillis$set
+                ? builder.interruptGracePeriodMillis$value
+                : AgentScopeRuntimeActions.DEFAULT_INTERRUPT_GRACE_PERIOD_MILLIS;
+        validateConfiguration();
+        this.delegateHolder.set(init(builder.delegateBuilder));
+    }
+
+    /**
+     * 校验AgentScope适配器配置。
+     */
+    private void validateConfiguration() {
+        if (humanInTheLoopDataConverter == null) {
+            throw SystemIntervalException.of(
+                    "AgentScope humanInTheLoopDataConverter cannot be null");
+        }
+        if (interruptGracePeriodMillis < 0) {
+            throw SystemIntervalException.of(
+                    "AgentScope interruptGracePeriodMillis cannot be negative");
+        }
+    }
+
+    /**
+     * 初始化AgentScope HarnessAgent。
+     *
+     * @param delegateBuilder 下游提供的原生Builder
+     * @return 框架构建完成的HarnessAgent
+     */
+    private HarnessAgent init(HarnessAgent.Builder delegateBuilder) {
+        if (delegateBuilder == null) {
+            throw SystemIntervalException.of("AgentScope HarnessAgent builder cannot be null");
+        }
+
+        HarnessAgent harnessAgent = null;
+        try {
+            delegateBuilder.middleware(AgentScopeApprovalRejectMiddleware.getInstance());
+            harnessAgent = delegateBuilder.build();
+            validateFrameworkMiddlewares(harnessAgent);
+            log.info("Initialized AgentScope HarnessAgent, agentName:{}", agentName);
+            return harnessAgent;
+        } catch (BizException exception) {
+            safelyCloseDelegate(harnessAgent);
+            throw exception;
+        } catch (RuntimeException exception) {
+            safelyCloseDelegate(harnessAgent);
+            log.error("Failed initialize AgentScope HarnessAgent, agentName:{}", agentName, exception);
+            throw SystemIntervalException.of("Failed initialize AgentScope HarnessAgent");
+        }
+    }
+
+    /**
+     * 获取框架构建完成的AgentScope HarnessAgent。
+     *
+     * @return 原生HarnessAgent
+     */
+    protected final HarnessAgent getDelegate() {
+        HarnessAgent delegate = delegateHolder.get();
+        if (delegate == null) {
+            throw SystemIntervalException.of(
+                    "AgentScope HarnessAgent has not been initialized or has been closed");
+        }
+        return delegate;
+    }
+
+    /**
+     * 校验框架必需Middleware没有被下游重复注册。
+     *
+     * @param delegate 原生HarnessAgent
+     */
+    private void validateFrameworkMiddlewares(HarnessAgent delegate) {
+        long rejectMiddlewareCount = delegate.getDelegate().getMiddlewares().stream()
+                .filter(AgentScopeApprovalRejectMiddleware.class::isInstance)
+                .count();
+        if (rejectMiddlewareCount != 1L) {
+            throw SystemIntervalException.of(
+                    "AgentScopeApprovalRejectMiddleware must be registered exactly once");
+        }
+    }
+
+    /**
+     * 构建失败时尽力释放已经创建的原生Agent资源。
+     *
+     * @param delegate 原生HarnessAgent
+     */
+    private void safelyCloseDelegate(HarnessAgent delegate) {
+        if (delegate == null) {
+            return;
+        }
+        try {
+            delegate.close();
+        } catch (RuntimeException exception) {
+            log.warn("Failed close invalid AgentScope HarnessAgent, agentName:{}",
+                    agentName, exception);
+        }
+    }
+
+    @Override
+    public void close() throws IOException {
+        HarnessAgent harnessAgent = this.delegateHolder.getAndSet(null);
+        if (harnessAgent != null) {
+            harnessAgent.close();
+        }
+    }
 
     /**
      * 启动AgentScope事件流，并接入common运行生命周期。
@@ -139,25 +275,22 @@ public class AgentScopeHarnessAgent extends BaseAgent<AgentScopeRunContext> {
                         }
                     } finally {
                         // 原生流结束后清理尚未收到End事件的工具结果缓冲。
-                        context.getToolResultBuffers().clear();
+                        context.clearToolResultBuffers();
                     }
                 })
                 .subscribe(ignored -> {
-                }, error -> failed(context, actions, error,
+                }, error -> failAgentScopeRun(context, actions, error,
                         AgentResultCode.FAILED_EXECUTE_AGENT.getCode(),
                         AgentResultCode.FAILED_EXECUTE_AGENT.getMessage()));
     }
 
     /**
-     * 执行一个AgentScope原生分段，并在需要时继续处理外部工具结果。
-     *
-     * <p>每个原生分段自然结束后AgentScope已经完成AgentState保存；因此外部工具结果
-     * 可以使用相同RuntimeContext启动下一分段，不需要在common中创建新的Run。</p>
+     * 执行一个AgentScope原生顶层分段。
      *
      * @param context 当前Run上下文
      * @param actions 当前Run行为权柄
      * @param message 当前原生分段的输入消息
-     * @return 当前Run剩余的AgentScope事件流
+     * @return AgentScope顶层事件流
      */
     private Flux<AgentEvent> executeAgentScopeSegment(AgentScopeRunContext context,
                                                       RuntimeActions actions,
@@ -167,205 +300,10 @@ public class AgentScopeHarnessAgent extends BaseAgent<AgentScopeRunContext> {
             return Flux.empty();
         }
 
-        return delegate.streamEvents(message, context.getRuntimeContext())
+        return getDelegate().streamEvents(message, context.getRuntimeContext())
                 // 串行处理原生回调，避免并发修改Context和乱序输出客户端消息。
                 .publishOn(Schedulers.boundedElastic(), 1)
-                .doOnNext(event -> handleEvent(context, actions, event))
-                .thenMany(continueExternalExecution(context, actions));
-    }
-
-    /**
-     * 执行当前原生分段请求的外部工具，并将结果回填AgentScope继续运行。
-     *
-     * @param context 当前Run上下文
-     * @param actions 当前Run行为权柄
-     * @return 后续AgentScope事件流
-     */
-    private Flux<AgentEvent> continueExternalExecution(AgentScopeRunContext context,
-                                                       RuntimeActions actions) {
-        return Flux.defer(() -> {
-            if (actions.isCancellationRequested()
-                    || context.getState() != AgentRunState.RUNNING) {
-                return Flux.empty();
-            }
-
-            RequireExternalExecutionEvent event = context.takePendingExternalExecution();
-            if (event == null) {
-                return Flux.empty();
-            }
-            if (externalToolExecutor == null) {
-                context.recordUnsupportedInteraction(event.getType());
-                return Flux.empty();
-            }
-
-            return executeExternalTools(context, actions, event)
-                    .flatMapMany(message -> executeAgentScopeSegment(context, actions, message));
-        });
-    }
-
-    /**
-     * 调用外部工具执行器并创建AgentScope恢复消息。
-     *
-     * @param context 当前Run上下文
-     * @param actions 当前Run行为权柄
-     * @param event   外部工具执行事件
-     * @return 携带完整工具结果的AgentScope工具消息
-     */
-    private Mono<ToolResultMessage> executeExternalTools(AgentScopeRunContext context,
-                                                         RuntimeActions actions,
-                                                         RequireExternalExecutionEvent event) {
-        return Mono.defer(() -> {
-            validateExternalExecutionEvent(event);
-            Mono<List<ToolResultBlock>> execution = externalToolExecutor.execute(
-                    context, event.getReplyId(), List.copyOf(event.getToolCalls()));
-            if (execution == null) {
-                return Mono.error(SystemIntervalException.of(
-                        "AgentScope external tool executor returned null publisher"));
-            }
-            return execution
-                    .switchIfEmpty(Mono.error(SystemIntervalException.of(
-                            "AgentScope external tool executor returned no result")))
-                    .flatMap(results -> {
-                        if (actions.isCancellationRequested()
-                                || context.getState() != AgentRunState.RUNNING) {
-                            return Mono.empty();
-                        }
-                        return Mono.just(createExternalExecutionMessage(
-                                context, actions, event, results));
-                    });
-        });
-    }
-
-    /**
-     * 校验AgentScope外部工具执行事件。
-     *
-     * @param event 外部工具执行事件
-     */
-    private void validateExternalExecutionEvent(RequireExternalExecutionEvent event) {
-        if (StringUtils.isBlank(event.getReplyId())) {
-            throw new SystemIntervalException(
-                    "AgentScope external execution replyId cannot be blank");
-        }
-        if (event.getToolCalls() == null || event.getToolCalls().isEmpty()) {
-            throw new SystemIntervalException(
-                    "AgentScope external execution requires tool calls");
-        }
-    }
-
-    /**
-     * 校验并标准化外部工具结果，转换为AgentScope恢复消息。
-     *
-     * @param context 当前Run上下文
-     * @param actions 当前Run行为权柄
-     * @param event   外部工具执行事件
-     * @param results 外部工具执行结果
-     * @return AgentScope工具结果恢复消息
-     */
-    private ToolResultMessage createExternalExecutionMessage(AgentScopeRunContext context,
-                                                              RuntimeActions actions,
-                                                              RequireExternalExecutionEvent event,
-                                                              List<ToolResultBlock> results) {
-        if (results == null || results.isEmpty()) {
-            throw new SystemIntervalException(
-                    "AgentScope external tool executor returned empty results");
-        }
-
-        Map<String, ToolUseBlock> toolCalls = new LinkedHashMap<>();
-        for (ToolUseBlock toolCall : event.getToolCalls()) {
-            if (toolCall == null
-                    || StringUtils.isBlank(toolCall.getId())
-                    || StringUtils.isBlank(toolCall.getName())
-                    || toolCalls.putIfAbsent(toolCall.getId(), toolCall) != null) {
-                throw new SystemIntervalException(
-                        "AgentScope external execution contains invalid tool call");
-            }
-        }
-
-        Map<String, ToolResultBlock> resultById = new LinkedHashMap<>();
-        for (ToolResultBlock result : results) {
-            if (result == null
-                    || StringUtils.isBlank(result.getId())
-                    || resultById.putIfAbsent(result.getId(), result) != null) {
-                throw new SystemIntervalException(
-                        "AgentScope external execution contains invalid tool result");
-            }
-        }
-        if (!resultById.keySet().equals(toolCalls.keySet())) {
-            throw new SystemIntervalException(
-                    "AgentScope external tool results do not match pending tool calls");
-        }
-
-        List<ToolResultBlock> normalizedResults = new ArrayList<>(toolCalls.size());
-        for (ToolUseBlock toolCall : toolCalls.values()) {
-            ToolResultBlock result = normalizeExternalToolResult(
-                    toolCall, resultById.get(toolCall.getId()));
-            normalizedResults.add(result);
-        }
-        for (int index = 0; index < normalizedResults.size(); index++) {
-            notifyExternalToolFinished(
-                    context, actions, event.getToolCalls().get(index), normalizedResults.get(index));
-        }
-
-        log.debug("Completed AgentScope external tool execution, replyId:{}, toolCount:{}",
-                event.getReplyId(), normalizedResults.size());
-        return new ToolResultMessage(normalizedResults);
-    }
-
-    /**
-     * 标准化单个外部工具结果。
-     *
-     * @param toolCall 原始工具调用
-     * @param result   外部执行结果
-     * @return 可回填AgentScope的工具结果
-     */
-    private ToolResultBlock normalizeExternalToolResult(ToolUseBlock toolCall,
-                                                        ToolResultBlock result) {
-        if (result.isSuspended()) {
-            throw new SystemIntervalException(
-                    "AgentScope external tool result cannot remain suspended");
-        }
-        if (StringUtils.isNotBlank(result.getName())
-                && !StringUtils.equals(result.getName(), toolCall.getName())) {
-            throw new SystemIntervalException(
-                    "AgentScope external tool result name does not match pending tool call");
-        }
-
-        ToolResultBlock normalized = StringUtils.isBlank(result.getName())
-                ? result.withIdAndName(toolCall.getId(), toolCall.getName())
-                : result;
-        return normalized.getState() == ToolResultState.RUNNING
-                ? normalized.withState(ToolResultState.SUCCESS)
-                : normalized;
-    }
-
-    /**
-     * 将成功的纯文本外部工具结果接入common工具结果处理链路。
-     *
-     * @param context  当前Run上下文
-     * @param actions  当前Run行为权柄
-     * @param toolCall 原始工具调用
-     * @param result   标准化后的工具结果
-     */
-    private void notifyExternalToolFinished(AgentScopeRunContext context,
-                                            RuntimeActions actions,
-                                            ToolUseBlock toolCall,
-                                            ToolResultBlock result) {
-        if (actions.isCancellationRequested()
-                || result.getState() != ToolResultState.SUCCESS) {
-            return;
-        }
-
-        StringBuilder text = new StringBuilder();
-        for (ContentBlock block : result.getOutput()) {
-            if (!(block instanceof TextBlock textBlock)) {
-                return;
-            }
-            text.append(textBlock.getText());
-        }
-        if (text.isEmpty()) {
-            return;
-        }
-        toolFinished(context, actions, toolCall.getId(), toolCall.getName(), text.toString());
+                .doOnNext(event -> handleEvent(context, actions, event));
     }
 
     /**
@@ -393,10 +331,18 @@ public class AgentScopeHarnessAgent extends BaseAgent<AgentScopeRunContext> {
      * @return AgentScope Run行为权柄
      */
     @Override
-    protected RuntimeActions createActions(AgentScopeRunContext context) {
+    protected AgentScopeRuntimeActions createActions(AgentScopeRunContext context) {
+        AgentScopeTraceLifecycle traceLifecycle = new AgentScopeTraceLifecycle();
+        context.getRuntimeContext().put(AgentScopeTraceLifecycle.class, traceLifecycle);
+        AgentRunStateEventPublisher eventPublisher = event -> {
+            // Trace生命周期先消费权威状态；业务状态发布异常仍由状态机统一隔离。
+            traceLifecycle.publish(event);
+            stateEventPublisher.publish(event);
+        };
         return AgentScopeRuntimeActions.builder()
                 .agentRunContext(context)
-                .delegate(delegate)
+                .stateMachine(new AgentRunStateMachine(context, eventPublisher))
+                .delegate(getDelegate())
                 .runtimeContext(context.getRuntimeContext())
                 .interruptGracePeriodMillis(interruptGracePeriodMillis)
                 .build();
@@ -409,67 +355,18 @@ public class AgentScopeHarnessAgent extends BaseAgent<AgentScopeRunContext> {
      * @return AgentScope用户消息
      */
     protected UserMessage createUserMessage(AgentRequest request) {
-        try {
-            List<ContentBlock> blocks = new ArrayList<>(request.getContents().size());
-            for (AgentInputContent content : request.getContents()) {
-                blocks.add(createContentBlock(content));
-            }
-            return new UserMessage(blocks);
-        } catch (SystemIntervalException exception) {
-            throw exception;
-        } catch (RuntimeException exception) {
-            log.warn("Failed to convert common input to AgentScope UserMessage, runMessageId:{}",
-                    request.getMessageId(), exception);
-            throw SystemIntervalException.of("Failed to convert Agent multimodal input");
-        }
+        return MESSAGE_CONVERTER.createUserMessage(request);
     }
 
     /**
-     * 将单个common输入内容转换为AgentScope内容块。
+     * 处理AgentScope原生事件，并将顶层语义桥接到common。
      *
-     * @param content common输入内容
-     * @return AgentScope内容块
-     */
-    private ContentBlock createContentBlock(AgentInputContent content) {
-        if (content.getType() == AgentInputContentType.TEXT) {
-            return TextBlock.builder()
-                    .text(content.getText())
-                    .build();
-        }
-
-        DataBlock.Builder builder = DataBlock.builder()
-                .source(createDataSource(content));
-        if (StringUtils.isNotBlank(content.getName())) {
-            builder.name(content.getName());
-        }
-        return builder.build();
-    }
-
-    /**
-     * 创建AgentScope多模态数据源。
-     *
-     * @param content common多模态输入内容
-     * @return AgentScope数据源
-     */
-    private Source createDataSource(AgentInputContent content) {
-        if (content.getUri() != null) {
-            return URLSource.builder()
-                    .url(content.getUri().toString())
-                    .mimeType(content.getMimeType())
-                    .build();
-        }
-        return Base64Source.builder()
-                .mediaType(content.getMimeType())
-                .data(Base64.getEncoder().encodeToString(content.getData()))
-                .build();
-    }
-
-    /**
-     * 处理AgentScope原生事件，并将子Agent相关事件分流到独立扩展点。
+     * <p>所有事件会先通知只读观察扩展点。带有source的子Agent事件以及
+     * SubagentExposedEvent不参与顶层结果、工具记录或状态流转。</p>
      *
      * @param context 当前Run上下文
      * @param actions 当前Run行为权柄
-     * @param event   原生事件
+     * @param event 原生事件
      */
     protected void handleEvent(AgentScopeRunContext context,
                                RuntimeActions actions,
@@ -479,13 +376,23 @@ public class AgentScopeHarnessAgent extends BaseAgent<AgentScopeRunContext> {
             return;
         }
 
+        // 通知原生事件
+        safelyNotifyNativeEvent(context, actions, event);
+
         if (StringUtils.isNotBlank(event.getSource())
                 || event instanceof SubagentExposedEvent) {
-            handleSubagentEvent(context, actions, event);
             return;
         }
 
         switch (event) {
+            // 保存顶层工具审批事件，等待原生分段结束并完成AgentState持久化。
+            case RequireUserConfirmEvent approvalEvent ->
+                    context.recordPendingApproval(approvalEvent);
+
+            // common适配器不接管外部工具执行，由下游自定义Agent完成原生闭环。
+            case RequireExternalExecutionEvent executionEvent ->
+                    context.recordUnsupportedInteraction(executionEvent.getType());
+
             // 聚合模型正文增量，并向客户端发送统一文本消息。
             case TextBlockDeltaEvent textEvent -> {
                 String text = textEvent.getDelta();
@@ -507,172 +414,72 @@ public class AgentScopeHarnessAgent extends BaseAgent<AgentScopeRunContext> {
             // 保存AgentScope最终结果，供当前分段结束时判断是否正常完成。
             case AgentResultEvent resultEvent -> context.recordResult(resultEvent.getResult());
 
-            // 等原生流自然结束并完成AgentState持久化后，再收口common审批分段。
-            case RequireUserConfirmEvent requireUserConfirmEvent -> context.recordPendingApproval(requireUserConfirmEvent);
-
-            // 记录待外部执行的工具批次，原生分段结束后统一执行并回填结果。
-            case RequireExternalExecutionEvent requireExternalExecutionEvent -> context.recordPendingExternalExecution(requireExternalExecutionEvent);
-
             // 记录最大推理轮次事件；AgentScope仍会生成总结结果，由分段收口统一判断。
-            case ExceedMaxItersEvent exceedMaxItersEvent -> context.recordExceedMaxIters(exceedMaxItersEvent);
+            case ExceedMaxItersEvent exceedMaxItersEvent ->
+                    context.recordExceedMaxIters(exceedMaxItersEvent);
 
             // 记录Middleware停止请求；审批停止与普通停止的语义由分段收口统一区分。
             case RequestStopEvent requestStopEvent -> context.recordStopRequest(requestStopEvent);
 
             // 记录全部工具拒绝事实；AgentScope可能继续推理，也可能由Middleware请求停止。
-            case AllToolsDeniedEvent allToolsDeniedEvent -> context.recordAllToolsDenied(allToolsDeniedEvent);
+            case AllToolsDeniedEvent allToolsDeniedEvent ->
+                    context.recordAllToolsDenied(allToolsDeniedEvent);
 
             // 创建当前工具调用的结果缓冲，等待后续文本或数据增量。
-            case ToolResultStartEvent toolResultStartEvent -> startToolResult(context, toolResultStartEvent);
+            case ToolResultStartEvent toolResultStartEvent ->
+                    context.startToolResult(toolResultStartEvent);
 
             // 将工具文本结果增量追加到对应工具调用缓冲。
-            case ToolResultTextDeltaEvent toolResultTextDeltaEvent -> appendToolResult(context, toolResultTextDeltaEvent);
+            case ToolResultTextDeltaEvent toolResultTextDeltaEvent ->
+                    context.appendToolResultText(toolResultTextDeltaEvent);
 
             // 标记工具结果包含数据块，避免将混合结果误当作纯文本处理。
-            case ToolResultDataDeltaEvent toolResultDataDeltaEvent -> markToolDataResult(context, toolResultDataDeltaEvent);
+            case ToolResultDataDeltaEvent toolResultDataDeltaEvent ->
+                    context.markToolResultData(toolResultDataDeltaEvent);
 
             // 结束工具结果聚合，并将成功的纯文本结果交给common工具处理链路。
-            case ToolResultEndEvent toolResultEndEvent -> finishToolResult(context, actions, toolResultEndEvent);
+            case ToolResultEndEvent toolResultEndEvent ->
+                    finishToolResult(context, actions, toolResultEndEvent);
 
-            // 其他AgentScope原生事件不参与当前common输出与运行状态流转，有意忽略。
-            default -> log.debug("接收到AgentScope原生未处理事件, eventId:{}, eventType:{}", event.getId(), event.getType());
+            // 其他AgentScope原生事件已经交给观察扩展点，不参与common语义。
+            default -> {
+            }
         }
-
     }
 
     /**
-     * 处理AgentScope子Agent事件。
+     * 观察AgentScope原生事件。
      *
-     * <p>普通子Agent事件不参与顶层Agent的文本聚合、工具结果处理和运行状态流转，
-     * 避免子Agent结果覆盖父Agent结果。子类可以覆盖本方法接入子Agent进度展示、
-     * 可观测性或者暴露子会话等AgentScope特有能力。</p>
-     *
-     * <p>当前适配器尚不能恢复本地子Agent与父Agent之间的原始调用链，因此子Agent
-     * 产生的审批和外部执行事件只记录为不支持的交互，由分段结束逻辑统一失败，
-     * 不转换成common HITL事件。</p>
+     * <p>该扩展点不拥有顶层Run编排权，不应直接修改Context状态或者触发common终态。
+     * 观察逻辑异常会被框架记录并忽略，不影响原生执行链。</p>
      *
      * @param context 当前Run上下文
      * @param actions 当前Run行为权柄
-     * @param event   子Agent原生事件
+     * @param event 原生事件
      */
-    protected void handleSubagentEvent(AgentScopeRunContext context,
-                                       RuntimeActions actions,
-                                       AgentEvent event) {
-        if (actions.isCancellationRequested()
-                || context.getState() != AgentRunState.RUNNING) {
-            return;
-        }
-
-        switch (event) {
-            // 子Agent审批无法恢复原父Agent调用链，保留原生状态后统一失败。
-            case RequireUserConfirmEvent requireUserConfirmEvent ->
-                    recordUnsupportedSubagentInteraction(
-                            context, requireUserConfirmEvent, requireUserConfirmEvent.getReplyId());
-
-            // 子Agent外部工具执行无法回填原父Agent调用链，保留原生状态后统一失败。
-            case RequireExternalExecutionEvent requireExternalExecutionEvent ->
-                    recordUnsupportedSubagentInteraction(
-                            context, requireExternalExecutionEvent,
-                            requireExternalExecutionEvent.getReplyId());
-
-            // 其他子Agent事件默认不影响父Agent，保留给子类按AgentScope原生语义扩展。
-            default -> log.debug("Received AgentScope subagent event, eventId:{}, eventType:{}, source:{}",
-                    event.getId(), event.getType(), event.getSource());
-        }
+    protected void onNativeEvent(AgentScopeRunContext context,
+                                 RuntimeActions actions,
+                                 AgentEvent event) {
+        log.debug("Received AgentScope native event, eventId:{}, eventType:{}, source:{}",
+                event.getId(), event.getType(), event.getSource());
     }
 
     /**
-     * 记录当前无法恢复的子Agent交互。
-     *
-     * <p>远程子Agent在等待审批或者外部执行结果时会保持任务运行；当前适配器没有对应
-     * 的恢复闭环，因此发现远程taskId时同步取消原生任务，避免父Agent长期等待。</p>
+     * 尽力通知AgentScope原生事件观察扩展点。
      *
      * @param context 当前Run上下文
-     * @param event   子Agent交互事件
-     * @param replyId 子Agent回复ID
+     * @param actions 当前Run行为权柄
+     * @param event 原生事件
      */
-    private void recordUnsupportedSubagentInteraction(AgentScopeRunContext context,
-                                                      AgentEvent event,
-                                                      String replyId) {
-        context.recordUnsupportedInteraction(event.getType());
-
-        String taskId = getEventMetadata(event, AgentEvent.METADATA_TASK_ID);
-        if (taskId != null) {
-            String parentSessionId = getEventMetadata(
-                    event, AgentEvent.METADATA_PARENT_SESSION_ID);
-            if (parentSessionId == null) {
-                parentSessionId = context.getRuntimeContext().getSessionId();
-            }
-            try {
-                boolean cancelled = delegate.getTaskRepository().cancelTask(
-                        context.getRuntimeContext(), parentSessionId, taskId);
-                if (!cancelled) {
-                    log.warn("Failed to cancel unsupported AgentScope subagent task, "
-                                    + "runId:{}, source:{}, taskId:{}",
-                            context.getRunId(), event.getSource(), taskId);
-                }
-            } catch (RuntimeException exception) {
-                log.error("Failed to cancel unsupported AgentScope subagent task, "
-                                + "runId:{}, source:{}, taskId:{}",
-                        context.getRunId(), event.getSource(), taskId, exception);
-                throw SystemIntervalException.of(
-                        "Failed to cancel unsupported AgentScope subagent task");
-            }
+    private void safelyNotifyNativeEvent(AgentScopeRunContext context,
+                                         RuntimeActions actions,
+                                         AgentEvent event) {
+        try {
+            onNativeEvent(context, actions, event);
+        } catch (RuntimeException exception) {
+            log.warn("Failed observe AgentScope native event, runId:{}, eventType:{}",
+                    context.getRunId(), event.getType(), exception);
         }
-
-        log.warn("AgentScope subagent interaction is not supported, "
-                        + "runId:{}, source:{}, replyId:{}, taskId:{}, eventType:{}",
-                context.getRunId(), event.getSource(), replyId, taskId, event.getType());
-    }
-
-    /**
-     * 获取AgentScope事件中的字符串元数据。
-     *
-     * @param event AgentScope原生事件
-     * @param key   元数据键
-     * @return 元数据字符串；不存在或不是字符串时返回null
-     */
-    private String getEventMetadata(AgentEvent event, String key) {
-        if (event.getMetadata() == null) {
-            return null;
-        }
-        Object value = event.getMetadata().get(key);
-        return value instanceof String text ? StringUtils.trimToNull(text) : null;
-    }
-
-    /**
-     * 创建一次工具结果聚合缓冲。
-     *
-     * @param context 当前Run上下文
-     * @param event   工具结果开始事件
-     */
-    private void startToolResult(AgentScopeRunContext context, ToolResultStartEvent event) {
-        getOrCreateToolResultBuffer(context, event,
-                event.getReplyId(), event.getToolCallId(), event.getToolCallName());
-    }
-
-    /**
-     * 追加一次工具调用的文本结果片段。
-     *
-     * @param context 当前Run上下文
-     * @param event   工具文本结果事件
-     */
-    private void appendToolResult(AgentScopeRunContext context, ToolResultTextDeltaEvent event) {
-        AgentScopeToolResultBuffer buffer = getOrCreateToolResultBuffer(context, event,
-                event.getReplyId(), event.getToolCallId(), event.getToolCallName());
-        buffer.appendText(event.getDelta());
-    }
-
-    /**
-     * 标记一次工具调用包含非文本结果。
-     *
-     * @param context 当前Run上下文
-     * @param event   工具非文本结果事件
-     */
-    private void markToolDataResult(AgentScopeRunContext context, ToolResultDataDeltaEvent event) {
-        AgentScopeToolResultBuffer buffer = getOrCreateToolResultBuffer(context, event,
-                event.getReplyId(), event.getToolCallId(), event.getToolCallName());
-        buffer.markDataOutput();
     }
 
     /**
@@ -683,67 +490,17 @@ public class AgentScopeHarnessAgent extends BaseAgent<AgentScopeRunContext> {
      *
      * @param context 当前Run上下文
      * @param actions 当前Run行为权柄
-     * @param event   工具结果结束事件
+     * @param event 工具结果结束事件
      */
     private void finishToolResult(AgentScopeRunContext context,
                                   RuntimeActions actions,
                                   ToolResultEndEvent event) {
-        AgentScopeToolResultKey key = createToolResultKey(
-                event, event.getReplyId(), event.getToolCallId());
-        AgentScopeToolResultBuffer buffer = context.getToolResultBuffers().remove(key);
-        if (buffer == null || event.getState() != ToolResultState.SUCCESS) {
+        AgentScopeCompletedToolResult result = context.completeToolResult(event);
+        if (result == null) {
             return;
         }
-
-        buffer.updateToolName(event.getToolCallName());
-        if (buffer.hasDataOutput()) {
-            log.debug("Ignore non-text AgentScope tool result, toolName:{}, toolCallId:{}",
-                    buffer.getToolName(), event.getToolCallId());
-            return;
-        }
-        if (StringUtils.isBlank(buffer.getToolName())) {
-            log.warn("Ignore AgentScope tool result without tool name, toolCallId:{}",
-                    event.getToolCallId());
-            return;
-        }
-
-        toolFinished(context, actions, event.getToolCallId(), buffer.getToolName(), buffer.getText());
-    }
-
-    /**
-     * 获取或创建一次工具调用的结果缓冲。
-     *
-     * @param context    当前Run上下文
-     * @param event      原生工具结果事件
-     * @param replyId    模型回复ID
-     * @param toolCallId 工具调用ID
-     * @param toolName   工具名称
-     * @return 工具结果缓冲
-     */
-    private AgentScopeToolResultBuffer getOrCreateToolResultBuffer(AgentScopeRunContext context,
-                                                                   AgentEvent event,
-                                                                   String replyId,
-                                                                   String toolCallId,
-                                                                   String toolName) {
-        AgentScopeToolResultKey key = createToolResultKey(event, replyId, toolCallId);
-        AgentScopeToolResultBuffer buffer = context.getToolResultBuffers()
-                .computeIfAbsent(key, ignored -> new AgentScopeToolResultBuffer());
-        buffer.updateToolName(toolName);
-        return buffer;
-    }
-
-    /**
-     * 创建工具结果事件关联键。
-     *
-     * @param event      原生工具结果事件
-     * @param replyId    模型回复ID
-     * @param toolCallId 工具调用ID
-     * @return 工具结果事件关联键
-     */
-    private AgentScopeToolResultKey createToolResultKey(AgentEvent event,
-                                                        String replyId,
-                                                        String toolCallId) {
-        return new AgentScopeToolResultKey(event.getSource(), replyId, toolCallId);
+        toolFinished(context, actions, result.getToolCallId(),
+                result.getToolName(), result.getResult());
     }
 
     /**
@@ -762,32 +519,26 @@ public class AgentScopeHarnessAgent extends BaseAgent<AgentScopeRunContext> {
             return;
         }
 
-        if (isApprovalReject(context)) {
+        if (APPROVAL_HANDLER.isApprovalReject(context)) {
             finishApprovalReject(context, actions);
             return;
         }
 
-        if (context.getUnsupportedInteraction() != null) {
+        if (context.hasUnsupportedInteraction()) {
             String message = "AgentScope interaction is not supported: "
                     + context.getUnsupportedInteraction().name();
-            failed(context, actions, SystemIntervalException.of(message),
+            failAgentScopeRun(context, actions, SystemIntervalException.of(message),
                     AgentResultCode.FAILED_EXECUTE_AGENT.getCode(), message);
             return;
         }
 
-        if (context.getPendingApproval() != null) {
-            HumanInTheLoopInfo humanInTheLoopInfo = humanInTheLoopDataConverter.toHitlInfo(
-                    context, context.getPendingApproval());
-            if (humanInTheLoopInfo == null) {
-                throw new SystemIntervalException("humanInTheLoopInfo cannot be null");
-            }
-            pauseForApproval(context, actions, humanInTheLoopInfo);
+        if (finishApprovals(context, actions)) {
             return;
         }
 
         if (context.getResult() == null) {
             String message = "AgentScope execution completed without AgentResultEvent";
-            failed(context, actions, SystemIntervalException.of(message),
+            failAgentScopeRun(context, actions, SystemIntervalException.of(message),
                     AgentResultCode.FAILED_EXECUTE_AGENT.getCode(), message);
             return;
         }
@@ -797,6 +548,52 @@ public class AgentScopeHarnessAgent extends BaseAgent<AgentScopeRunContext> {
         }
 
         complete(context, actions);
+    }
+
+    /**
+     * 发布当前执行分段观察到的顶层审批并暂停当前Run。
+     *
+     * @param context 当前Run上下文
+     * @param actions 当前Run行为权柄
+     * @return true表示当前Run已经进入审批等待
+     */
+    private boolean finishApprovals(AgentScopeRunContext context,
+                                    RuntimeActions actions) {
+        List<RequireUserConfirmEvent> pendingApprovals = context.getPendingApprovals();
+        if (pendingApprovals.isEmpty()) {
+            return false;
+        }
+
+        List<HumanInTheLoopInfo> hitlInfos = pendingApprovals.stream()
+                .map(event -> createHitlInfo(context, event))
+                .toList();
+        if (hitlInfos.stream()
+                .map(HumanInTheLoopInfo::getId)
+                .distinct()
+                .count() != hitlInfos.size()) {
+            throw new SystemIntervalException(
+                    "AgentScope HITL converter returned duplicated approval ID");
+        }
+        pauseForApprovals(context, actions, hitlInfos);
+        return true;
+    }
+
+    /**
+     * 将一项AgentScope顶层审批事件转换为common HITL信息。
+     *
+     * @param context 当前Run上下文
+     * @param event AgentScope待审批事件
+     * @return common HITL信息
+     */
+    private HumanInTheLoopInfo createHitlInfo(
+            AgentScopeRunContext context,
+            RequireUserConfirmEvent event) {
+        HumanInTheLoopInfo hitlInfo = APPROVAL_HANDLER.createHitlInfo(
+                agentName, context, event, humanInTheLoopDataConverter);
+        if (hitlInfo == null) {
+            throw new SystemIntervalException("humanInTheLoopInfo cannot be null");
+        }
+        return hitlInfo;
     }
 
     /**
@@ -810,9 +607,8 @@ public class AgentScopeHarnessAgent extends BaseAgent<AgentScopeRunContext> {
      */
     private void finishApprovalReject(AgentScopeRunContext context, RuntimeActions actions) {
         RequestStopEvent stopRequest = context.getStopRequest();
-        boolean rejected = context.getUnsupportedInteraction() == null
-                && context.getPendingApproval() == null
-                && context.getPendingExternalExecution() == null
+        boolean rejected = !context.hasUnsupportedInteraction()
+                && !context.hasPendingApproval()
                 && context.getAllToolsDenied() != null
                 && stopRequest != null
                 && stopRequest.getGenerateReason() == GenerateReason.ALL_TOOLS_DENIED
@@ -826,14 +622,13 @@ public class AgentScopeHarnessAgent extends BaseAgent<AgentScopeRunContext> {
 
         log.info("AgentScope approval was rejected, runId:{}, toolCount:{}",
                 context.getRunId(), context.getAllToolsDenied().getDeniedToolCalls().size());
-        rejectApproval(context, actions, null);
+        finishApprovalRejected(context, actions, null);
     }
 
     /**
      * 根据AgentScope最终结果的生成原因收口控制事件。
      *
-     * <p>审批和外部工具事件已在前置分支完成处理；执行到本方法时仍返回对应等待原因，
-     * 表示原生控制事件与适配器记录不一致。最大轮次、全部工具拒绝和原生中断均可能
+     * <p>顶层审批已在前置分支完成处理。最大轮次、全部工具拒绝和原生中断均可能
      * 携带AgentScope生成的最终消息，保留为正常完成并记录诊断日志。</p>
      *
      * @param context 当前Run上下文
@@ -854,7 +649,7 @@ public class AgentScopeHarnessAgent extends BaseAgent<AgentScopeRunContext> {
             }
             case TOOL_SUSPENDED -> {
                 failControlResult(context, actions,
-                        "AgentScope returned suspended tools without pending external execution event");
+                        "AgentScope external tool execution requires a custom AgentScope agent");
                 return true;
             }
             case MIDDLEWARE_STOP_REQUESTED -> {
@@ -863,8 +658,8 @@ public class AgentScopeHarnessAgent extends BaseAgent<AgentScopeRunContext> {
                         ? null
                         : StringUtils.trimToNull(stopRequest.getReason());
                 String message = reason == null
-                        ? "AgentScope middleware stop requires a resumable interaction not supported by common"
-                        : "AgentScope middleware stop requires a resumable interaction not supported by common: " + reason;
+                        ? "AgentScope middleware stop requires a custom AgentScope agent"
+                        : "AgentScope middleware stop requires a custom AgentScope agent: " + reason;
                 failControlResult(context, actions, message);
                 return true;
             }
@@ -907,15 +702,40 @@ public class AgentScopeHarnessAgent extends BaseAgent<AgentScopeRunContext> {
     private void failControlResult(AgentScopeRunContext context,
                                    RuntimeActions actions,
                                    String message) {
-        failed(context, actions, SystemIntervalException.of(message),
+        failAgentScopeRun(context, actions, SystemIntervalException.of(message),
                 AgentResultCode.FAILED_EXECUTE_AGENT.getCode(), message);
+    }
+
+    /**
+     * 保存AgentScope适配失败并通过common统一收口当前Run。
+     *
+     * <p>必须先保存Trace异常再推进FAILED状态；状态事件会同步结束Trace，调用顺序
+     * 反转将导致最终轨迹缺少失败详情。</p>
+     *
+     * @param context 当前Run上下文
+     * @param actions 当前Run行为权柄
+     * @param cause 失败原因
+     * @param errorCode 失败编码
+     * @param errorMessage 失败信息
+     */
+    private void failAgentScopeRun(AgentScopeRunContext context,
+                                   RuntimeActions actions,
+                                   Throwable cause,
+                                   String errorCode,
+                                   String errorMessage) {
+        AgentScopeTraceLifecycle traceLifecycle = context.getRuntimeContext()
+                .get(AgentScopeTraceLifecycle.class);
+        if (traceLifecycle != null) {
+            traceLifecycle.recordFailure(cause);
+        }
+        failed(context, actions, cause, errorCode, errorMessage);
     }
 
     /**
      * 根据请求类型创建AgentScope输入消息。
      *
      * @param context 当前Run上下文
-     * @return 普通用户消息或审批恢复消息
+     * @return 普通用户消息或顶层审批恢复消息
      */
     protected UserMessage createAgentScopeMessage(AgentScopeRunContext context) {
         HitlRequestInfo requestInfo = context.getRequest().getHitlRequestInfo();
@@ -923,117 +743,8 @@ public class AgentScopeHarnessAgent extends BaseAgent<AgentScopeRunContext> {
             return createUserMessage(context.getRequest());
         }
 
-        validateResume(requestInfo);
-        List<ToolUseBlock> toolCalls = loadPendingApprovalToolCalls(
-                context.getRuntimeContext(), requestInfo.getCheckpointId());
-        UserMessage resumeMessage = humanInTheLoopDataConverter.toResumeMessage(
-                requestInfo, toolCalls);
-        if (resumeMessage == null) {
-            throw new SystemIntervalException("AgentScope resume message cannot be null");
-        }
-        log.info("Resume AgentScope approval, hitlId:{}, replyId:{}, toolCount:{}",
-                requestInfo.getHitlId(), requestInfo.getCheckpointId(), toolCalls.size());
-        return resumeMessage;
-    }
-
-    /**
-     * 校验AgentScope审批恢复请求。
-     *
-     * @param requestInfo 审批恢复请求
-     */
-    private void validateResume(HitlRequestInfo requestInfo) {
-        if (StringUtils.isBlank(requestInfo.getHitlId())) {
-            throw new SystemIntervalException("hitlRequestInfo.hitlId cannot be blank");
-        }
-        if (StringUtils.isBlank(requestInfo.getOriginRunId())) {
-            throw new SystemIntervalException("hitlRequestInfo.originRunId cannot be blank");
-        }
-        if (StringUtils.isBlank(requestInfo.getCheckpointId())) {
-            throw new SystemIntervalException("hitlRequestInfo.checkpointId cannot be blank");
-        }
-        if (requestInfo.getHumanInTheLoopKind() != HumanInTheLoopKind.APPROVAL) {
-            throw new SystemIntervalException("Only approval can resume AgentScope HITL");
-        }
-        if (requestInfo.getDecision() != AgentApprovalAction.APPROVE
-                && requestInfo.getDecision() != AgentApprovalAction.EDIT
-                && requestInfo.getDecision() != AgentApprovalAction.REJECT) {
-            throw new SystemIntervalException(
-                    "Only APPROVE/EDIT/REJECT can resume AgentScope HITL");
-        }
-        if (requestInfo.getDecision() == AgentApprovalAction.REJECT) {
-            validateApprovalRejectMiddleware();
-        }
-    }
-
-    /**
-     * 校验原生Agent已安装审批拒绝停止中间件。
-     *
-     * <p>没有该中间件时AgentScope会在全部工具被拒绝后继续推理，可能产生新的模型或
-     * 工具调用，因此拒绝请求必须在进入原生循环前失败。</p>
-     */
-    private void validateApprovalRejectMiddleware() {
-        boolean installed = delegate.getDelegate().getMiddlewares().stream()
-                .anyMatch(AgentScopeApprovalRejectMiddleware.class::isInstance);
-        if (!installed) {
-            throw new SystemIntervalException(
-                    "AgentScope approval rejection requires AgentScopeApprovalRejectMiddleware");
-        }
-    }
-
-    /**
-     * 判断当前Run是否为审批拒绝恢复请求。
-     *
-     * @param context 当前Run上下文
-     * @return 是否为审批拒绝恢复请求
-     */
-    private boolean isApprovalReject(AgentScopeRunContext context) {
-        HitlRequestInfo requestInfo = context.getRequest().getHitlRequestInfo();
-        return requestInfo != null
-                && requestInfo.getDecision() == AgentApprovalAction.REJECT;
-    }
-
-    /**
-     * 从最新AgentState读取待审批工具调用。
-     *
-     * <p>存在持久化StateStore时先清理当前session的本地缓存，避免恢复请求落到
-     * 不同JVM后读取到该实例曾经缓存的旧状态。该操作不会删除持久化状态。</p>
-     *
-     * @param runtimeContext AgentScope单次调用上下文
-     * @param replyId       审批绑定的原生replyId
-     * @return 待审批工具调用
-     */
-    private List<ToolUseBlock> loadPendingApprovalToolCalls(RuntimeContext runtimeContext,
-                                                            String replyId) {
-        if (delegate.getStateStore() != null) {
-            delegate.clearStateCache(runtimeContext);
-        }
-        AgentState agentState = delegate.getDelegate().getAgentState(runtimeContext);
-        List<Msg> messages = agentState.getContext();
-        for (int index = messages.size() - 1; index >= 0; index--) {
-            Msg message = messages.get(index);
-            if (message.getRole() != MsgRole.ASSISTANT) {
-                continue;
-            }
-
-            List<ToolUseBlock> askingToolCalls = message
-                    .getContentBlocks(ToolUseBlock.class)
-                    .stream()
-                    .filter(toolCall -> toolCall.getState() == ToolCallState.ASKING)
-                    .toList();
-            if (askingToolCalls.isEmpty()) {
-                continue;
-            }
-
-            Object pendingReplyId = message.getMetadata() == null
-                    ? null
-                    : message.getMetadata().get(Msg.METADATA_CONFIRM_REQUEST_REPLY_ID);
-            if (!StringUtils.equals(replyId, pendingReplyId instanceof String value ? value : null)) {
-                throw new SystemIntervalException(
-                        "AgentScope HITL replyId does not match pending approval");
-            }
-            return List.copyOf(askingToolCalls);
-        }
-        throw new SystemIntervalException("AgentScope state contains no pending approval tool call");
+        return APPROVAL_HANDLER.createResumeMessage(
+                context, getDelegate(), humanInTheLoopDataConverter);
     }
 
     /**
@@ -1055,7 +766,7 @@ public class AgentScopeHarnessAgent extends BaseAgent<AgentScopeRunContext> {
      * 创建AgentScope单次调用上下文。
      *
      * @param request Agent请求
-     * @param runId   本次运行ID
+     * @param runId 本次运行ID
      * @return AgentScope运行上下文
      */
     protected RuntimeContext createRuntimeContext(AgentRequest request, String runId) {
@@ -1069,8 +780,10 @@ public class AgentScopeHarnessAgent extends BaseAgent<AgentScopeRunContext> {
             builder.put(MESSAGE_ID_ATTRIBUTE, request.getMessageId());
         }
         HitlRequestInfo requestInfo = request.getHitlRequestInfo();
-        if (requestInfo != null
-                && requestInfo.getDecision() == AgentApprovalAction.REJECT) {
+        if (requestInfo != null && StringUtils.isNotBlank(requestInfo.getOriginRunId())) {
+            builder.put(ORIGIN_RUN_ID_ATTRIBUTE, requestInfo.getOriginRunId());
+        }
+        if (APPROVAL_HANDLER.isApprovalReject(requestInfo)) {
             builder.put(AgentScopeApprovalRejectMiddleware.APPROVAL_REJECT_ATTRIBUTE, true);
         }
         return builder.build();

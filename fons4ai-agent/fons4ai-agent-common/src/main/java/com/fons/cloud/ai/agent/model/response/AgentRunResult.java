@@ -5,13 +5,14 @@ import com.fons.cloud.ai.agent.model.runtime.AgentRunState;
 import lombok.Builder;
 import lombok.Getter;
 
+import java.util.List;
+
 /**
  * 一次智能体执行分段的结构化结果，可表示不可逆终态或 checkpoint 审批等待快照。
  *
  * @author hongqy
  */
 @Getter
-@Builder
 public final class AgentRunResult {
 
     /**
@@ -47,11 +48,43 @@ public final class AgentRunResult {
     /**
      * 可选的完成信息。
      */
-    private AgentCompleteInfo completeInfo;
+    private final AgentCompleteInfo completeInfo;
 
     /**
-     * 可选的 HITL 信息。
+     * 当前执行分段尚未解决的 HITL 信息快照。
      */
-    private HumanInTheLoopInfo humanInTheLoopInfo;
+    private final List<HumanInTheLoopInfo> humanInTheLoopInfos;
+
+    /**
+     * 创建一次Agent执行分段结果。
+     *
+     * @param runId 执行唯一标识
+     * @param conversationId 会话标识
+     * @param messageId 消息标识
+     * @param state 执行状态
+     * @param errorCode 错误码
+     * @param errorMessage 错误信息
+     * @param completeInfo 完成信息
+     * @param humanInTheLoopInfos HITL信息快照
+     */
+    @Builder
+    private AgentRunResult(String runId,
+                           String conversationId,
+                           String messageId,
+                           AgentRunState state,
+                           String errorCode,
+                           String errorMessage,
+                           AgentCompleteInfo completeInfo,
+                           List<HumanInTheLoopInfo> humanInTheLoopInfos) {
+        this.runId = runId;
+        this.conversationId = conversationId;
+        this.messageId = messageId;
+        this.state = state;
+        this.errorCode = errorCode;
+        this.errorMessage = errorMessage;
+        this.completeInfo = completeInfo;
+        this.humanInTheLoopInfos = humanInTheLoopInfos == null
+                ? List.of() : List.copyOf(humanInTheLoopInfos);
+    }
 
 }

@@ -110,30 +110,29 @@ public class ReactAgent extends BaseAgent<DefaultAgentRunContext> {
 
     @Override
     protected Disposable streamExecute(DefaultAgentRunContext context, RuntimeActions actions) {
-        DefaultAgentRunContext runContext = context;
         return Flux.defer(() -> {
-                    if (runContext.getState() != AgentRunState.RUNNING) {
+                    if (context.getState() != AgentRunState.RUNNING) {
                         return Flux.empty();
                     }
-                    if (runContext.getRequest().getHitlRequestInfo() != null) {
+                    if (context.getRequest().getHitlRequestInfo() != null) {
                         return Flux.error(SystemIntervalException.of(
                                 "LangChain4j ReactAgent does not support resumable HITL"));
                     }
-                    return createNativeStream(runContext);
+                    return createNativeStream(context);
                 })
                 .subscribeOn(Schedulers.boundedElastic())
                 // LangChain4j工具回调可能来自不同线程，在这里串行处理Context和消息输出。
                 .publishOn(Schedulers.boundedElastic(), 1)
-                .doOnNext(output -> handleOutput(runContext, actions, output))
-                .doOnComplete(() -> complete(runContext, actions))
+                .doOnNext(output -> handleOutput(context, actions, output))
+                .doOnComplete(() -> complete(context, actions))
                 .onErrorMap(this::normalizeError)
                 .doFinally(signal -> {
-                    if (signal == SignalType.CANCEL && runContext.getState() == AgentRunState.RUNNING) {
-                        cancelled(runContext, actions);
+                    if (signal == SignalType.CANCEL && context.getState() == AgentRunState.RUNNING) {
+                        cancelled(context, actions);
                     }
                 })
                 .subscribe(ignored -> {
-                }, error -> failed(runContext, actions, error,
+                }, error -> failed(context, actions, error,
                         AgentResultCode.FAILED_EXECUTE_AGENT.getCode(),
                         AgentResultCode.FAILED_EXECUTE_AGENT.getMessage()));
     }
@@ -289,9 +288,7 @@ public class ReactAgent extends BaseAgent<DefaultAgentRunContext> {
      * @return 框架异常
      */
     private Throwable normalizeError(Throwable error) {
-        if (error instanceof BizException
-                || error instanceof BusinessRuntimeException
-                || error instanceof SystemIntervalException) {
+        if (error instanceof BizException) {
             return error;
         }
         log.error("Failed execute LangChain4j agent, agentName:{}", agentName, error);

@@ -29,11 +29,13 @@ public interface HumanInTheLoopDataConverter {
      * 将 Alibaba 原生工具中断转换为 common HITL 消息。
      *
      * @param checkpointId 中断后最新 checkpoint ID
+     * @param sourceAgent 发起本次人工交互的Agent逻辑标识
      * @param context 当前运行上下文
      * @param interruptionMetadata 原生中断信息
      * @return 可发送给下游的 HITL 信息
      */
-    HumanInTheLoopInfo toHitlInfo(String checkpointId, AgentRunContext context,
+    HumanInTheLoopInfo toHitlInfo(String checkpointId, String sourceAgent,
+                                  AgentRunContext context,
                                   InterruptionMetadata interruptionMetadata);
 
 }

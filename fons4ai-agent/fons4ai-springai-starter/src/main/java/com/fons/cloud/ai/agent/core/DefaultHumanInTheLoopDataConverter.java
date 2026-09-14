@@ -80,13 +80,17 @@ public class DefaultHumanInTheLoopDataConverter implements HumanInTheLoopDataCon
     }
 
     @Override
-    public HumanInTheLoopInfo toHitlInfo(String checkpointId, AgentRunContext context,
+    public HumanInTheLoopInfo toHitlInfo(String checkpointId, String sourceAgent,
+                                         AgentRunContext context,
                                          InterruptionMetadata interruptionMetadata) {
         Assert.notNull(context, () -> new SystemIntervalException("context cannot be null"));
         Assert.notNull(interruptionMetadata,
                 () -> new SystemIntervalException("interruptionMetadata cannot be null"));
         if (StringUtils.isBlank(checkpointId)) {
             throw new SystemIntervalException("checkpointId cannot be blank for tool approval");
+        }
+        if (StringUtils.isBlank(sourceAgent)) {
+            throw new SystemIntervalException("sourceAgent cannot be blank for tool approval");
         }
 
         List<ToolFeedback> feedbacks = interruptionMetadata.toolFeedbacks();
@@ -107,6 +111,7 @@ public class DefaultHumanInTheLoopDataConverter implements HumanInTheLoopDataCon
                 .kind(HumanInTheLoopKind.APPROVAL)
                 .checkpointId(checkpointId)
                 .originRunId(resolveOriginRunId(context))
+                .sourceAgent(sourceAgent)
                 .data(Map.of("tools", List.copyOf(tools)))
                 .build();
         log.debug("Converted tool approval HITL, id:{}, checkpointId:{}, toolCount:{}",

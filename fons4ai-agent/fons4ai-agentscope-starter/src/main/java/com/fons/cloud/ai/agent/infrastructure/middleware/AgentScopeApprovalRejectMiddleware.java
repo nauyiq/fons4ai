@@ -1,4 +1,4 @@
-package com.fons.cloud.ai.agent.core;
+package com.fons.cloud.ai.agent.infrastructure.middleware;
 
 import io.agentscope.core.agent.Agent;
 import io.agentscope.core.agent.RuntimeContext;

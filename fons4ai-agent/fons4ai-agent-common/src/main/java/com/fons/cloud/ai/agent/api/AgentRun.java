@@ -28,7 +28,8 @@ public interface AgentRun {
     Flux<String> events();
 
     /**
-     * @return 首个结构化结果；普通执行为终态，审批暂停时为 WAITING_APPROVAL。
+     * @return 首个结构化结果；普通执行为终态，审批暂停时为携带一个或多个HITL快照的
+     * WAITING_APPROVAL。
      * 恢复后的终态由具体可恢复 Agent 的 checkpoint resume 入口返回
      */
     Mono<AgentRunResult> completion();

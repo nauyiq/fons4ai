@@ -1,18 +1,20 @@
 package com.fons.cloud.ai.agent.core;
 
-import cn.hutool.core.lang.Assert;
 import com.fons.cloud.ai.agent.api.AgentToolResultHandler;
 import com.fons.cloud.ai.agent.api.AgentRun;
 import com.fons.cloud.ai.agent.api.Agent;
+import com.fons.cloud.ai.agent.infrastructure.util.AgentRequestValidator;
+import com.fons.cloud.ai.agent.infrastructure.util.AgentResponseEmitter;
 import com.fons.cloud.ai.agent.model.response.AgentResultCode;
 import com.fons.cloud.ai.agent.api.AgentType;
 import com.fons.cloud.ai.agent.model.hitl.HumanInTheLoopInfo;
 import com.fons.cloud.ai.agent.model.message.MessageContentType;
 import com.fons.cloud.ai.agent.model.request.*;
-import com.fons.cloud.ai.agent.model.response.AgentResponse;
 import com.fons.cloud.ai.agent.model.response.AgentRunResult;
 import com.fons.cloud.ai.agent.model.runtime.AgentRunContext;
 import com.fons.cloud.ai.agent.model.runtime.AgentRunState;
+import com.fons.cloud.ai.agent.model.runtime.AgentRunStateEventPublisher;
+import com.fons.cloud.ai.agent.model.runtime.AgentRunStateMachine;
 import com.fons.cloud.ai.agent.model.runtime.BaseAgentRun;
 import com.fons.cloud.ai.agent.model.runtime.RuntimeActions;
 import com.fons.cloud.ai.tool.common.model.AgentToolResult;
@@ -27,6 +29,8 @@ import lombok.experimental.SuperBuilder;
 import lombok.extern.slf4j.Slf4j;
 import org.apache.commons.lang3.StringUtils;
 import reactor.core.Disposable;
+
+import java.util.List;
 
 /**
  * 抽象的Agent类
@@ -46,15 +50,17 @@ import reactor.core.Disposable;
  * <p>
  *     HITL 生命周期协议：
  *     <ul>
- *         <li>审批暂停：子类调用 {@link #pauseForApproval} 前必须先保存引擎 checkpoint；原语负责
- *         WAITING_APPROVAL 状态切换、输出唯一 {@code type=hitl} 消息、结束当前流分段、释放
- *         订阅与任务租约并发射 WAITING_APPROVAL 结果。WAITING_APPROVAL 是"当前流分段已结束但
- *         工作流可恢复"，不是终态，也不是取消。</li>
+ *         <li>审批消息：子类调用 {@link #publishHumanInTheLoop} 只发送单条统一HITL消息，不改变
+ *         顶层Run状态。内部执行单元等待审批但顶层Run仍可继续时使用该入口。</li>
+ *         <li>审批暂停：子类调用 {@link #pauseForApprovals} 前必须先保存引擎checkpoint；原语负责
+ *         WAITING_APPROVAL状态切换、逐条输出HITL消息、结束当前流分段、释放订阅与任务租约并
+ *         发射WAITING_APPROVAL结果。WAITING_APPROVAL表示顶层Run被一个或多个审批阻塞。</li>
  *         <li>审批恢复：恢复不是恢复原 Run，而是由审批服务构造携带 resume 元数据的新请求，
  *         走一次全新的 {@link #run}（新 runId、新分段、新任务句柄）；子类在
  *         {@link #streamExecute} 中识别 resume 请求并从 checkpoint 继续执行。</li>
- *         <li>审批拒绝：决策方调用 {@link #rejectApproval} 将原 Run 收口为 APPROVAL_REJECTED，
- *         不需要恢复分段。</li>
+ *         <li>审批拒绝：只有确定顶层Run必须结束时，决策方才调用
+ *         {@link #finishApprovalRejected} 收口为APPROVAL_REJECTED。单个内部审批被拒绝不必然
+ *         终结顶层Run。</li>
  *     </ul>
  * </p>
  * <p>
@@ -65,7 +71,7 @@ import reactor.core.Disposable;
  *         Run 将无人收口：状态卡在 RUNNING、事件流永不闭合、完成结果永不发射。</li>
  *         <li>{@code streamExecute} 必须在返回前建立并返回底层订阅的 Disposable；若内部先订阅后
  *         抛出异常（或返回 null），该订阅将无法被框架释放而泄漏，需子类在异常路径自行清理。</li>
- *         <li>调用 {@link #pauseForApproval} 之前必须先保存可恢复的 checkpoint；暂停之后不得再向
+ *         <li>调用 {@link #pauseForApprovals} 之前必须先保存可恢复的checkpoint；暂停之后不得再向
  *         actions 发射事件，也不得再调用 complete / failed / cancelled。</li>
  *     </ol>
  * </p>
@@ -112,65 +118,31 @@ public abstract class BaseAgent<C extends AgentRunContext> implements Agent {
     @Builder.Default
     protected AgentToolResultHandler toolResultHandler = AgentToolResultHandler.noop();
 
-
+    /**
+     * Agent运行状态事件发布器，默认不执行任何动作。
+     */
+    @NonNull
+    @Builder.Default
+    protected AgentRunStateEventPublisher stateEventPublisher = AgentRunStateEventPublisher.noop();
 
     @Override
-    public AgentRun run(AgentRequest request) {
-        // 入参校验
-        Assert.notNull(request, () -> BusinessRuntimeException.of(AgentResultCode.CHAT_MESSAGES_IS_EMPTY));
-        if (StringUtils.isBlank(request.getConversationId())) {
-            throw BusinessRuntimeException.of(AgentResultCode.CHAT_MESSAGES_IS_EMPTY);
-        }
-        if ((request.getContents() == null || request.getContents().isEmpty())
-                && request.getHitlRequestInfo() == null) {
-            throw BusinessRuntimeException.of(AgentResultCode.CHAT_MESSAGES_IS_EMPTY);
-        }
-        validateInputContents(request);
+    public final AgentRun run(AgentRequest request) {
+        AgentRequestValidator.validate(request);
 
         // 创建上下文对象
         C context = createRunContext(request);
-        Assert.notNull(context, () -> BusinessRuntimeException.of(AgentResultCode.CHAT_MESSAGES_IS_EMPTY));
+        if (context == null) {
+            throw BusinessRuntimeException.of(AgentResultCode.FAILED_EXECUTE_AGENT);
+        }
         // 创建Agent运行行为对象
         RuntimeActions actions = createActions(context);
+        if (actions == null || actions.getAgentRunContext() != context || !actions.getStateMachine().isBoundTo(context)) {
+            throw BusinessRuntimeException.of(AgentResultCode.FAILED_EXECUTE_AGENT);
+        }
 
         log.info("Agent start run, agentName:{}, runId:{}.", agentName, context.getRunId());
         return createRunHandle(context, actions);
     }
-
-    /**
-     * 校验统一的多模态输入内容。
-     *
-     * @param request Agent请求
-     */
-    private void validateInputContents(AgentRequest request) {
-        if (request.getContents() == null) {
-            return;
-        }
-
-        for (AgentInputContent content : request.getContents()) {
-            if (content == null || content.getType() == null) {
-                throw BusinessRuntimeException.of(AgentResultCode.AGENT_INPUT_CONTENT_INVALID);
-            }
-            if (content.getType() == AgentInputContentType.TEXT) {
-                if (StringUtils.isBlank(content.getText())
-                        || content.getUri() != null
-                        || content.getData() != null) {
-                    throw BusinessRuntimeException.of(AgentResultCode.AGENT_INPUT_CONTENT_INVALID);
-                }
-                continue;
-            }
-
-            boolean hasUri = content.getUri() != null;
-            boolean hasData = content.getData() != null;
-            if (StringUtils.isNotBlank(content.getText())
-                    || StringUtils.isBlank(content.getMimeType())
-                    || (hasData && content.getData().length == 0)
-                    || hasUri == hasData) {
-                throw BusinessRuntimeException.of(AgentResultCode.AGENT_INPUT_CONTENT_INVALID);
-            }
-        }
-    }
-
 
     /**
      * 创建一次智能体执行的生命周期权柄
@@ -178,7 +150,7 @@ public abstract class BaseAgent<C extends AgentRunContext> implements Agent {
      * @param actions 运行时行为封装
      * @return
      */
-    protected AgentRun createRunHandle(C context, RuntimeActions actions) {
+    protected final AgentRun createRunHandle(C context, RuntimeActions actions) {
         return BaseAgentRun.builder()
                 .context(context)
                 .actions(actions)
@@ -192,9 +164,9 @@ public abstract class BaseAgent<C extends AgentRunContext> implements Agent {
      * @param context
      * @param actions
      */
-    protected void startAction(C context, RuntimeActions actions) {
+    protected final void startAction(C context, RuntimeActions actions) {
         // 设置启动状态, 默认为运行中
-        if (!context.tryStart()) {
+        if (!actions.getStateMachine().tryStart()) {
             log.warn("Agent task already started, runId:{}.", context.getRunId());
             return;
         }
@@ -258,7 +230,7 @@ public abstract class BaseAgent<C extends AgentRunContext> implements Agent {
      * @param actions 运行时行为封装
      * @return
      */
-    protected boolean runCancelled(C context, RuntimeActions actions) {
+    protected final boolean runCancelled(C context, RuntimeActions actions) {
         // 取消请求只接受已启动且已进入注册流程的 Run；不能把尚未注册的 CREATED Run
         // 伪装成已取消，否则后续首次订阅将永远无法启动。
         if (context.getState() == AgentRunState.CREATED) {
@@ -269,7 +241,7 @@ public abstract class BaseAgent<C extends AgentRunContext> implements Agent {
         // 审批等待期：租约、订阅与本地任务已在暂停时释放，没有资源可停，取消只剩本地状态收口。
         // 阻断恢复由审批服务票证状态承担，框架不落 Redis 取消标记（恢复使用新 runId，标记无意义）。
         if (context.getState() == AgentRunState.WAITING_APPROVAL) {
-            return context.tryFinalize(AgentRunState.CANCELLED);
+            return actions.getStateMachine().tryFinalize(AgentRunState.CANCELLED);
         }
         if (context.getState().isTerminal()) {
             // 上文已经是终态
@@ -341,15 +313,15 @@ public abstract class BaseAgent<C extends AgentRunContext> implements Agent {
      * @param context
      * @param actions
      */
-    protected void complete(C context, RuntimeActions actions) {
+    protected final void complete(C context, RuntimeActions actions) {
         this.finishRun(context, AgentRunState.COMPLETED, actions, null, ResultCode.SUCCESS.getCode(), ResultCode.SUCCESS.getMessage());
     }
 
     /**
      * 子类在流执行异常时调用，统一进入失败终态和资源清理。
      */
-    protected void failed(C context, RuntimeActions actions, Throwable cause,
-                          String errorCode, String errorMessage) {
+    protected final void failed(C context, RuntimeActions actions, Throwable cause,
+                                String errorCode, String errorMessage) {
         this.finishRun(context, AgentRunState.FAILED, actions, cause, errorCode, errorMessage);
     }
 
@@ -362,7 +334,7 @@ public abstract class BaseAgent<C extends AgentRunContext> implements Agent {
      * <p>WAITING_APPROVAL 状态下收到的 CANCEL 来自暂停原语自身释放订阅的收尾信号，
      * 不是用户取消，直接跳过收口，保持审批等待状态。</p>
      */
-    protected void cancelled(C context, RuntimeActions actions) {
+    protected final void cancelled(C context, RuntimeActions actions) {
         if (context.getState() == AgentRunState.WAITING_APPROVAL) {
             return;
         }
@@ -370,25 +342,51 @@ public abstract class BaseAgent<C extends AgentRunContext> implements Agent {
     }
 
     /**
-     * 暂停当前流分段进入审批等待（HITL 生命周期协议核心原语）。
+     * 输出一条统一HITL消息，不改变顶层Run状态。
      *
-     * <p>子类必须在调用前保存可恢复的 checkpoint；本方法负责：状态切换
-     * （RUNNING → WAITING_APPROVAL）、输出唯一 {@code type=hitl} 消息、结束当前
-     * 流分段、释放底层订阅与任务租约，并发射 WAITING_APPROVAL 结果（携带 HitlInfo）。
-     * CAS 保证并发或重复调用只有一次成功，其余抛异常。</p>
+     * <p>内部执行单元等待人工交互，但顶层Run仍可继续执行时使用该入口。审批队列、
+     * 恢复坐标和内部执行状态由具体技术栈管理。</p>
      *
-     * @param context      本次请求独立上下文
-     * @param actions      本次请求的资源与事件权柄
-     * @param humanInTheLoopInfo      HITL载荷
+     * @param context 本次请求独立上下文
+     * @param actions 本次请求的资源与事件权柄
+     * @param hitlInfo HITL信息
      */
-    protected void pauseForApproval(C context, RuntimeActions actions, HumanInTheLoopInfo humanInTheLoopInfo) {
-        // CAS 切换状态并记录审批标识，保证唯一性
-        if (!context.tryPauseForApproval(humanInTheLoopInfo)) {
+    protected final void publishHumanInTheLoop(C context,
+                                               RuntimeActions actions,
+                                               HumanInTheLoopInfo hitlInfo) {
+        AgentRequestValidator.validateHumanInTheLoopInfo(hitlInfo);
+        if (context.getState() != AgentRunState.RUNNING) {
+            throw BusinessRuntimeException.of(AgentResultCode.TRANSITION_APPROVAL_STATE_ERROR);
+        }
+        AgentResponseEmitter.emitHumanInTheLoop(actions, hitlInfo);
+    }
+
+    /**
+     * 暂停当前执行分段并等待一组人工审批。
+     *
+     * <p>子类必须在调用前保存可恢复的checkpoint。本方法负责状态切换、逐条输出
+     * {@code type=hitl}消息、结束当前流分段、释放底层订阅和任务租约，并发射一个
+     * 携带完整HITL快照的WAITING_APPROVAL结果。</p>
+     *
+     * @param context 本次请求独立上下文
+     * @param actions 本次请求的资源与事件权柄
+     * @param hitlInfos 尚未解决的HITL信息列表
+     */
+    protected final void pauseForApprovals(C context,
+                                           RuntimeActions actions,
+                                           List<HumanInTheLoopInfo> hitlInfos) {
+        AgentRequestValidator.validateHumanInTheLoopInfos(hitlInfos);
+        List<HumanInTheLoopInfo> hitlSnapshot = List.copyOf(hitlInfos);
+
+        // CAS切换状态并保存不可变审批快照，保证并发或重复调用只有一次成功。
+        if (!actions.getStateMachine().tryPauseForApprovals(hitlSnapshot)) {
             throw BusinessRuntimeException.of(AgentResultCode.TRANSITION_APPROVAL_STATE_ERROR);
         }
 
-        // HITL 使用稳定消息信封，具体业务载荷由 HitlInfo.data 和自定义转换器决定。
-        emitHumanInTheLoop(actions, humanInTheLoopInfo);
+        // 一项人工交互对应一条稳定HITL消息。
+        for (HumanInTheLoopInfo hitlInfo : hitlSnapshot) {
+            AgentResponseEmitter.emitHumanInTheLoop(actions, hitlInfo);
+        }
 
         // 结束当前流分段
         actions.completeEvents();
@@ -402,30 +400,37 @@ public abstract class BaseAgent<C extends AgentRunContext> implements Agent {
                 .conversationId(context.getConversationId())
                 .messageId(context.getMessageId())
                 .state(AgentRunState.WAITING_APPROVAL)
-                .humanInTheLoopInfo(humanInTheLoopInfo)
+                .humanInTheLoopInfos(hitlSnapshot)
                 .build());
     }
 
     /**
-     * 审批拒绝时的统一收口；拒绝不需要恢复分段。
+     * 顶层Run因审批拒绝无法继续时的统一收口；拒绝不需要恢复分段。
      *
      * @param context 本次请求独立上下文
      * @param actions 本次请求的资源与事件权柄
      * @param message 拒绝原因，可为 null
      */
-    protected final void rejectApproval(C context, RuntimeActions actions, String message) {
+    protected final void finishApprovalRejected(C context,
+                                                RuntimeActions actions,
+                                                String message) {
         this.finishRun(context, AgentRunState.APPROVAL_REJECTED, actions, null,
                 AgentResultCode.APPROVAL_MISMATCH.getCode(),
                 StringUtils.defaultIfBlank(message, "Agent action was rejected"));
     }
 
-    protected void finishRun(C context, AgentRunState terminalState, RuntimeActions actions, Throwable cause, String errorCode, String errorMessage) {
+    protected final void finishRun(C context,
+                                   AgentRunState terminalState,
+                                   RuntimeActions actions,
+                                   Throwable cause,
+                                   String errorCode,
+                                   String errorMessage) {
         // 设置结束状态
-        if (!context.tryFinalize(terminalState)) {
+        if (!actions.getStateMachine().tryFinalize(terminalState)) {
             return;
         }
         // 尽最大努力释放任务句柄和分布式租约
-        safelyReleaseResource(terminalState, context, actions);
+        releaseTerminalResources(terminalState, context, actions);
 
         if (terminalState == AgentRunState.FAILED || terminalState == AgentRunState.REJECTED || terminalState == AgentRunState.TIMED_OUT) {
             // 发送错误消息到发射器
@@ -445,7 +450,7 @@ public abstract class BaseAgent<C extends AgentRunContext> implements Agent {
                     .runId(context.getRunId())
                     .messageId(context.getMessageId())
                     .conversationId(context.getConversationId())
-                    .humanInTheLoopInfo(context.getHumanInTheLoopInfo())
+                    .humanInTheLoopInfos(context.getHumanInTheLoopInfos())
                     .state(terminalState)
                     .completeInfo(context.buildCompleteInfo())
                     .errorCode(errorCode)
@@ -455,13 +460,38 @@ public abstract class BaseAgent<C extends AgentRunContext> implements Agent {
         }
     }
 
-    protected void safelyReleaseResource(AgentRunState terminalState, C context, RuntimeActions actions) {
+    private void releaseTerminalResources(AgentRunState terminalState,
+                                          C context,
+                                          RuntimeActions actions) {
         if (terminalState.isTerminal()) {
-            // 释放资源
+            // 先释放RuntimeActions管理的当前Run资源。
             actions.releaseAll();
-            // 清理任务
+            // 再释放本地任务句柄和分布式租约。
             safelyCompleteTask(context);
+            // 最后释放由具体Agent直接持有的原生资源。
+            try {
+                releaseNativeResource(context, actions, terminalState);
+            } catch (RuntimeException exception) {
+                log.warn("Failed to release native Agent resource, conversationId:{}, runId:{}",
+                        context.getConversationId(), context.getRunId(), exception);
+            }
         }
+    }
+
+    /**
+     * 释放由具体Agent直接持有的原生Run资源。
+     *
+     * <p>RuntimeActions子类自身持有的资源应继续通过
+     * 释放。该扩展点异常不会阻断common
+     * 的事件流和完成结果收口。</p>
+     *
+     * @param context 本次请求独立上下文
+     * @param actions 本次请求的资源与事件权柄
+     * @param terminalState 当前终态
+     */
+    protected void releaseNativeResource(C context,
+                                         RuntimeActions actions,
+                                         AgentRunState terminalState) {
     }
 
     /**
@@ -474,7 +504,9 @@ public abstract class BaseAgent<C extends AgentRunContext> implements Agent {
                     .runId(context.getRunId())
                     .build();
             R<Boolean> result = agentTaskManager.releaseTask(request);
-            Assert.isTrue(result.isSuccess(), () -> new BusinessRuntimeException(result));
+            if (!result.isSuccess()) {
+                throw new BusinessRuntimeException(result);
+            }
         } catch (Throwable cleanupError) {
             log.warn("Agent任务清理失败, conversationId={}, runId={}",
                     context.getConversationId(), context.getRunId(), cleanupError);
@@ -506,6 +538,7 @@ public abstract class BaseAgent<C extends AgentRunContext> implements Agent {
     protected RuntimeActions createActions(C context) {
         return RuntimeActions.builder()
                 .agentRunContext(context)
+                .stateMachine(new AgentRunStateMachine(context, stateEventPublisher))
                 .build();
     }
 
@@ -516,43 +549,6 @@ public abstract class BaseAgent<C extends AgentRunContext> implements Agent {
      * @param type
      */
     protected final void emit(RuntimeActions actions, String content, MessageContentType type) {
-        actions.emitRaw(switch (type) {
-            case TEXT -> createTextResponse(content);
-            case THINKING -> createThinkingResponse(content);
-            case REFERENCE -> createReferenceResponse(content);
-            case RECOMMEND -> createRecommendResponse(content);
-            case ERROR -> createErrorResponse(content);
-            case HITL -> createApprovalResponse(content);
-        });
-    }
-
-    protected final String createTextResponse(String content) {return AgentResponse.text(content).toJson();}
-
-    protected final String createThinkingResponse(String content) {
-        return AgentResponse.thinking(content).toJson();
-    }
-
-    protected final String createReferenceResponse(String content) {
-        return AgentResponse.reference(content).toJson();
-    }
-
-    protected final String createRecommendResponse(String content) {
-        return AgentResponse.recommend(content).toJson();
-    }
-
-    protected final String createErrorResponse(String content) {
-        return AgentResponse.error(content).toJson();
-    }
-
-    protected final String createApprovalResponse(String content) {return AgentResponse.approval(content).toJson();}
-
-    /**
-     * 输出统一的 HITL 消息信封。具体交互类型和业务数据由 HumanInTheLoopInfo 表达。
-     */
-    protected final void emitHumanInTheLoop(RuntimeActions actions, HumanInTheLoopInfo humanInTheLoopInfo) {
-        actions.emitRaw(AgentResponse.event(
-                MessageContentType.HITL,
-                "Agent requires human interaction",
-                humanInTheLoopInfo).toJson());
+        AgentResponseEmitter.emit(actions, content, type);
     }
 }

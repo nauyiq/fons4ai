@@ -35,6 +35,14 @@ public class HumanInTheLoopInfo implements Serializable {
     private String originRunId;
 
     /**
+     * 发起本次人工交互的Agent逻辑标识。
+     *
+     * <p>顶层Agent可以使用自身名称，子Agent可以使用稳定的来源路径。该字段只描述
+     * 交互来源，不承担原生执行引擎的恢复寻址。</p>
+     */
+    private String sourceAgent;
+
+    /**
      * 人工交互的类型
      */
     private HumanInTheLoopKind kind;

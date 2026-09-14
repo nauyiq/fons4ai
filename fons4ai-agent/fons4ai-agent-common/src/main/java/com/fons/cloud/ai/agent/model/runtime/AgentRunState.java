@@ -1,8 +1,8 @@
 package com.fons.cloud.ai.agent.model.runtime;
 
 /**
- * 智能体执行状态。WAITING_APPROVAL 表示当前连接分段已结束，但原生 Graph checkpoint
- * 仍可由新的恢复请求继续；其余终态不可逆。
+ * 智能体执行状态。WAITING_APPROVAL 表示顶层Run当前执行分段已结束，并且被一个或
+ * 多个人工审批阻塞；审批目标可以是顶层Agent，也可以是其内部执行单元。其余终态不可逆。
  *
  * @author hongqy
  */
@@ -19,7 +19,7 @@ public enum AgentRunState {
     RUNNING,
 
     /**
-     * 原生执行已暂停，Saver 中存在可由新请求恢复的 checkpoint。
+     * 顶层Run当前执行分段已暂停，等待一个或多个人工审批完成。
      */
     WAITING_APPROVAL,
 

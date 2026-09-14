@@ -167,8 +167,10 @@
             <!-- AgentScope -->
             <dependency>
                 <groupId>io.agentscope</groupId>
-                <artifactId>agentscope-harness</artifactId>
+                <artifactId>agentscope-bom</artifactId>
                 <version>${agentscope.version}</version>
+                <type>pom</type>
+                <scope>import</scope>
             </dependency>
         </dependencies>
     </dependencyManagement>

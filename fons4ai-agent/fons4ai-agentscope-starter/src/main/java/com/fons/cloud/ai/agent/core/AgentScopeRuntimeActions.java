@@ -18,7 +18,7 @@ import java.util.concurrent.atomic.AtomicReference;
 /**
  * AgentScope单次Run的行为权柄。
  *
- * <p>取消时先触发AgentScope原生中断，使其有机会整理未完成工具调用并保存当前
+ * <p>取消时先触发顶层HarnessAgent原生中断，使其有机会整理未完成工具调用并保存当前
  * AgentState。原生流在宽限时间内没有结束时，再强制释放Reactor订阅。</p>
  *
  * @author hongqy
@@ -60,12 +60,19 @@ public class AgentScopeRuntimeActions extends RuntimeActions {
             new AtomicReference<>();
 
     /**
+     * 中断当前顶层HarnessAgent执行。
+     */
+    public void interruptNativeExecution() {
+        delegate.interrupt(runtimeContext);
+    }
+
+    /**
      * 触发AgentScope原生中断，并登记超时强制终止任务。
      */
     @Override
     protected void doCancelExecution() {
         try {
-            delegate.interrupt(runtimeContext);
+            interruptNativeExecution();
         } catch (SystemIntervalException exception) {
             throw exception;
         } catch (RuntimeException exception) {
