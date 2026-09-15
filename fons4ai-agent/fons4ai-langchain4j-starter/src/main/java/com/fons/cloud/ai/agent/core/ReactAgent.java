@@ -139,9 +139,9 @@ public class ReactAgent extends BaseAgent<DefaultAgentRunContext> {
 
     @Override
     protected DefaultAgentRunContext createRunContext(AgentRequest request) {
+        String runId = StringUtils.isBlank(request.getRunId()) ? IdUtil.fastSimpleUUID() : request.getRunId();
         return DefaultAgentRunContext.builder()
-                .runId(IdUtil.fastSimpleUUID())
-                .messageId(request.getMessageId())
+                .runId(runId)
                 .conversationId(request.getConversationId())
                 .request(request)
                 .build();
@@ -242,7 +242,7 @@ public class ReactAgent extends BaseAgent<DefaultAgentRunContext> {
             throw exception;
         } catch (RuntimeException exception) {
             log.warn("Failed to convert common input to LangChain4j Content, runMessageId:{}",
-                    request.getMessageId(), exception);
+                    request.getConversationId(), exception);
             throw SystemIntervalException.of("Failed to convert Agent multimodal input");
         }
     }

@@ -60,7 +60,7 @@ public class AgentScopeMessageConverter {
             throw exception;
         } catch (RuntimeException exception) {
             log.warn("Failed to convert common input to AgentScope UserMessage, runMessageId:{}",
-                    request.getMessageId(), exception);
+                    request.getConversationId(), exception);
             throw SystemIntervalException.of("Failed to convert Agent multimodal input");
         }
     }

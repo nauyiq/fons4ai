@@ -1,6 +1,8 @@
 package com.fons.cloud.ai.agent.infrastructure.config;
 
+import com.fons.cloud.ai.agent.api.AgentRegistry;
 import com.fons.cloud.ai.agent.core.AgentTaskManager;
+import com.fons.cloud.ai.agent.core.DefaultAgentRegistry;
 import org.redisson.api.RedissonClient;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnMissingBean;
 import org.springframework.context.annotation.Bean;
@@ -16,6 +18,12 @@ public class AgentAutoConfiguration {
     @ConditionalOnMissingBean
     public AgentTaskManager agentTaskManager(RedissonClient redissonClient) {
         return new AgentTaskManager(redissonClient);
+    }
+
+    @Bean
+    @ConditionalOnMissingBean
+    public AgentRegistry agentRegistry() {
+        return new DefaultAgentRegistry();
     }
 
 }

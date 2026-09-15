@@ -398,7 +398,6 @@ public abstract class BaseAgent<C extends AgentRunContext> implements Agent {
         actions.completeResultEvent(AgentRunResult.builder()
                 .runId(context.getRunId())
                 .conversationId(context.getConversationId())
-                .messageId(context.getMessageId())
                 .state(AgentRunState.WAITING_APPROVAL)
                 .humanInTheLoopInfos(hitlSnapshot)
                 .build());
@@ -448,7 +447,6 @@ public abstract class BaseAgent<C extends AgentRunContext> implements Agent {
             // 构建运行结果对象 并且发射到结果发射器
             AgentRunResult runResult = AgentRunResult.builder()
                     .runId(context.getRunId())
-                    .messageId(context.getMessageId())
                     .conversationId(context.getConversationId())
                     .humanInTheLoopInfos(context.getHumanInTheLoopInfos())
                     .state(terminalState)

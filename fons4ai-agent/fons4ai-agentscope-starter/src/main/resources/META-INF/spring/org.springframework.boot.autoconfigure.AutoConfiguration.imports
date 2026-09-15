@@ -1,1 +1,2 @@
 com.fons.cloud.ai.agent.infrastructure.config.AgentScopeObservabilityAutoConfiguration
+com.fons.cloud.ai.agent.infrastructure.config.AgentScopeStateStoreAutoConfiguration

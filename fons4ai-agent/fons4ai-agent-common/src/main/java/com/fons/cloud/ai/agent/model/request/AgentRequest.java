@@ -26,9 +26,9 @@ public class AgentRequest extends ParameterRequest {
     private String userId;
 
     /**
-     * 消息标识
+     * 单次任务的运行ID， 可为空
      */
-    private String messageId;
+    private String runId;
 
     /**
      * 会话标识。

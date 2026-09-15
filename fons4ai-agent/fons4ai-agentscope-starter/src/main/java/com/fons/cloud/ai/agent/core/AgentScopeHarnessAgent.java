@@ -91,11 +91,6 @@ public class AgentScopeHarnessAgent extends BaseAgent<AgentScopeRunContext> impl
     protected static final String RUN_ID_ATTRIBUTE = "fons.runId";
 
     /**
-     * Fons消息ID在AgentScope RuntimeContext中的属性名称。
-     */
-    protected static final String MESSAGE_ID_ATTRIBUTE = "fons.messageId";
-
-    /**
      * Fons原始运行ID在AgentScope RuntimeContext中的属性名称。
      */
     protected static final String ORIGIN_RUN_ID_ATTRIBUTE = "fons.originRunId";
@@ -314,10 +309,9 @@ public class AgentScopeHarnessAgent extends BaseAgent<AgentScopeRunContext> impl
      */
     @Override
     protected AgentScopeRunContext createRunContext(AgentRequest request) {
-        String runId = IdUtil.fastSimpleUUID();
+        String runId = StringUtils.isBlank(request.getRunId()) ? IdUtil.fastSimpleUUID() : request.getRunId();
         return AgentScopeRunContext.builder()
                 .runId(runId)
-                .messageId(request.getMessageId())
                 .conversationId(request.getConversationId())
                 .request(request)
                 .runtimeContext(createRuntimeContext(request, runId))
@@ -775,9 +769,6 @@ public class AgentScopeHarnessAgent extends BaseAgent<AgentScopeRunContext> impl
                 .put(RUN_ID_ATTRIBUTE, runId);
         if (StringUtils.isNotBlank(request.getUserId())) {
             builder.userId(request.getUserId());
-        }
-        if (StringUtils.isNotBlank(request.getMessageId())) {
-            builder.put(MESSAGE_ID_ATTRIBUTE, request.getMessageId());
         }
         HitlRequestInfo requestInfo = request.getHitlRequestInfo();
         if (requestInfo != null && StringUtils.isNotBlank(requestInfo.getOriginRunId())) {

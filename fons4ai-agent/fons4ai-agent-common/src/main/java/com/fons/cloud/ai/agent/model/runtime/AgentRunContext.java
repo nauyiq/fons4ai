@@ -29,11 +29,6 @@ import java.util.concurrent.atomic.AtomicReference;
 public abstract class AgentRunContext {
 
     /**
-     * 消息ID
-     */
-    protected String messageId;
-
-    /**
      * 运行ID
      */
     @NonNull
