@@ -48,6 +48,11 @@ public class HumanInTheLoopInfo implements Serializable {
     private HumanInTheLoopKind kind;
 
     /**
+     * 展示给用户的输入问题。INPUT_REQUIRED 使用本字段，业务扩展数据保持在 data 中。
+     */
+    private String question;
+
+    /**
      * 人工交互的数据
      */
     private Map<String, Object> data;

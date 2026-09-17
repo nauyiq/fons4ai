@@ -5,6 +5,7 @@ import com.fons.cloud.ai.agent.model.request.AgentRequest;
 import com.fons.cloud.ai.agent.model.response.AgentCompleteInfo;
 import com.fons.cloud.ai.agent.model.runtime.AgentRunContext;
 import com.fons.cloud.ai.agent.model.runtime.AgentScopeCompletedToolResult;
+import com.fons.cloud.ai.agent.model.runtime.AgentScopeInputRequired;
 import com.fons.cloud.ai.agent.model.runtime.AgentScopeToolResultBuffer;
 import com.fons.cloud.ai.agent.model.runtime.AgentScopeToolResultKey;
 import io.agentscope.core.agent.RuntimeContext;
@@ -61,6 +62,15 @@ public class AgentScopeRunContext extends AgentRunContext {
      * AgentScope本次顶层执行的最终结果消息。
      */
     private volatile Msg result;
+
+    /**
+     * 本轮原生工具结果携带的输入请求；只在顶层结果到达后用于common收口。
+     */
+    private volatile AgentScopeInputRequired inputRequired;
+
+    public void recordInputRequired(AgentScopeInputRequired inputRequired) {
+        this.inputRequired = inputRequired;
+    }
 
     /**
      * 当前适配器尚未接入的原生交互类型。
@@ -263,10 +273,10 @@ public class AgentScopeRunContext extends AgentRunContext {
     /**
      * 获取或者创建一次顶层工具调用的结果缓冲。
      *
-     * @param source 原生事件来源，null表示顶层Agent
-     * @param replyId 模型回复ID
+     * @param source     原生事件来源，null表示顶层Agent
+     * @param replyId    模型回复ID
      * @param toolCallId 工具调用ID
-     * @param toolName 工具名称
+     * @param toolName   工具名称
      * @return 工具结果缓冲
      */
     private AgentScopeToolResultBuffer getOrCreateToolResultBuffer(
@@ -284,8 +294,8 @@ public class AgentScopeRunContext extends AgentRunContext {
     /**
      * 创建工具结果事件关联键。
      *
-     * @param source 原生事件来源，null表示顶层Agent
-     * @param replyId 模型回复ID
+     * @param source     原生事件来源，null表示顶层Agent
+     * @param replyId    模型回复ID
      * @param toolCallId 工具调用ID
      * @return 工具结果事件关联键
      */

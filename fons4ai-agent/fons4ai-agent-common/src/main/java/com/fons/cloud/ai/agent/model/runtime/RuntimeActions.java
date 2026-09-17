@@ -199,8 +199,8 @@ public class RuntimeActions implements Serializable {
      * 判断原生取消动作返回后是否立即释放框架管理的订阅。
      *
      * <p>默认返回 {@code true}，保持common的强制终止语义。需要异步整理状态的执行引擎
-     * 可以返回 {@code false}，由原生流自然结束时调用 {@link #releaseAll()}，同时必须提供
-     * 超时强制释放，避免原生中断长期未响应导致资源泄漏。</p>
+     * 可以返回 {@code false}，由原生流自然结束时调用 {@link #releaseAll()}。
+     * 具体取消与资源收口策略由适配器负责，此处不要求超时兜底。</p>
      *
      * @return true 表示立即释放，false 表示由子类异步完成取消
      */
@@ -346,7 +346,6 @@ public class RuntimeActions implements Serializable {
     public void cancelResultEvent() {
         AgentRunResult cancelResult = AgentRunResult.builder()
                 .runId(agentRunContext.getRunId())
-                .messageId(agentRunContext.getMessageId())
                 .conversationId(agentRunContext.getConversationId())
                 .state(AgentRunState.CANCELLED)
                 .build();

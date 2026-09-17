@@ -2,7 +2,9 @@ package com.fons.cloud.ai.agent.core;
 
 import cn.hutool.core.util.IdUtil;
 import com.fons.cloud.ai.agent.api.HumanInTheLoopDataConverter;
+import com.fons.cloud.ai.agent.api.InputRequiredDecoder;
 import com.fons.cloud.ai.agent.infrastructure.handler.AgentScopeApprovalHandler;
+import com.fons.cloud.ai.agent.infrastructure.middleware.AgentScopeInputRequiredMiddleware;
 import com.fons.cloud.ai.agent.infrastructure.middleware.AgentScopeApprovalRejectMiddleware;
 import com.fons.cloud.ai.agent.infrastructure.observability.AgentScopeTraceLifecycle;
 import com.fons.cloud.ai.agent.infrastructure.utils.AgentScopeMessageConverter;
@@ -50,7 +52,8 @@ import java.util.concurrent.atomic.AtomicReference;
  *     <li>将common多模态输入转换为AgentScope {@link UserMessage}。</li>
  *     <li>桥接顶层文本、思考过程和纯文本工具结果。</li>
  *     <li>将顶层工具审批转换为common HITL消息，并支持APPROVE、EDIT和REJECT恢复。</li>
- *     <li>将common取消请求转换为顶层HarnessAgent原生中断，并提供超时强制释放。</li>
+ *     <li>可选地识别子Agent委派工具的INPUT_REQUIRED结果，受控停止父Agent并正常结束本轮。</li>
+ *     <li>将common取消请求转换为顶层HarnessAgent原生中断，等待原生执行自然收口。</li>
  *     <li>通过{@link #onNativeEvent}开放原生事件的只读观察能力。</li>
  * </ul>
  *
@@ -59,7 +62,7 @@ import java.util.concurrent.atomic.AtomicReference;
  *     <li>子Agent审批恢复、父子Agent结果聚合和依赖屏障。</li>
  *     <li>远程子Agent任务提交、轮询、取消和结果确认。</li>
  *     <li>{@link RequireExternalExecutionEvent}对应的外部工具执行与结果回填。</li>
- *     <li>任意Middleware暂停恢复、非工具INPUT_REQUIRED和业务工作流编排。</li>
+ *     <li>任意Middleware暂停恢复、委派工具之外的INPUT_REQUIRED和业务工作流编排。</li>
  *     <li>AgentScope StateStore、Memory、Plan、Skill和多Agent团队的具体配置。</li>
  * </ul>
  *
@@ -127,10 +130,17 @@ public class AgentScopeHarnessAgent extends BaseAgent<AgentScopeRunContext> impl
     protected HumanInTheLoopDataConverter humanInTheLoopDataConverter = DefaultHumanInTheLoopDataConverter.getInstance();
 
     /**
-     * AgentScope原生中断转为强制终止前的宽限时间。
+     * 是否接管原生agent_spawn、agent_send正常结果中的INPUT_REQUIRED协议。
+     * 默认关闭；启用后在工具结果保存后通过Middleware阻止下一次模型调用。
      */
     @Builder.Default
-    protected long interruptGracePeriodMillis = AgentScopeRuntimeActions.DEFAULT_INTERRUPT_GRACE_PERIOD_MILLIS;
+    protected boolean inputRequiredEnabled = false;
+
+    /**
+     * 子Agent最终回复的输入请求解析契约，不负责业务字段或子Agent编排。
+     */
+    @Builder.Default
+    protected InputRequiredDecoder inputRequiredDecoder = DefaultInputRequiredDecoder.getInstance();
 
 
     /**
@@ -145,9 +155,9 @@ public class AgentScopeHarnessAgent extends BaseAgent<AgentScopeRunContext> impl
         this.humanInTheLoopDataConverter = builder.humanInTheLoopDataConverter$set
                 ? builder.humanInTheLoopDataConverter$value
                 : DefaultHumanInTheLoopDataConverter.getInstance();
-        this.interruptGracePeriodMillis = builder.interruptGracePeriodMillis$set
-                ? builder.interruptGracePeriodMillis$value
-                : AgentScopeRuntimeActions.DEFAULT_INTERRUPT_GRACE_PERIOD_MILLIS;
+        this.inputRequiredEnabled = builder.inputRequiredEnabled$set && builder.inputRequiredEnabled$value;
+        this.inputRequiredDecoder = builder.inputRequiredDecoder$set
+                ? builder.inputRequiredDecoder$value : DefaultInputRequiredDecoder.getInstance();
         validateConfiguration();
         this.delegateHolder.set(init(builder.delegateBuilder));
     }
@@ -160,9 +170,9 @@ public class AgentScopeHarnessAgent extends BaseAgent<AgentScopeRunContext> impl
             throw SystemIntervalException.of(
                     "AgentScope humanInTheLoopDataConverter cannot be null");
         }
-        if (interruptGracePeriodMillis < 0) {
+        if (inputRequiredDecoder == null) {
             throw SystemIntervalException.of(
-                    "AgentScope interruptGracePeriodMillis cannot be negative");
+                    "AgentScope inputRequiredDecoder cannot be null");
         }
     }
 
@@ -180,6 +190,10 @@ public class AgentScopeHarnessAgent extends BaseAgent<AgentScopeRunContext> impl
         HarnessAgent harnessAgent = null;
         try {
             delegateBuilder.middleware(AgentScopeApprovalRejectMiddleware.getInstance());
+            if (inputRequiredEnabled) {
+                delegateBuilder.middleware(new AgentScopeInputRequiredMiddleware(inputRequiredDecoder,
+                        () -> getDelegate().getDelegate()));
+            }
             harnessAgent = delegateBuilder.build();
             validateFrameworkMiddlewares(harnessAgent);
             log.info("Initialized AgentScope HarnessAgent, agentName:{}", agentName);
@@ -338,7 +352,6 @@ public class AgentScopeHarnessAgent extends BaseAgent<AgentScopeRunContext> impl
                 .stateMachine(new AgentRunStateMachine(context, eventPublisher))
                 .delegate(getDelegate())
                 .runtimeContext(context.getRuntimeContext())
-                .interruptGracePeriodMillis(interruptGracePeriodMillis)
                 .build();
     }
 
@@ -406,7 +419,12 @@ public class AgentScopeHarnessAgent extends BaseAgent<AgentScopeRunContext> impl
             }
 
             // 保存AgentScope最终结果，供当前分段结束时判断是否正常完成。
-            case AgentResultEvent resultEvent -> context.recordResult(resultEvent.getResult());
+            case AgentResultEvent resultEvent -> {
+                context.recordResult(resultEvent.getResult());
+                if (inputRequiredEnabled && resultEvent.getResult() != null) {
+                    context.recordInputRequired(AgentScopeInputRequiredMiddleware.read(resultEvent.getResult()));
+                }
+            }
 
             // 记录最大推理轮次事件；AgentScope仍会生成总结结果，由分段收口统一判断。
             case ExceedMaxItersEvent exceedMaxItersEvent ->
@@ -537,11 +555,44 @@ public class AgentScopeHarnessAgent extends BaseAgent<AgentScopeRunContext> impl
             return;
         }
 
-        if (finishControlResult(context, actions)) {
+        if (finishInputRequired(context, actions) || finishControlResult(context, actions)) {
             return;
         }
 
         complete(context, actions);
+    }
+
+    /**
+     * 在原生工具结果写入上下文、StateStore保存成功后，展示输入请求并正常结束本轮。
+     * 用户回答按同一会话的普通新请求进入，由Master结合原始工具结果继续编排。
+     * 不创建审批checkpoint，不触发用户取消，也不承担子Agent寻址。
+     */
+    private boolean finishInputRequired(AgentScopeRunContext context, RuntimeActions actions) {
+        AgentScopeInputRequired input = context.getInputRequired();
+        if (input == null) {
+            return false;
+        }
+        boolean matched = context.getResult().getGenerateReason() == GenerateReason.MIDDLEWARE_STOP_REQUESTED
+                && input.request() != null
+                && input.request().getQuestion().equals(context.getResult().getTextContent());
+        if (!matched) {
+            failControlResult(context, actions, "INPUT_REQUIRED did not reach its native tool stop result");
+            return true;
+        }
+        var request = input.request();
+        HumanInTheLoopInfo hitlInfo = HumanInTheLoopInfo.builder()
+                .id(input.id())
+                .originRunId(context.getRunId())
+                .sourceAgent(input.sourceAgent())
+                .kind(request.getKind())
+                .question(request.getQuestion())
+                .data(request.getData())
+                .build();
+        context.getFinalAnswer().setLength(0);
+        context.getFinalAnswer().append(request.getQuestion());
+        publishHumanInTheLoop(context, actions, hitlInfo);
+        complete(context, actions);
+        return true;
     }
 
     /**
