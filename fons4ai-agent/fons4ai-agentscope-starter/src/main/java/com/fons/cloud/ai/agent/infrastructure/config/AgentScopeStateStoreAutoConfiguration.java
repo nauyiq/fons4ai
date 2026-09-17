@@ -1,5 +1,6 @@
 package com.fons.cloud.ai.agent.infrastructure.config;
 
+import com.fons.cloud.ai.agent.infrastructure.middleware.ActiveAgentPersistenceMiddleware;
 import com.fons.cloud.ai.agent.infrastructure.session.ActiveAgentSessionStore;
 import io.agentscope.core.state.AgentStateStore;
 import io.agentscope.extensions.jdbc.JdbcDistributedStore;
@@ -35,12 +36,17 @@ public class AgentScopeStateStoreAutoConfiguration {
         return JdbcDistributedStore.create(dataSource);
     }
 
-
     @Bean
     @ConditionalOnMissingBean
     @ConditionalOnBean(DataSource.class)
     public ActiveAgentSessionStore activeAgentSessionStore(AgentStateStore agentStateStore) {
         return new ActiveAgentSessionStore(agentStateStore);
+    }
+
+    @Bean
+    @ConditionalOnMissingBean
+    public ActiveAgentPersistenceMiddleware activeAgentPersistenceMiddleware(ActiveAgentSessionStore activeAgentSessionStore) {
+        return new ActiveAgentPersistenceMiddleware(activeAgentSessionStore);
     }
 
 }
