@@ -1,1 +1,2 @@
 com.fons.cloud.ai.rag.langchain.infrastructure.config.LangChain4jDocumentParserAutoConfiguration
+com.fons.cloud.ai.rag.infrastructure.config.LangChain4jRagCommonAutoConfiguration

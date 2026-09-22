@@ -1,18 +1,27 @@
 package com.fons.cloud.ai.rag.common.integration.mineru;
 
 /**
- * MinerU 解析结果。
- * <p>
- * 仅包含 MinerU 响应中已确认的非敏感字段，不包含原始 JSON。
+ * 旧解析链路使用的 MinerU 文本结果。
  *
- * @param mdContent Markdown 内容
- * @param version   MinerU 版本，可为 null
- * @param backend   实际后端标识，可为 null
  * @author hongqy
+ * @deprecated 仅供旧框架适配器过渡使用
  */
-public record MinerUParseResult(
-        String mdContent,
-        String version,
-        String backend
-) {
+@Deprecated(forRemoval = true)
+public final class MinerUParseResult {
+
+    private final String markdown;
+    private final String backend;
+
+    MinerUParseResult(String markdown, String backend) {
+        this.markdown = markdown;
+        this.backend = backend;
+    }
+
+    public String mdContent() {
+        return markdown;
+    }
+
+    public String backend() {
+        return backend;
+    }
 }
