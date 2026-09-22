@@ -16,6 +16,7 @@
         <module>fons4ai-common-tools</module>
         <module>fons4ai-common-api</module>
         <module>fons4ai-common-ocr</module>
+        <module>fons4ai-common-reactor</module>
     </modules>
 
 </project>

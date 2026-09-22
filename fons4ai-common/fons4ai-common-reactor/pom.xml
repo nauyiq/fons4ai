@@ -5,32 +5,33 @@
     <modelVersion>4.0.0</modelVersion>
     <parent>
         <groupId>com.fons.cloud.ai</groupId>
-        <artifactId>fons4ai-agent</artifactId>
+        <artifactId>fons4ai-common</artifactId>
         <version>${revision}</version>
         <relativePath>../pom.xml</relativePath>
     </parent>
 
-    <artifactId>fons4ai-agent-common</artifactId>
+    <artifactId>fons4ai-common-reactor</artifactId>
+    <packaging>jar</packaging>
+    <description>fons4ai提供流式契约， 流式编排能力</description>
 
     <dependencies>
         <dependency>
+            <groupId>com.fons.cloud.ai</groupId>
+            <artifactId>fons4ai-common-api</artifactId>
+            <version>${revision}</version>
+        </dependency>
+
+        <dependency>
             <groupId>com.fons.cloud</groupId>
-            <artifactId>fons4cloud-common-cache</artifactId>
+            <artifactId>fons4cloud-common-base</artifactId>
             <version>${fons4cloud.revision}</version>
         </dependency>
 
         <dependency>
-            <groupId>com.fons.cloud.ai</groupId>
-            <artifactId>fons4ai-common-reactor</artifactId>
-            <version>${revision}</version>
+            <groupId>io.projectreactor</groupId>
+            <artifactId>reactor-core</artifactId>
         </dependency>
-
-        <dependency>
-            <groupId>com.fons.cloud.ai</groupId>
-            <artifactId>fons4ai-common-tools</artifactId>
-            <version>${revision}</version>
-        </dependency>
-
     </dependencies>
+
 
 </project>
