@@ -14,14 +14,8 @@ import reactor.core.scheduler.Schedulers;
 import java.util.function.Function;
 
 /**
- * 持久化当前会话顶层Agent身份的中间件。
- *
- * <p>仅注册到顶层HarnessAgent Builder。父Agent和子Agent不得同时注入本类Middleware，
- * 即使使用不同实例也不允许；子Agent调用会以自己的名称覆盖顶层会话的活跃Agent路由。</p>
- *
- * <p>使用原生Agent名称作为跨请求路由标识，AgentScope实例ID由运行时生成，
- * 不能用于跨请求路由。</p>
- *
+ * 持久化当前会话Agent身份的中间件。
+
  * <p>绑定在原生事件流订阅时执行；会话删除由下游业务主动处理，本中间件不自动移除。</p>
  *
  * @author hongqy
@@ -46,7 +40,7 @@ public class ActiveAgentPersistenceMiddleware implements MiddlewareBase {
     }
 
     /**
-     * 在顶层Agent开始原生调用时记录当前会话活跃的Agent。
+     * 在Agent开始原生调用时记录当前会话活跃的Agent。
      *
      * @param agent 当前AgentScope Agent
      * @param context 当前调用上下文

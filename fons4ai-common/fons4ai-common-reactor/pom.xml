@@ -28,6 +28,12 @@
         </dependency>
 
         <dependency>
+            <groupId>com.fons.cloud</groupId>
+            <artifactId>fons4cloud-common-cache</artifactId>
+            <version>${fons4cloud.revision}</version>
+        </dependency>
+
+        <dependency>
             <groupId>io.projectreactor</groupId>
             <artifactId>reactor-core</artifactId>
         </dependency>

@@ -13,6 +13,5 @@ import com.fons.cloud.reactor.model.ReactiveTaskState;
  * @param <R> 任务执行分段的结构化收口结果类型
  * @author hongqy
  */
-public interface ReactiveTaskRun<E, R>
-        extends ReactiveRun<E, R, ReactiveTaskState> {
+public interface ReactiveTaskRun<E, R> extends ReactiveRun<E, R, ReactiveTaskState> {
 }

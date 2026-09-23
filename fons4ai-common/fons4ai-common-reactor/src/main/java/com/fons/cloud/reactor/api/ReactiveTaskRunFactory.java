@@ -21,7 +21,7 @@ public interface ReactiveTaskRunFactory {
      * @param <R> 任务执行分段的结构化收口结果类型
      * @return 尚未启动的任务运行句柄
      */
-    <E, R> ReactiveTaskRun<E, R> create(ReactiveTask<E, R> task);
+     <E, R> ReactiveTaskRun<E, R> create(ReactiveTask<E, R> task);
 
     /**
      * 使用调用方提供的运行标识创建任务运行句柄。
@@ -32,8 +32,38 @@ public interface ReactiveTaskRunFactory {
      * @param runId 调用方提供的唯一运行标识
      * @param task 响应式任务执行定义
      * @param <E> 任务过程事件类型
-     * @param <R> 任务执行分段的结构化收口结果类型
+     * @param <RE> 任务执行分段的结构化收口结果类型
      * @return 尚未启动的任务运行句柄
      */
-    <E, R> ReactiveTaskRun<E, R> create(String runId, ReactiveTask<E, R> task);
+    <E, RE> ReactiveTaskRun<E, RE> create(String runId, ReactiveTask<E, RE> task);
+
+    /**
+     * 使用调用方提供的运行标识创建任务运行句柄。
+     *
+     * <p>该入口用于将运行身份与上层请求、分布式任务或协议适配层关联。实现必须校验
+     * {@code runId} 非空，并保证返回句柄的 {@link ReactiveRun#runId()} 与之相同。</p>
+     *
+     * @param task 响应式任务执行定义
+     * @param handler 响应式结果处理器
+     * @param <E> 任务过程事件类型
+     * @param <RE> 任务执行分段的结构化收口结果类型
+     * @return 尚未启动的任务运行句柄
+     */
+    <E, RE> ReactiveTaskRun<E, RE> create(ReactiveTask<E, RE> task, ReactiveResultHandler<RE> handler);
+
+    /**
+     * 使用调用方提供的运行标识创建任务运行句柄。
+     *
+     * <p>该入口用于将运行身份与上层请求、分布式任务或协议适配层关联。实现必须校验
+     * {@code runId} 非空，并保证返回句柄的 {@link ReactiveRun#runId()} 与之相同。</p>
+     *
+     * @param runId 调用方提供的唯一运行标识
+     * @param task 响应式任务执行定义
+     * @param handler 响应式结果处理器
+     * @param <E> 任务过程事件类型
+     * @param <RE> 任务执行分段的结构化收口结果类型
+     * @return 尚未启动的任务运行句柄
+     */
+    <E, RE> ReactiveTaskRun<E, RE> create(String runId, ReactiveTask<E, RE> task, ReactiveResultHandler<RE> handler);
+
 }

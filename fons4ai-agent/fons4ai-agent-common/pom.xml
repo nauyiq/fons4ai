@@ -14,12 +14,6 @@
 
     <dependencies>
         <dependency>
-            <groupId>com.fons.cloud</groupId>
-            <artifactId>fons4cloud-common-cache</artifactId>
-            <version>${fons4cloud.revision}</version>
-        </dependency>
-
-        <dependency>
             <groupId>com.fons.cloud.ai</groupId>
             <artifactId>fons4ai-common-reactor</artifactId>
             <version>${revision}</version>

@@ -1,5 +1,7 @@
 package com.fons.cloud.reactor.core;
 
+import cn.hutool.core.util.IdUtil;
+import com.fons.cloud.reactor.api.ReactiveResultHandler;
 import com.fons.cloud.reactor.api.ReactiveTask;
 import com.fons.cloud.reactor.api.ReactiveTaskRun;
 import com.fons.cloud.reactor.api.ReactiveTaskRunFactory;
@@ -32,7 +34,7 @@ public final class DefaultReactiveTaskRunFactory implements ReactiveTaskRunFacto
      * 使用 UUID 生成无连字符的 runId。
      */
     public DefaultReactiveTaskRunFactory() {
-        this(() -> UUID.randomUUID().toString().replace("-", ""));
+        this(IdUtil::fastSimpleUUID);
     }
 
     /**
@@ -46,22 +48,28 @@ public final class DefaultReactiveTaskRunFactory implements ReactiveTaskRunFacto
     }
 
     @Override
-    public <E, R> ReactiveTaskRun<E, R> create(
-            ReactiveTask<E, R> task) {
+    public <E, R> ReactiveTaskRun<E, R> create(ReactiveTask<E, R> task) {
         return create(requireRunId(runIdSupplier.get()), task);
     }
 
     @Override
-    public <E, R> ReactiveTaskRun<E, R> create(
-            String runId,
-            ReactiveTask<E, R> task) {
+    public <E, R> ReactiveTaskRun<E, R> create(String runId, ReactiveTask<E, R> task) {
         return new DefaultReactiveTaskRun<>(
                 requireRunId(runId),
                 requireNonNull(task, "Reactive task cannot be null"));
     }
 
+    @Override
+    public <E, RE> ReactiveTaskRun<E, RE> create(ReactiveTask<E, RE> task, ReactiveResultHandler<RE> handler) {
+        return create(requireRunId(runIdSupplier.get()), task, handler);
+    }
+
+    @Override
+    public <E, RE> ReactiveTaskRun<E, RE> create(String runId, ReactiveTask<E, RE> task, ReactiveResultHandler<RE> handler) {
+        return new DefaultReactiveTaskRun<>(runId, task, handler);
+    }
+
     private static String requireRunId(String runId) {
-        return requireNotBlank(
-                runId, "Reactive task runId cannot be blank");
+        return requireNotBlank(runId, "Reactive task runId cannot be blank");
     }
 }
