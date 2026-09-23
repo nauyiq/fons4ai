@@ -37,7 +37,7 @@ public enum MessageContentType {
     RECOMMEND("recommend"),
 
     /**
-     * 需要审批的消息
+     * 人工交互消息；具体为审批还是补充信息由data.kind区分
      */
     HITL("hitl"),
 

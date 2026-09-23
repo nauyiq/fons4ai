@@ -8,6 +8,7 @@ import com.fons.cloud.ai.agent.infrastructure.util.AgentResponseEmitter;
 import com.fons.cloud.ai.agent.model.response.AgentResultCode;
 import com.fons.cloud.ai.agent.api.AgentType;
 import com.fons.cloud.ai.agent.model.hitl.HumanInTheLoopInfo;
+import com.fons.cloud.ai.agent.model.hitl.HumanInTheLoopKind;
 import com.fons.cloud.ai.agent.model.message.MessageContentType;
 import com.fons.cloud.ai.agent.model.request.*;
 import com.fons.cloud.ai.agent.model.response.AgentRunResult;
@@ -50,8 +51,8 @@ import java.util.List;
  * <p>
  *     HITL 生命周期协议：
  *     <ul>
- *         <li>审批消息：子类调用 {@link #publishHumanInTheLoop} 只发送单条统一HITL消息，不改变
- *         顶层Run状态。内部执行单元等待审批但顶层Run仍可继续时使用该入口。</li>
+ *         <li>人工交互消息：子类调用 {@link #publishHumanInTheLoop} 只发送单条统一HITL消息，
+ *         不改变顶层Run状态；INPUT_REQUIRED 等正常结束场景须另行将交互写入结果。</li>
  *         <li>审批暂停：子类调用 {@link #pauseForApprovals} 前必须先保存引擎checkpoint；原语负责
  *         WAITING_APPROVAL状态切换、逐条输出HITL消息、结束当前流分段、释放订阅与任务租约并
  *         发射WAITING_APPROVAL结果。WAITING_APPROVAL表示顶层Run被一个或多个审批阻塞。</li>
@@ -318,6 +319,24 @@ public abstract class BaseAgent<C extends AgentRunContext> implements Agent {
     }
 
     /**
+     * 正常结束本轮，并在结果中保留已发布的用户补充信息请求。
+     *
+     * <p>INPUT_REQUIRED 不进入审批等待，也不创建 checkpoint。这里直接将交互信息传给
+     * 当前分段的最终结果，避免复用会在终态被清空的审批快照。</p>
+     */
+    protected final void completeWithInputRequired(C context,
+                                                   RuntimeActions actions,
+                                                   HumanInTheLoopInfo inputRequired) {
+        AgentRequestValidator.validateHumanInTheLoopInfo(inputRequired);
+        if (inputRequired.getKind() != HumanInTheLoopKind.INPUT_REQUIRED
+                || StringUtils.isBlank(inputRequired.getQuestion())) {
+            throw BusinessRuntimeException.of(AgentResultCode.HITL_INFO_INVALID);
+        }
+        this.finishRun(context, AgentRunState.COMPLETED, actions, null,
+                ResultCode.SUCCESS.getCode(), ResultCode.SUCCESS.getMessage(), List.of(inputRequired));
+    }
+
+    /**
      * 子类在流执行异常时调用，统一进入失败终态和资源清理。
      */
     protected final void failed(C context, RuntimeActions actions, Throwable cause,
@@ -344,7 +363,7 @@ public abstract class BaseAgent<C extends AgentRunContext> implements Agent {
     /**
      * 输出一条统一HITL消息，不改变顶层Run状态。
      *
-     * <p>内部执行单元等待人工交互，但顶层Run仍可继续执行时使用该入口。审批队列、
+     * <p>本方法仅发布事件；是否继续、暂停或正常结束由调用方决定。审批队列、
      * 恢复坐标和内部执行状态由具体技术栈管理。</p>
      *
      * @param context 本次请求独立上下文
@@ -424,6 +443,16 @@ public abstract class BaseAgent<C extends AgentRunContext> implements Agent {
                                    Throwable cause,
                                    String errorCode,
                                    String errorMessage) {
+        finishRun(context, terminalState, actions, cause, errorCode, errorMessage, List.of());
+    }
+
+    private void finishRun(C context,
+                           AgentRunState terminalState,
+                           RuntimeActions actions,
+                           Throwable cause,
+                           String errorCode,
+                           String errorMessage,
+                           List<HumanInTheLoopInfo> completionInteractions) {
         // 设置结束状态
         if (!actions.getStateMachine().tryFinalize(terminalState)) {
             return;
@@ -448,7 +477,8 @@ public abstract class BaseAgent<C extends AgentRunContext> implements Agent {
             AgentRunResult runResult = AgentRunResult.builder()
                     .runId(context.getRunId())
                     .conversationId(context.getConversationId())
-                    .humanInTheLoopInfos(context.getHumanInTheLoopInfos())
+                    .humanInTheLoopInfos(terminalState == AgentRunState.COMPLETED
+                            ? completionInteractions : context.getHumanInTheLoopInfos())
                     .state(terminalState)
                     .completeInfo(context.buildCompleteInfo())
                     .errorCode(errorCode)

@@ -591,7 +591,7 @@ public class AgentScopeHarnessAgent extends BaseAgent<AgentScopeRunContext> impl
         context.getFinalAnswer().setLength(0);
         context.getFinalAnswer().append(request.getQuestion());
         publishHumanInTheLoop(context, actions, hitlInfo);
-        complete(context, actions);
+        completeWithInputRequired(context, actions, hitlInfo);
         return true;
     }
 
