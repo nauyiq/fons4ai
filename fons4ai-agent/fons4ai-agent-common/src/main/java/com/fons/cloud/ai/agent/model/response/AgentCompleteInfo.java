@@ -7,6 +7,7 @@ import lombok.experimental.SuperBuilder;
 
 import java.io.Serial;
 import java.io.Serializable;
+import java.util.List;
 import java.util.Set;
 
 /**
@@ -33,11 +34,6 @@ public class AgentCompleteInfo implements Serializable {
     private String thinking;
 
     /**
-     * LLM本轮对话的推荐答案
-     */
-    private String recommendations;
-
-    /**
      * Agent本轮对话引用的来源信息
      */
     private String references;
@@ -46,6 +42,11 @@ public class AgentCompleteInfo implements Serializable {
      * Agent本轮对话使用的工具集合
      */
     private Set<String> tools;
+
+    /**
+     * 本次Run发布的完整媒体资源。
+     */
+    private List<AgentMediaInfo> media;
 
 
 

@@ -37,6 +37,11 @@ public enum MessageContentType {
     RECOMMEND("recommend"),
 
     /**
+     * 已完成的图片、音频、视频或文件资源。
+     */
+    MEDIA("media"),
+
+    /**
      * 人工交互消息；具体为审批还是补充信息由data.kind区分
      */
     HITL("hitl"),

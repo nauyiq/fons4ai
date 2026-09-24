@@ -1,23 +1,27 @@
 package com.fons.cloud.ai.agent.core;
 
 import cn.hutool.core.util.IdUtil;
+import com.fons.cloud.ai.agent.api.AgentScopeMediaUriResolver;
 import com.fons.cloud.ai.agent.api.HumanInTheLoopDataConverter;
 import com.fons.cloud.ai.agent.api.InputRequiredDecoder;
 import com.fons.cloud.ai.agent.infrastructure.handler.AgentScopeApprovalHandler;
 import com.fons.cloud.ai.agent.infrastructure.middleware.AgentScopeInputRequiredMiddleware;
 import com.fons.cloud.ai.agent.infrastructure.middleware.AgentScopeApprovalRejectMiddleware;
 import com.fons.cloud.ai.agent.infrastructure.observability.AgentScopeTraceLifecycle;
+import com.fons.cloud.ai.agent.infrastructure.utils.AgentScopeMediaConverter;
 import com.fons.cloud.ai.agent.infrastructure.utils.AgentScopeMessageConverter;
 import com.fons.cloud.ai.agent.model.hitl.HumanInTheLoopInfo;
 import com.fons.cloud.ai.agent.model.message.MessageContentType;
 import com.fons.cloud.ai.agent.model.request.AgentRequest;
 import com.fons.cloud.ai.agent.model.request.HitlRequestInfo;
+import com.fons.cloud.ai.agent.model.response.AgentMediaInfo;
 import com.fons.cloud.ai.agent.model.response.AgentResultCode;
 import com.fons.cloud.ai.agent.model.runtime.*;
 import com.fons.cloud.common.base.exception.BizException;
 import com.fons.cloud.common.base.exception.SystemIntervalException;
 import io.agentscope.core.agent.RuntimeContext;
 import io.agentscope.core.event.*;
+import io.agentscope.core.message.DataBlock;
 import io.agentscope.core.message.GenerateReason;
 import io.agentscope.core.message.Msg;
 import io.agentscope.core.message.UserMessage;
@@ -50,7 +54,7 @@ import java.util.concurrent.atomic.AtomicReference;
  * <p>当前适配器提供以下能力：</p>
  * <ul>
  *     <li>将common多模态输入转换为AgentScope {@link UserMessage}。</li>
- *     <li>桥接顶层文本、思考过程和纯文本工具结果。</li>
+ *     <li>桥接顶层文本、思考过程、最终媒体和纯文本工具结果。</li>
  *     <li>将顶层工具审批转换为common HITL消息，并支持APPROVE、EDIT和REJECT恢复。</li>
  *     <li>可选地识别子Agent委派工具的INPUT_REQUIRED结果，受控停止父Agent并正常结束本轮。</li>
  *     <li>将common取消请求转换为顶层HarnessAgent原生中断，等待原生执行自然收口。</li>
@@ -73,6 +77,8 @@ import java.util.concurrent.atomic.AtomicReference;
  *     {@link HumanInTheLoopDataConverter}。</li>
  *     <li>StateStore、Memory、Plan、Skill和原生Middleware等Harness能力，直接通过下游传入的
  *     {@link HarnessAgent.Builder}配置，不在common适配层重复抽象。</li>
+ *     <li>最终消息包含Base64或本地媒体时，通过mediaUriResolver配置资源保存和客户端URI生成；
+ *     HTTP(S)媒体地址可直接输出。</li>
  *     <li>需要子Agent恢复、远程任务、外部工具回填或者业务工作流闭环时，直接继承
  *     {@link BaseAgent}并创建业务RunContext和RuntimeActions，使用AgentScope原生API完成编排，
  *     再调用BaseAgent提供的完成、失败、取消、审批暂停和工具结果入口。</li>
@@ -102,6 +108,11 @@ public class AgentScopeHarnessAgent extends BaseAgent<AgentScopeRunContext> impl
      * AgentScope消息转换器。
      */
     private static final AgentScopeMessageConverter MESSAGE_CONVERTER = AgentScopeMessageConverter.getInstance();
+
+    /**
+     * AgentScope最终媒体转换器。
+     */
+    private static final AgentScopeMediaConverter MEDIA_CONVERTER = AgentScopeMediaConverter.getInstance();
 
     /**
      * AgentScope人工审批处理器。
@@ -142,6 +153,11 @@ public class AgentScopeHarnessAgent extends BaseAgent<AgentScopeRunContext> impl
     @Builder.Default
     protected InputRequiredDecoder inputRequiredDecoder = DefaultInputRequiredDecoder.getInstance();
 
+    /**
+     * 将Base64或本地媒体转换为客户端可读取地址的扩展入口。
+     */
+    protected AgentScopeMediaUriResolver mediaUriResolver;
+
 
     /**
      * 创建AgentScope HarnessAgent适配器。
@@ -158,6 +174,7 @@ public class AgentScopeHarnessAgent extends BaseAgent<AgentScopeRunContext> impl
         this.inputRequiredEnabled = builder.inputRequiredEnabled$set && builder.inputRequiredEnabled$value;
         this.inputRequiredDecoder = builder.inputRequiredDecoder$set
                 ? builder.inputRequiredDecoder$value : DefaultInputRequiredDecoder.getInstance();
+        this.mediaUriResolver = builder.mediaUriResolver;
         validateConfiguration();
         this.delegateHolder.set(init(builder.delegateBuilder));
     }
@@ -559,7 +576,25 @@ public class AgentScopeHarnessAgent extends BaseAgent<AgentScopeRunContext> impl
             return;
         }
 
+        publishFinalMedia(context, actions);
         complete(context, actions);
+    }
+
+    /**
+     * 发布AgentScope最终消息中的完整媒体内容。
+     *
+     * <p>只读取顶层结果的DataBlock，不将工具中间结果自动发布给客户端。</p>
+     *
+     * @param context 当前Run上下文
+     * @param actions 当前Run行为权柄
+     */
+    private void publishFinalMedia(AgentScopeRunContext context, RuntimeActions actions) {
+        List<AgentMediaInfo> mediaInfos = context.getResult().getContentBlocks(DataBlock.class).stream()
+                .map(block -> MEDIA_CONVERTER.convert(context, block, mediaUriResolver))
+                .toList();
+        for (AgentMediaInfo media : mediaInfos) {
+            emitMedia(context, actions, media);
+        }
     }
 
     /**

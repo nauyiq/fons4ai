@@ -136,9 +136,22 @@ public class AgentResponse implements Serializable {
                 .content(content).build();
     }
 
-    /** 创建审批或 Run 生命周期事件响应，data 只能包含已脱敏的协议字段。 */
+    /** 创建结构化事件响应，data只能包含允许发送给客户端的协议字段。 */
     public static AgentResponse event(MessageContentType type, String content, Object data) {
         return new Builder().type(type).content(content).data(data).build();
+    }
+
+    /**
+     * 创建一条完整媒体输出消息。
+     *
+     * @param media 已经可读取的媒体资源
+     * @return 媒体输出消息
+     */
+    public static AgentResponse media(AgentMediaInfo media) {
+        return new Builder()
+                .type(MessageContentType.MEDIA)
+                .data(media)
+                .build();
     }
 
 
@@ -170,7 +183,13 @@ public class AgentResponse implements Serializable {
 
         public AgentResponse build() {
             Assert.notNull(this.type, () -> BusinessRuntimeException.of(ResultCode.INVALID_DATA));
-            Assert.notEmpty(this.content, () -> BusinessRuntimeException.of(ResultCode.INVALID_DATA));
+            if (this.type == MessageContentType.MEDIA) {
+                if (!(this.data instanceof AgentMediaInfo)) {
+                    throw BusinessRuntimeException.of(AgentResultCode.AGENT_MEDIA_INFO_INVALID);
+                }
+            } else {
+                Assert.notEmpty(this.content, () -> BusinessRuntimeException.of(ResultCode.INVALID_DATA));
+            }
             AgentResponse response = new AgentResponse();
             response.type = this.type;
             response.content = this.content;

@@ -107,9 +107,8 @@ public class DefaultHumanInTheLoopDataConverter implements HumanInTheLoopDataCon
                 .toList();
 
         HumanInTheLoopInfo humanInTheLoopInfo = HumanInTheLoopInfo.builder()
-                .id(IdUtil.fastSimpleUUID())
+                .id(checkpointId)
                 .kind(HumanInTheLoopKind.APPROVAL)
-                .checkpointId(checkpointId)
                 .originRunId(resolveOriginRunId(context))
                 .sourceAgent(sourceAgent)
                 .data(Map.of("tools", List.copyOf(tools)))

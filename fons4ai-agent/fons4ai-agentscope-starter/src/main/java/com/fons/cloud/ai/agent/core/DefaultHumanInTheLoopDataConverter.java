@@ -56,15 +56,13 @@ public class DefaultHumanInTheLoopDataConverter implements HumanInTheLoopDataCon
         List<HitlToolsInfo> tools = createToolsInfo(event);
 
         HumanInTheLoopInfo humanInTheLoopInfo = HumanInTheLoopInfo.builder()
-                .id(IdUtil.fastSimpleUUID())
+                .id(event.getReplyId())
                 .kind(HumanInTheLoopKind.APPROVAL)
-                .checkpointId(event.getReplyId())
                 .originRunId(resolveOriginRunId(context))
                 .sourceAgent(sourceAgent)
                 .data(Map.of(TOOLS_DATA_KEY, List.copyOf(tools)))
                 .build();
-        log.debug("Converted AgentScope tool approval HITL, id:{}, replyId:{}, toolCount:{}",
-                humanInTheLoopInfo.getId(), event.getReplyId(), tools.size());
+        log.debug("Converted AgentScope tool approval HITL, id:{}, toolCount:{}", humanInTheLoopInfo.getId(), tools.size());
         return humanInTheLoopInfo;
     }
 

@@ -11,6 +11,8 @@ import com.fons.cloud.ai.agent.model.hitl.HumanInTheLoopInfo;
 import com.fons.cloud.ai.agent.model.hitl.HumanInTheLoopKind;
 import com.fons.cloud.ai.agent.model.message.MessageContentType;
 import com.fons.cloud.ai.agent.model.request.*;
+import com.fons.cloud.ai.agent.model.response.AgentCompleteInfo;
+import com.fons.cloud.ai.agent.model.response.AgentMediaInfo;
 import com.fons.cloud.ai.agent.model.response.AgentRunResult;
 import com.fons.cloud.ai.agent.model.runtime.AgentRunContext;
 import com.fons.cloud.ai.agent.model.runtime.AgentRunState;
@@ -414,11 +416,14 @@ public abstract class BaseAgent<C extends AgentRunContext> implements Agent {
         // 释放任务租约与本地任务（审批等待期不占租约，恢复时重新注册）
         safelyCompleteTask(context);
         // 发射 WAITING_APPROVAL 分段结果
+        List<AgentMediaInfo> mediaSnapshot = context.getMedia();
         actions.completeResultEvent(AgentRunResult.builder()
                 .runId(context.getRunId())
                 .conversationId(context.getConversationId())
                 .state(AgentRunState.WAITING_APPROVAL)
                 .humanInTheLoopInfos(hitlSnapshot)
+                .completeInfo(mediaSnapshot.isEmpty() ? null
+                        : AgentCompleteInfo.builder().media(mediaSnapshot).build())
                 .build());
     }
 
@@ -473,6 +478,13 @@ public abstract class BaseAgent<C extends AgentRunContext> implements Agent {
         if (terminalState == AgentRunState.CANCELLED) {
             actions.cancelResultEvent();
         } else {
+            AgentCompleteInfo completeInfo = context.buildCompleteInfo();
+            if (completeInfo == null && !context.getMedia().isEmpty()) {
+                completeInfo = AgentCompleteInfo.builder().build();
+            }
+            if (completeInfo != null) {
+                completeInfo.setMedia(context.getMedia());
+            }
             // 构建运行结果对象 并且发射到结果发射器
             AgentRunResult runResult = AgentRunResult.builder()
                     .runId(context.getRunId())
@@ -480,7 +492,7 @@ public abstract class BaseAgent<C extends AgentRunContext> implements Agent {
                     .humanInTheLoopInfos(terminalState == AgentRunState.COMPLETED
                             ? completionInteractions : context.getHumanInTheLoopInfos())
                     .state(terminalState)
-                    .completeInfo(context.buildCompleteInfo())
+                    .completeInfo(completeInfo)
                     .errorCode(errorCode)
                     .errorMessage(errorMessage)
                     .build();
@@ -578,5 +590,20 @@ public abstract class BaseAgent<C extends AgentRunContext> implements Agent {
      */
     protected final void emit(RuntimeActions actions, String content, MessageContentType type) {
         AgentResponseEmitter.emit(actions, content, type);
+    }
+
+    /**
+     * 向客户端发送一条完整媒体消息，并记录到本次Run的结构化结果。
+     *
+     * <p>只供子类明确选择需要对用户发布的媒体；工具结果不会自动进入该链路。</p>
+     *
+     * @param context 本次请求独立上下文
+     * @param actions 本次请求的资源与事件权柄
+     * @param media 已经可读取的媒体资源
+     */
+    protected final void emitMedia(C context, RuntimeActions actions, AgentMediaInfo media) {
+        if (context.recordMedia(media)) {
+            AgentResponseEmitter.emitMedia(actions, media);
+        }
     }
 }
