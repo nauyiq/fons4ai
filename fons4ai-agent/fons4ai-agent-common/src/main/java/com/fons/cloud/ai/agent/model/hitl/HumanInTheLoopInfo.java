@@ -20,14 +20,9 @@ public class HumanInTheLoopInfo implements Serializable {
     private static final long serialVersionUID = 1L;
 
     /**
-     * 本次人工交互的id，默认是UUID
+     * 本次人工交互的id，
      */
     private String id;
-
-    /**
-     * 检查点ID, 对于不需要中断恢复的请求是可以不要求从检查点恢复的， 可以依赖于消息列表等
-     */
-    private String checkpointId;
 
     /**
      * 原始的runId

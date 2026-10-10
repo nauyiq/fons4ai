@@ -2,8 +2,11 @@ package com.fons.cloud.ai.agent.infrastructure.util;
 
 import com.fons.cloud.ai.agent.model.hitl.HumanInTheLoopInfo;
 import com.fons.cloud.ai.agent.model.message.MessageContentType;
+import com.fons.cloud.ai.agent.model.response.AgentMediaInfo;
 import com.fons.cloud.ai.agent.model.response.AgentResponse;
+import com.fons.cloud.ai.agent.model.response.AgentResultCode;
 import com.fons.cloud.ai.agent.model.runtime.RuntimeActions;
+import com.fons.cloud.common.base.exception.BusinessRuntimeException;
 
 /**
  * Agent统一响应消息发送器。
@@ -35,7 +38,18 @@ public final class AgentResponseEmitter {
             case RECOMMEND -> AgentResponse.recommend(content).toJson();
             case ERROR -> AgentResponse.error(content).toJson();
             case HITL -> AgentResponse.approval(content).toJson();
+            case MEDIA -> throw BusinessRuntimeException.of(AgentResultCode.AGENT_MEDIA_INFO_INVALID);
         });
+    }
+
+    /**
+     * 发送一条完整媒体输出消息。
+     *
+     * @param actions 当前Run行为权柄
+     * @param media 已经可读取的媒体资源
+     */
+    public static void emitMedia(RuntimeActions actions, AgentMediaInfo media) {
+        actions.emitRaw(AgentResponse.media(media).toJson());
     }
 
     /**

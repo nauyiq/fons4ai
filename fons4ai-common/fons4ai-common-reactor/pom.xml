@@ -1,0 +1,43 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<project xmlns="http://maven.apache.org/POM/4.0.0"
+         xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+         xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 http://maven.apache.org/xsd/maven-4.0.0.xsd">
+    <modelVersion>4.0.0</modelVersion>
+    <parent>
+        <groupId>com.fons.cloud.ai</groupId>
+        <artifactId>fons4ai-common</artifactId>
+        <version>${revision}</version>
+        <relativePath>../pom.xml</relativePath>
+    </parent>
+
+    <artifactId>fons4ai-common-reactor</artifactId>
+    <packaging>jar</packaging>
+    <description>fons4ai提供流式契约， 流式编排能力</description>
+
+    <dependencies>
+        <dependency>
+            <groupId>com.fons.cloud.ai</groupId>
+            <artifactId>fons4ai-common-api</artifactId>
+            <version>${revision}</version>
+        </dependency>
+
+        <dependency>
+            <groupId>com.fons.cloud</groupId>
+            <artifactId>fons4cloud-common-base</artifactId>
+            <version>${fons4cloud.revision}</version>
+        </dependency>
+
+        <dependency>
+            <groupId>com.fons.cloud</groupId>
+            <artifactId>fons4cloud-common-cache</artifactId>
+            <version>${fons4cloud.revision}</version>
+        </dependency>
+
+        <dependency>
+            <groupId>io.projectreactor</groupId>
+            <artifactId>reactor-core</artifactId>
+        </dependency>
+    </dependencies>
+
+
+</project>

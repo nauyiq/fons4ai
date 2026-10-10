@@ -2,6 +2,10 @@ package com.fons.cloud.ai.agent.model.runtime;
 
 import com.fons.cloud.ai.agent.model.hitl.HumanInTheLoopInfo;
 import com.fons.cloud.ai.agent.model.response.AgentCompleteInfo;
+import com.fons.cloud.ai.agent.model.response.AgentMediaInfo;
+import com.fons.cloud.ai.agent.model.response.AgentResultCode;
+import com.fons.cloud.common.base.exception.BusinessRuntimeException;
+import lombok.AccessLevel;
 import lombok.Getter;
 import lombok.NonNull;
 import lombok.ToString;
@@ -43,14 +47,12 @@ public abstract class AgentRunContext {
     /**
      * WAITING_APPROVAL 时尚未解决的人工交互快照；仅暂停分段有效，进入终态后清空。
      */
-    private final AtomicReference<List<HumanInTheLoopInfo>> humanInTheLoopInfos =
-            new AtomicReference<>(List.of());
+    private final AtomicReference<List<HumanInTheLoopInfo>> humanInTheLoopInfos = new AtomicReference<>(List.of());
 
     /**
      * 执行状态机：CREATED -> RUNNING -> 终态 / WAITING_APPROVAL。
      */
-    private final AtomicReference<AgentRunState> state =
-            new AtomicReference<>(AgentRunState.CREATED);
+    private final AtomicReference<AgentRunState> state = new AtomicReference<>(AgentRunState.CREATED);
 
     /**
      * 执行启动时间戳，0 表示尚未启动。
@@ -71,6 +73,12 @@ public abstract class AgentRunContext {
      * 参考资料
      */
     private final List<Object> references = new CopyOnWriteArrayList<>();
+
+    /**
+     * 本次Run已经向客户端发布的完整媒体资源。
+     */
+    @Getter(AccessLevel.NONE)
+    private final List<AgentMediaInfo> media = new CopyOnWriteArrayList<>();
 
     /**
      * 最后答案
@@ -102,10 +110,41 @@ public abstract class AgentRunContext {
      * 追加参考资料
      * @param reference 来源信息
      */
-    public synchronized void appendReference(Object reference) {
+    public void appendReference(Object reference) {
         if (reference != null) {
             references.add(reference);
         }
+    }
+
+    /**
+     * 记录一条完整媒体输出；重复发布相同媒体时保持幂等。
+     *
+     * @param mediaInfo 媒体资源信息
+     * @return true表示首次记录，false表示此前已经记录相同媒体
+     */
+    public boolean recordMedia(AgentMediaInfo mediaInfo) {
+        if (mediaInfo == null) {
+            throw BusinessRuntimeException.of(AgentResultCode.AGENT_MEDIA_INFO_INVALID);
+        }
+        for (AgentMediaInfo existing : media) {
+            if (existing.getMediaId().equals(mediaInfo.getMediaId())) {
+                if (!existing.equals(mediaInfo)) {
+                    throw BusinessRuntimeException.of(AgentResultCode.AGENT_MEDIA_INFO_INVALID);
+                }
+                return false;
+            }
+        }
+        media.add(mediaInfo);
+        return true;
+    }
+
+    /**
+     * 获取本次Run已经发布的完整媒体快照。
+     *
+     * @return 不可变媒体列表
+     */
+    public List<AgentMediaInfo> getMedia() {
+        return List.copyOf(media);
     }
 
     /**

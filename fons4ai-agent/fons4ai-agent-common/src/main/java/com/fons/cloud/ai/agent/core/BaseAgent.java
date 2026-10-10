@@ -8,8 +8,11 @@ import com.fons.cloud.ai.agent.infrastructure.util.AgentResponseEmitter;
 import com.fons.cloud.ai.agent.model.response.AgentResultCode;
 import com.fons.cloud.ai.agent.api.AgentType;
 import com.fons.cloud.ai.agent.model.hitl.HumanInTheLoopInfo;
+import com.fons.cloud.ai.agent.model.hitl.HumanInTheLoopKind;
 import com.fons.cloud.ai.agent.model.message.MessageContentType;
 import com.fons.cloud.ai.agent.model.request.*;
+import com.fons.cloud.ai.agent.model.response.AgentCompleteInfo;
+import com.fons.cloud.ai.agent.model.response.AgentMediaInfo;
 import com.fons.cloud.ai.agent.model.response.AgentRunResult;
 import com.fons.cloud.ai.agent.model.runtime.AgentRunContext;
 import com.fons.cloud.ai.agent.model.runtime.AgentRunState;
@@ -50,8 +53,8 @@ import java.util.List;
  * <p>
  *     HITL 生命周期协议：
  *     <ul>
- *         <li>审批消息：子类调用 {@link #publishHumanInTheLoop} 只发送单条统一HITL消息，不改变
- *         顶层Run状态。内部执行单元等待审批但顶层Run仍可继续时使用该入口。</li>
+ *         <li>人工交互消息：子类调用 {@link #publishHumanInTheLoop} 只发送单条统一HITL消息，
+ *         不改变顶层Run状态；INPUT_REQUIRED 等正常结束场景须另行将交互写入结果。</li>
  *         <li>审批暂停：子类调用 {@link #pauseForApprovals} 前必须先保存引擎checkpoint；原语负责
  *         WAITING_APPROVAL状态切换、逐条输出HITL消息、结束当前流分段、释放订阅与任务租约并
  *         发射WAITING_APPROVAL结果。WAITING_APPROVAL表示顶层Run被一个或多个审批阻塞。</li>
@@ -318,6 +321,24 @@ public abstract class BaseAgent<C extends AgentRunContext> implements Agent {
     }
 
     /**
+     * 正常结束本轮，并在结果中保留已发布的用户补充信息请求。
+     *
+     * <p>INPUT_REQUIRED 不进入审批等待，也不创建 checkpoint。这里直接将交互信息传给
+     * 当前分段的最终结果，避免复用会在终态被清空的审批快照。</p>
+     */
+    protected final void completeWithInputRequired(C context,
+                                                   RuntimeActions actions,
+                                                   HumanInTheLoopInfo inputRequired) {
+        AgentRequestValidator.validateHumanInTheLoopInfo(inputRequired);
+        if (inputRequired.getKind() != HumanInTheLoopKind.INPUT_REQUIRED
+                || StringUtils.isBlank(inputRequired.getQuestion())) {
+            throw BusinessRuntimeException.of(AgentResultCode.HITL_INFO_INVALID);
+        }
+        this.finishRun(context, AgentRunState.COMPLETED, actions, null,
+                ResultCode.SUCCESS.getCode(), ResultCode.SUCCESS.getMessage(), List.of(inputRequired));
+    }
+
+    /**
      * 子类在流执行异常时调用，统一进入失败终态和资源清理。
      */
     protected final void failed(C context, RuntimeActions actions, Throwable cause,
@@ -344,7 +365,7 @@ public abstract class BaseAgent<C extends AgentRunContext> implements Agent {
     /**
      * 输出一条统一HITL消息，不改变顶层Run状态。
      *
-     * <p>内部执行单元等待人工交互，但顶层Run仍可继续执行时使用该入口。审批队列、
+     * <p>本方法仅发布事件；是否继续、暂停或正常结束由调用方决定。审批队列、
      * 恢复坐标和内部执行状态由具体技术栈管理。</p>
      *
      * @param context 本次请求独立上下文
@@ -395,11 +416,14 @@ public abstract class BaseAgent<C extends AgentRunContext> implements Agent {
         // 释放任务租约与本地任务（审批等待期不占租约，恢复时重新注册）
         safelyCompleteTask(context);
         // 发射 WAITING_APPROVAL 分段结果
+        List<AgentMediaInfo> mediaSnapshot = context.getMedia();
         actions.completeResultEvent(AgentRunResult.builder()
                 .runId(context.getRunId())
                 .conversationId(context.getConversationId())
                 .state(AgentRunState.WAITING_APPROVAL)
                 .humanInTheLoopInfos(hitlSnapshot)
+                .completeInfo(mediaSnapshot.isEmpty() ? null
+                        : AgentCompleteInfo.builder().media(mediaSnapshot).build())
                 .build());
     }
 
@@ -424,6 +448,16 @@ public abstract class BaseAgent<C extends AgentRunContext> implements Agent {
                                    Throwable cause,
                                    String errorCode,
                                    String errorMessage) {
+        finishRun(context, terminalState, actions, cause, errorCode, errorMessage, List.of());
+    }
+
+    private void finishRun(C context,
+                           AgentRunState terminalState,
+                           RuntimeActions actions,
+                           Throwable cause,
+                           String errorCode,
+                           String errorMessage,
+                           List<HumanInTheLoopInfo> completionInteractions) {
         // 设置结束状态
         if (!actions.getStateMachine().tryFinalize(terminalState)) {
             return;
@@ -444,13 +478,21 @@ public abstract class BaseAgent<C extends AgentRunContext> implements Agent {
         if (terminalState == AgentRunState.CANCELLED) {
             actions.cancelResultEvent();
         } else {
+            AgentCompleteInfo completeInfo = context.buildCompleteInfo();
+            if (completeInfo == null && !context.getMedia().isEmpty()) {
+                completeInfo = AgentCompleteInfo.builder().build();
+            }
+            if (completeInfo != null) {
+                completeInfo.setMedia(context.getMedia());
+            }
             // 构建运行结果对象 并且发射到结果发射器
             AgentRunResult runResult = AgentRunResult.builder()
                     .runId(context.getRunId())
                     .conversationId(context.getConversationId())
-                    .humanInTheLoopInfos(context.getHumanInTheLoopInfos())
+                    .humanInTheLoopInfos(terminalState == AgentRunState.COMPLETED
+                            ? completionInteractions : context.getHumanInTheLoopInfos())
                     .state(terminalState)
-                    .completeInfo(context.buildCompleteInfo())
+                    .completeInfo(completeInfo)
                     .errorCode(errorCode)
                     .errorMessage(errorMessage)
                     .build();
@@ -548,5 +590,20 @@ public abstract class BaseAgent<C extends AgentRunContext> implements Agent {
      */
     protected final void emit(RuntimeActions actions, String content, MessageContentType type) {
         AgentResponseEmitter.emit(actions, content, type);
+    }
+
+    /**
+     * 向客户端发送一条完整媒体消息，并记录到本次Run的结构化结果。
+     *
+     * <p>只供子类明确选择需要对用户发布的媒体；工具结果不会自动进入该链路。</p>
+     *
+     * @param context 本次请求独立上下文
+     * @param actions 本次请求的资源与事件权柄
+     * @param media 已经可读取的媒体资源
+     */
+    protected final void emitMedia(C context, RuntimeActions actions, AgentMediaInfo media) {
+        if (context.recordMedia(media)) {
+            AgentResponseEmitter.emitMedia(actions, media);
+        }
     }
 }

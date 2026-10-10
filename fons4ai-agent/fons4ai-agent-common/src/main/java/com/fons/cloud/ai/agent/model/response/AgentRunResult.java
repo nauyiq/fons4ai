@@ -31,7 +31,7 @@ public final class AgentRunResult {
     private final String messageId;
 
     /**
-     * 不可逆终态
+     * 当前执行分段的收口状态；WAITING_APPROVAL 表示审批暂停，其余终态按状态机解释。
      */
     private final AgentRunState state;
 
@@ -51,7 +51,10 @@ public final class AgentRunResult {
     private final AgentCompleteInfo completeInfo;
 
     /**
-     * 当前执行分段尚未解决的 HITL 信息快照。
+     * 当前执行分段交给用户的结构化交互信息。
+     *
+     * <p>WAITING_APPROVAL 时为待审批快照；COMPLETED 时可以包含 INPUT_REQUIRED，
+     * 表示本轮正常结束、用户通过同一会话的新请求补充信息。不得仅凭列表非空判断为审批等待。</p>
      */
     private final List<HumanInTheLoopInfo> humanInTheLoopInfos;
 
@@ -65,7 +68,7 @@ public final class AgentRunResult {
      * @param errorCode 错误码
      * @param errorMessage 错误信息
      * @param completeInfo 完成信息
-     * @param humanInTheLoopInfos HITL信息快照
+     * @param humanInTheLoopInfos 本分段对用户发布的HITL信息
      */
     @Builder
     private AgentRunResult(String runId,

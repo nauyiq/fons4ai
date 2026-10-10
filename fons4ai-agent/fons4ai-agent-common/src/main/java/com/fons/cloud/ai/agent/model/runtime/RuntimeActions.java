@@ -13,6 +13,7 @@ import reactor.core.publisher.Sinks;
 import java.io.Serial;
 import java.io.Serializable;
 import java.util.Set;
+import java.util.concurrent.ArrayBlockingQueue;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicReference;
@@ -29,6 +30,11 @@ public class RuntimeActions implements Serializable {
 
     @Serial
     private static final long serialVersionUID = 1L;
+
+    /**
+     * 单个默认 Run 允许积压的最大过程事件数。
+     */
+    private static final int DEFAULT_EVENT_BUFFER_CAPACITY = 1024;
 
     /**
      * 运行时上下文
@@ -52,7 +58,8 @@ public class RuntimeActions implements Serializable {
     /**
      * 客户端事件流，单播 + 背压缓冲。
      */
-    private final Sinks.Many<String> eventSink = Sinks.many().unicast().onBackpressureBuffer();
+    private final Sinks.Many<String> eventSink = Sinks.many().unicast().onBackpressureBuffer(
+            new ArrayBlockingQueue<>(DEFAULT_EVENT_BUFFER_CAPACITY));
 
     /**
      * 主底层订阅（模型或 Graph 流），绑定后可由新的订阅替换。

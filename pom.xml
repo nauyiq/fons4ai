@@ -31,6 +31,7 @@
         <flatten.maven.plugin>1.1.0</flatten.maven.plugin>
         <maven.jar.plugin.version>3.1.1</maven.jar.plugin.version>
         <maven.surefire.plugin.version>3.5.4</maven.surefire.plugin.version>
+        <opentelemetry.version>1.61.0</opentelemetry.version>
 
         <!-- spring相关 -->
         <springboot.version>3.5.8</springboot.version>
@@ -48,6 +49,15 @@
 
     <dependencyManagement>
         <dependencies>
+            <!-- 必须放在 spring-boot-dependencies 之前：BOM import 冲突时先声明者优先，用于覆盖 Spring Boot 管理的旧版 OpenTelemetry -->
+            <dependency>
+                <groupId>io.opentelemetry</groupId>
+                <artifactId>opentelemetry-bom</artifactId>
+                <version>${opentelemetry.version}</version>
+                <type>pom</type>
+                <scope>import</scope>
+            </dependency>
+
             <!-- spring boot -->
             <dependency>
                 <groupId>org.springframework.boot</groupId>

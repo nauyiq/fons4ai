@@ -16,6 +16,7 @@ public enum AgentResultCode implements Result {
     //  ==================== 参数异常 ====================
     CHAT_MESSAGES_IS_EMPTY("AG100001", "消息不能为空"),
     AGENT_INPUT_CONTENT_INVALID("AG100002", "Agent输入内容不合法"),
+    AGENT_MEDIA_INFO_INVALID("AG100003", "Agent输出媒体信息不合法"),
 
     //  ==================== 数据异常 ====================
     AGENT_CHAT_MEMORY_NOT_INIT("AG200001", "agent记忆未初始化"),
