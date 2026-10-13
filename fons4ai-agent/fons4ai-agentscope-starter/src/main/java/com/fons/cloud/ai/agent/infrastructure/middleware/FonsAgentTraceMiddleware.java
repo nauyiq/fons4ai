@@ -4,11 +4,13 @@ import com.alibaba.fastjson2.JSON;
 import com.fons.cloud.ai.agent.infrastructure.observability.AgentScopeTraceLifecycle;
 import com.fons.cloud.ai.agent.observability.api.AgentTraceRecorder;
 import com.fons.cloud.ai.agent.observability.api.AgentTraceRun;
+import com.fons.cloud.ai.agent.observability.core.NativeTraceContext;
 import com.fons.cloud.ai.agent.observability.model.TraceEvent;
 import com.fons.cloud.ai.agent.observability.model.TraceEventType;
 import com.fons.cloud.ai.agent.observability.model.TraceRunContext;
 import com.fons.cloud.ai.agent.observability.model.TraceStatus;
 import io.agentscope.core.agent.Agent;
+import io.agentscope.core.ReActAgent;
 import io.agentscope.core.agent.RuntimeContext;
 import io.agentscope.core.event.AgentEvent;
 import io.agentscope.core.event.AgentResultEvent;
@@ -30,7 +32,10 @@ import io.agentscope.core.middleware.MiddlewareBase;
 import io.agentscope.core.middleware.ModelCallInput;
 import io.agentscope.core.model.ChatUsage;
 import io.agentscope.core.model.GenerateOptions;
+import io.agentscope.core.tracing.OtelTracingMiddleware;
 import io.opentelemetry.api.trace.Span;
+import io.opentelemetry.context.Context;
+import io.opentelemetry.context.Scope;
 import lombok.extern.slf4j.Slf4j;
 import reactor.core.publisher.Flux;
 import reactor.core.publisher.Mono;
@@ -58,7 +63,8 @@ import java.util.function.Function;
  * 原生AgentScope事件流结束不会直接结束Run Trace。</p>
  *
  * <p>原生 {@code OtelTracingMiddleware} 的默认 order 为 1，本中间件 order 为 0。
- * 同时注册时 OTel Span 位于外层，Langfuse TraceSink 可以复用当前 Span 上下文。</p>
+ * 同时注册时 OTel Span 位于外层，Langfuse TraceSink 仅补充原生 Span，不重复创建节点。
+ * 未注册原生 OTel 中间件的 Agent 继续使用事件投影；JSONL 始终保留完整审计记录。</p>
  *
  * @author hongqy
  */
@@ -106,13 +112,17 @@ public final class FonsAgentTraceMiddleware implements MiddlewareBase {
                                     Function<AgentInput, Flux<AgentEvent>> next) {
         return Flux.defer(() -> {
             AgentScopeTraceLifecycle traceLifecycle = context.get(AgentScopeTraceLifecycle.class);
-            if (!enabled
-                    || traceLifecycle == null
-                    || context.get(TraceSession.class) != null) {
+            TraceSession inheritedSession = context.get(TraceSession.class);
+            if (!enabled || traceLifecycle == null
+                    || (inheritedSession != null && inheritedSession.ownsInvocation(context))) {
                 return next.apply(input);
             }
 
-            TraceSession session = prepareSession(agent, context, traceLifecycle);
+            // 子 RuntimeContext 会浅拷贝父会话。只复用根 Run，不能复用提示词/模型节点等可变状态。
+            // 同一 RuntimeContext 的下一执行段可能先于上一段 doFinally 订阅，不能恢复旧段会话。
+            TraceSession parentSession = inheritedSession != null
+                    && inheritedSession.ownerContext != context ? inheritedSession : null;
+            TraceSession session = prepareSession(agent, context, traceLifecycle, parentSession);
             context.put(TraceSession.class, session);
             safely("bind AgentScope trace", () -> session.bind(input));
             try {
@@ -120,13 +130,17 @@ public final class FonsAgentTraceMiddleware implements MiddlewareBase {
                         .doOnNext(event -> safely(
                                 "observe AgentScope agent event",
                                 () -> session.observe(event)))
+                        .doOnComplete(() -> safely("complete AgentScope agent observation",
+                                () -> session.finishAgent(TraceStatus.SUCCEEDED, null)))
                         .doOnError(error -> safely(
                                 "record AgentScope trace failure",
                                 () -> session.recordFailure(error)))
-                        .doFinally(signal -> clearSession(context, session));
+                        .doOnCancel(() -> safely("cancel AgentScope agent observation",
+                                () -> session.finishAgent(TraceStatus.CANCELLED, null)))
+                        .doFinally(signal -> restoreSession(context, session, parentSession));
             } catch (Throwable error) {
                 safely("record AgentScope trace failure", () -> session.recordFailure(error));
-                clearSession(context, session);
+                restoreSession(context, session, parentSession);
                 return Flux.error(error);
             }
         });
@@ -226,8 +240,23 @@ public final class FonsAgentTraceMiddleware implements MiddlewareBase {
 
     private TraceSession prepareSession(Agent agent,
                                         RuntimeContext context,
-                                        AgentScopeTraceLifecycle traceLifecycle) {
+                                        AgentScopeTraceLifecycle traceLifecycle,
+                                        TraceSession inheritedSession) {
         try {
+            boolean rootAgent = inheritedSession == null;
+            AgentTraceRun existingRun = rootAgent
+                    ? traceLifecycle.currentTraceRun() : inheritedSession.traceRun;
+            // 只有已明确注册原生执行 Span 的 Agent 才进入协作投影，HTTP Span 不构成判断依据。
+            boolean nativeTracing = agent instanceof ReActAgent reactAgent
+                    && reactAgent.getMiddlewares().stream()
+                            .anyMatch(OtelTracingMiddleware.class::isInstance);
+            if (existingRun != null) {
+                return new TraceSession(existingRun, traceLifecycle, context,
+                        agent, rootAgent, nativeTracing);
+            }
+            if (!rootAgent) {
+                return TraceSession.disabled();
+            }
             String runId = stringAttribute(context, RUN_ID_ATTRIBUTE);
             if (isBlank(runId)) {
                 runId = "agentscope-" + UUID.randomUUID();
@@ -265,16 +294,19 @@ public final class FonsAgentTraceMiddleware implements MiddlewareBase {
             AgentTraceRun traceRun = recorder.prepare(traceContext);
             return traceRun == null
                     ? TraceSession.disabled()
-                    : new TraceSession(traceRun, traceLifecycle);
+                    : new TraceSession(traceRun, traceLifecycle, context,
+                            agent, true, nativeTracing);
         } catch (Throwable error) {
             logFailure("prepare AgentScope trace", error);
             return TraceSession.disabled();
         }
     }
 
-    private static void clearSession(RuntimeContext context, TraceSession session) {
+    private static void restoreSession(RuntimeContext context,
+                                       TraceSession session,
+                                       TraceSession inheritedSession) {
         if (context.get(TraceSession.class) == session) {
-            context.put(TraceSession.class, null);
+            context.put(TraceSession.class, inheritedSession);
         }
     }
 
@@ -409,7 +441,9 @@ public final class FonsAgentTraceMiddleware implements MiddlewareBase {
     }
 
     /**
-     * 一次 RuntimeContext 对应的轨迹会话。
+     * 一次原生 Agent 调用对应的观察会话。
+     *
+     * <p>子 Agent 共享根 Run 权柄和不可变业务关联，但拥有独立的提示词、模型节点和输出状态。</p>
      *
      * @author hongqy
      */
@@ -421,6 +455,33 @@ public final class FonsAgentTraceMiddleware implements MiddlewareBase {
         /** 由common状态事件驱动的Run Trace生命周期。 */
         private final AgentScopeTraceLifecycle traceLifecycle;
 
+        /** 当前会话所属的 RuntimeContext，区分重入和继承父会话的子调用。 */
+        private final RuntimeContext ownerContext;
+
+        /** 当前实际执行者的原生 Agent ID。 */
+        private final String agentId;
+
+        /** 当前实际执行者名称，不覆盖根 Trace 名称。 */
+        private final String agentName;
+
+        /** 是否由本调用负责根 Run 的输入、最终输出和异常。 */
+        private final boolean rootAgent;
+
+        /** 是否明确注册了原生 OTel 中间件，允许向其执行 Span 补充数据。 */
+        private final boolean nativeTracing;
+
+        /** 本次原生 Agent 调用的 OTel 上下文，不能用于替代模型/工具上下文。 */
+        private final Context agentContext;
+
+        /** 本次原生调用的独立节点标识。 */
+        private final String agentNodeId = "agent:" + UUID.randomUUID();
+
+        /** 是否已经记录本次原生调用的最终输出。 */
+        private final AtomicBoolean agentFinished = new AtomicBoolean();
+
+        /** 原生调用是否以等待用户确认为正常结束方式收口。 */
+        private final AtomicBoolean approvalRequired = new AtomicBoolean();
+
         /** 最终生效的系统提示词。 */
         private final AtomicReference<String> systemPrompt = new AtomicReference<>();
 
@@ -428,17 +489,33 @@ public final class FonsAgentTraceMiddleware implements MiddlewareBase {
         private final AtomicReference<String> latestModelNodeId = new AtomicReference<>();
 
         private TraceSession(AgentTraceRun traceRun,
-                             AgentScopeTraceLifecycle traceLifecycle) {
+                             AgentScopeTraceLifecycle traceLifecycle,
+                             RuntimeContext ownerContext,
+                             Agent agent,
+                             boolean rootAgent,
+                             boolean nativeTracing) {
             this.traceRun = traceRun;
             this.traceLifecycle = traceLifecycle;
+            this.ownerContext = ownerContext;
+            this.agentId = agent == null ? null : agent.getAgentId();
+            this.agentName = agent == null ? null : agent.getName();
+            this.rootAgent = rootAgent;
+            this.nativeTracing = nativeTracing;
+            this.agentContext = Context.current();
         }
 
         private static TraceSession disabled() {
-            return new TraceSession(null, null);
+            return new TraceSession(null, null, null, null, false, false);
         }
 
         private boolean enabled() {
             return traceRun != null && traceLifecycle != null;
+        }
+
+        private boolean ownsInvocation(RuntimeContext context) {
+            return ownerContext == context && !agentFinished.get()
+                    && (!nativeTracing || Span.fromContext(agentContext).getSpanContext()
+                            .equals(Span.current().getSpanContext()));
         }
 
         private void bind(AgentInput input) {
@@ -447,8 +524,19 @@ public final class FonsAgentTraceMiddleware implements MiddlewareBase {
             }
             Map<String, Object> inputSnapshot = new LinkedHashMap<>();
             put(inputSnapshot, "messages", snapshot(input == null ? null : input.msgs()));
-            traceLifecycle.bind(traceRun, inputSnapshot);
-            if (!isBlank(traceRun.context().originRunId())) {
+            if (rootAgent) {
+                try (Scope ignored = projectionContext(agentContext,
+                        NativeTraceContext.Mode.ENRICH_AGENT).makeCurrent()) {
+                    traceLifecycle.bind(traceRun, inputSnapshot);
+                }
+            }
+            if (nativeTracing || !rootAgent) {
+                // RUN_STARTED 只触发一次；每个执行段仍需给自己的 invoke_agent Span 补充 input。
+                record(event(TraceEventType.STEP_STARTED, agentNodeId, null,
+                        inputSnapshot, Map.of("status", TraceStatus.RUNNING.name())),
+                        agentContext, NativeTraceContext.Mode.ENRICH_AGENT);
+            }
+            if (rootAgent && !isBlank(traceRun.context().originRunId())) {
                 record(event(
                         TraceEventType.HITL_RESUMED,
                         null,
@@ -463,9 +551,16 @@ public final class FonsAgentTraceMiddleware implements MiddlewareBase {
                 return;
             }
             switch (agentEvent) {
-                case AgentResultEvent resultEvent ->
-                        traceLifecycle.recordOutput(snapshot(resultEvent.getResult()));
+                case AgentResultEvent resultEvent -> {
+                    Object result = snapshot(resultEvent.getResult());
+                    if (rootAgent) {
+                        traceLifecycle.recordOutput(result);
+                    }
+                    // 在结果向下游 common 状态机传播之前补齐输出，避免 Span 已结束或 Run 已收口。
+                    finishAgent(TraceStatus.SUCCEEDED, result);
+                }
                 case RequireUserConfirmEvent confirmEvent -> {
+                    approvalRequired.set(true);
                     Map<String, Object> data = new LinkedHashMap<>();
                     put(data, "replyId", confirmEvent.getReplyId());
                     data.put("toolCalls", snapshot(confirmEvent.getToolCalls()));
@@ -482,6 +577,7 @@ public final class FonsAgentTraceMiddleware implements MiddlewareBase {
         }
 
         private ModelState startModel(ModelCallInput input) {
+            Context modelContext = Context.current();
             String nodeId = "model:" + UUID.randomUUID();
             latestModelNodeId.set(nodeId);
 
@@ -497,8 +593,9 @@ public final class FonsAgentTraceMiddleware implements MiddlewareBase {
             nodeAttributes.put("toolCount", input.tools() == null ? 0 : input.tools().size());
             String modelName = input.model() == null ? null : input.model().getModelName();
             put(nodeAttributes, "modelName", modelName);
-            record(event(TraceEventType.MODEL_CALL_STARTED, nodeId, null, data, nodeAttributes));
-            return new ModelState(this, nodeId, modelName);
+            record(event(TraceEventType.MODEL_CALL_STARTED, nodeId, null, data, nodeAttributes),
+                    modelContext, NativeTraceContext.Mode.ENRICH_MODEL);
+            return new ModelState(this, nodeId, modelName, modelContext);
         }
 
         private ActingState startActing(ActingInput input) {
@@ -509,15 +606,46 @@ public final class FonsAgentTraceMiddleware implements MiddlewareBase {
         }
 
         private void recordFailure(Throwable failure) {
-            if (enabled()) {
+            if (enabled() && rootAgent) {
                 traceLifecycle.recordFailure(failure);
+            }
+            finishAgent(TraceStatus.FAILED, Map.of("error", error(failure)));
+        }
+
+        private void finishAgent(TraceStatus status, Object result) {
+            if (!enabled() || !agentFinished.compareAndSet(false, true)) {
+                return;
+            }
+            // 非协作模式的根调用仍由 RUN_FINISHED 展示输出，保持原有投影行为。
+            if (nativeTracing || !rootAgent) {
+                TraceStatus observedStatus = status == TraceStatus.SUCCEEDED && approvalRequired.get()
+                        ? TraceStatus.SUSPENDED : status;
+                record(event(TraceEventType.STEP_FINISHED, agentNodeId, null, result,
+                        Map.of("status", observedStatus.name())),
+                        agentContext, NativeTraceContext.Mode.ENRICH_AGENT);
             }
         }
 
         private void record(TraceEvent traceEvent) {
+            record(traceEvent, agentContext, NativeTraceContext.Mode.EVENT);
+        }
+
+        private void record(TraceEvent traceEvent, Context context, NativeTraceContext.Mode mode) {
             if (enabled()) {
-                traceLifecycle.record(traceEvent);
+                Map<String, Object> detailAttributes = new LinkedHashMap<>(traceEvent.attributes());
+                put(detailAttributes, "agentId", agentId);
+                put(detailAttributes, "agentName", agentName);
+                TraceEvent detail = new TraceEvent(traceEvent.type(), traceEvent.nodeId(),
+                        traceEvent.parentNodeId(), traceEvent.timestamp(), traceEvent.data(), detailAttributes);
+                try (Scope ignored = projectionContext(context, mode).makeCurrent()) {
+                    traceLifecycle.record(detail);
+                }
             }
+        }
+
+        private Context projectionContext(Context context, NativeTraceContext.Mode mode) {
+            return NativeTraceContext.withMode(context,
+                    nativeTracing ? mode : NativeTraceContext.Mode.EVENT);
         }
     }
 
@@ -537,6 +665,9 @@ public final class FonsAgentTraceMiddleware implements MiddlewareBase {
         /** 模型名称。 */
         private final String modelName;
 
+        /** 开始模型调用时捕获的原生模型 Span 上下文，保证跨线程结束仍补充到同一节点。 */
+        private final Context modelContext;
+
         /** 节点开始时的单调时钟值。 */
         private final long startedNanos = System.nanoTime();
 
@@ -555,10 +686,11 @@ public final class FonsAgentTraceMiddleware implements MiddlewareBase {
         /** 是否已经记录模型结束事件。 */
         private final AtomicBoolean finished = new AtomicBoolean();
 
-        private ModelState(TraceSession session, String nodeId, String modelName) {
+        private ModelState(TraceSession session, String nodeId, String modelName, Context modelContext) {
             this.session = session;
             this.nodeId = nodeId;
             this.modelName = modelName;
+            this.modelContext = modelContext;
         }
 
         private void observe(AgentEvent agentEvent) {
@@ -599,7 +731,7 @@ public final class FonsAgentTraceMiddleware implements MiddlewareBase {
                     nodeId,
                     null,
                     response,
-                    nodeAttributes));
+                    nodeAttributes), modelContext, NativeTraceContext.Mode.ENRICH_MODEL);
         }
 
         private static void append(StringBuilder target, String value) {
@@ -616,6 +748,24 @@ public final class FonsAgentTraceMiddleware implements MiddlewareBase {
      */
     private static final class ActingState {
 
+        /** 当前批次所属的独立 Agent 观察会话。 */
+        private final TraceSession session;
+
+        /** 产生本批工具请求的模型节点 ID。 */
+        private final String parentNodeId;
+
+        /** 本次 Acting 批次节点 ID，与单个 toolCallId 区分。 */
+        private final String nodeId = "acting:" + UUID.randomUUID();
+
+        /** 原生批量工具执行 Span 的上下文。 */
+        private final Context actingContext = Context.current();
+
+        /** 工具批次开始的单调时钟值。 */
+        private final long startedNanos = System.nanoTime();
+
+        /** 是否已经收口整个批次，避免异常/取消重复投影。 */
+        private final AtomicBoolean finished = new AtomicBoolean();
+
         /** 工具请求 ID 到执行状态的映射。 */
         private final Map<String, ToolState> tools = new LinkedHashMap<>();
 
@@ -631,6 +781,16 @@ public final class FonsAgentTraceMiddleware implements MiddlewareBase {
         private ActingState(TraceSession session,
                             String parentNodeId,
                             List<ToolUseBlock> toolCalls) {
+            this.session = session;
+            this.parentNodeId = parentNodeId;
+            if (session.nativeTracing) {
+                // 原生 Acting 是批量 Span，一次写入完整输入，不能由每个工具覆盖其 input。
+                Map<String, Object> batchInput = new LinkedHashMap<>();
+                batchInput.put("toolCalls", snapshot(toolCalls));
+                session.record(event(TraceEventType.STEP_STARTED, nodeId, parentNodeId,
+                        batchInput, Map.of("status", TraceStatus.RUNNING.name())),
+                        actingContext, NativeTraceContext.Mode.ENRICH_TOOL_BATCH);
+            }
             if (toolCalls == null) {
                 return;
             }
@@ -643,7 +803,8 @@ public final class FonsAgentTraceMiddleware implements MiddlewareBase {
                         "tool:" + callId,
                         parentNodeId,
                         callId,
-                        toolCall.getName());
+                        toolCall.getName(),
+                        actingContext);
                 tools.put(callId, state);
 
                 Map<String, Object> nodeAttributes = new LinkedHashMap<>();
@@ -654,7 +815,7 @@ public final class FonsAgentTraceMiddleware implements MiddlewareBase {
                         state.nodeId,
                         parentNodeId,
                         snapshot(toolCall),
-                        nodeAttributes));
+                        nodeAttributes), actingContext, NativeTraceContext.Mode.AUDIT_ONLY);
             }
         }
 
@@ -698,11 +859,40 @@ public final class FonsAgentTraceMiddleware implements MiddlewareBase {
         private void finishUnfinished(TraceStatus status,
                                       String nativeState,
                                       Throwable failure) {
+            if (!finished.compareAndSet(false, true)) {
+                return;
+            }
             tools.values().forEach(tool -> tool.finish(
                     status,
                     nativeState,
                     null,
                     failure));
+            if (session.nativeTracing) {
+                List<Object> results = new ArrayList<>(tools.size());
+                tools.values().forEach(tool -> results.add(tool.resultSnapshot.get()));
+                Map<String, Object> output = new LinkedHashMap<>();
+                output.put("toolResults", results);
+                if (failure != null) {
+                    output.put("error", error(failure));
+                }
+                TraceStatus batchStatus = failure != null || status == TraceStatus.CANCELLED
+                        ? status : aggregateStatus();
+                Map<String, Object> batchAttributes = attributes(batchStatus, startedNanos);
+                batchAttributes.put("toolCount", tools.size());
+                session.record(event(TraceEventType.STEP_FINISHED, nodeId, parentNodeId,
+                        output, batchAttributes), actingContext, NativeTraceContext.Mode.ENRICH_TOOL_BATCH);
+            }
+        }
+
+        private TraceStatus aggregateStatus() {
+            // 批次状态只表达各工具的业务结果，不改写原生 Span 的传输层成功/失败状态。
+            for (TraceStatus status : List.of(TraceStatus.FAILED, TraceStatus.CANCELLED,
+                    TraceStatus.REJECTED, TraceStatus.SUSPENDED)) {
+                if (tools.values().stream().anyMatch(tool -> tool.status.get() == status)) {
+                    return status;
+                }
+            }
+            return TraceStatus.SUCCEEDED;
         }
     }
 
@@ -728,6 +918,15 @@ public final class FonsAgentTraceMiddleware implements MiddlewareBase {
         /** 工具名称。 */
         private final String toolName;
 
+        /** 当前工具所属原生 Acting 批次上下文，仅用于审计关联。 */
+        private final Context actingContext;
+
+        /** 已收口工具的业务状态，供批次汇总使用。 */
+        private final AtomicReference<TraceStatus> status = new AtomicReference<>();
+
+        /** 已收口工具的结构化结果，按 toolCallId 汇入批次输出。 */
+        private final AtomicReference<Map<String, Object>> resultSnapshot = new AtomicReference<>();
+
         /** 节点开始时的单调时钟值。 */
         private final long startedNanos = System.nanoTime();
 
@@ -744,12 +943,14 @@ public final class FonsAgentTraceMiddleware implements MiddlewareBase {
                           String nodeId,
                           String parentNodeId,
                           String callId,
-                          String toolName) {
+                          String toolName,
+                          Context actingContext) {
             this.session = session;
             this.nodeId = nodeId;
             this.parentNodeId = parentNodeId;
             this.callId = callId;
             this.toolName = toolName;
+            this.actingContext = actingContext;
         }
 
         private void appendText(String value) {
@@ -791,6 +992,12 @@ public final class FonsAgentTraceMiddleware implements MiddlewareBase {
             if (failure != null) {
                 result.put("error", error(failure));
             }
+            Map<String, Object> batchResult = new LinkedHashMap<>(result);
+            batchResult.put("status", status.name());
+            put(batchResult, "toolName", toolName);
+            put(batchResult, "nativeState", nativeState);
+            this.status.set(status);
+            resultSnapshot.set(batchResult);
 
             Map<String, Object> nodeAttributes = attributes(status, startedNanos);
             put(nodeAttributes, "toolName", toolName);
@@ -800,7 +1007,7 @@ public final class FonsAgentTraceMiddleware implements MiddlewareBase {
                     nodeId,
                     parentNodeId,
                     result,
-                    nodeAttributes));
+                    nodeAttributes), actingContext, NativeTraceContext.Mode.AUDIT_ONLY);
         }
     }
 }

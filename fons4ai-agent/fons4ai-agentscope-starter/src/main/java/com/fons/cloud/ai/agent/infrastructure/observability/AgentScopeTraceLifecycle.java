@@ -4,6 +4,7 @@ import com.fons.cloud.ai.agent.model.runtime.AgentRunState;
 import com.fons.cloud.ai.agent.model.runtime.AgentRunStateChangedEvent;
 import com.fons.cloud.ai.agent.model.runtime.AgentRunStateEventPublisher;
 import com.fons.cloud.ai.agent.observability.api.AgentTraceRun;
+import com.fons.cloud.ai.agent.observability.core.NativeTraceContext;
 import com.fons.cloud.ai.agent.observability.model.TraceEvent;
 import com.fons.cloud.ai.agent.observability.model.TraceStatus;
 import io.opentelemetry.context.Context;
@@ -91,7 +92,20 @@ public final class AgentScopeTraceLifecycle implements AgentRunStateEventPublish
         if (currentTraceRun == null || event == null || finished.get()) {
             return;
         }
-        safelyExecute("record AgentScope trace event", () -> currentTraceRun.record(event));
+        // 明细调用方已经位于对应 Agent / Model / Acting 上下文中，不能切回根 Agent Span。
+        safelyExecute("record AgentScope trace event", Context.current(),
+                () -> currentTraceRun.record(event));
+    }
+
+    /**
+     * 获取已绑定的根 Run 权柄，供后续原生执行段复用稳定的业务关联信息。
+     *
+     * <p>子 Agent 共享该权柄，但不能用自己的输出或状态结束根 Run。</p>
+     *
+     * @return 已绑定权柄；原生链路尚未进入时为空
+     */
+    public AgentTraceRun currentTraceRun() {
+        return traceRun.get();
     }
 
     /**
@@ -147,7 +161,8 @@ public final class AgentScopeTraceLifecycle implements AgentRunStateEventPublish
                 || !started.compareAndSet(false, true)) {
             return;
         }
-        safelyExecute("start AgentScope trace", () -> currentTraceRun.start(input.get()));
+        safelyExecute("start AgentScope trace", telemetryContext.get(),
+                () -> currentTraceRun.start(input.get()));
     }
 
     /**
@@ -161,7 +176,13 @@ public final class AgentScopeTraceLifecycle implements AgentRunStateEventPublish
                 || !finished.compareAndSet(false, true)) {
             return;
         }
-        safelyExecute("finish AgentScope trace",
+        Context context = telemetryContext.get();
+        // common 终态可能晚于原生 Span.end()。只输出独立终态事件，不再修改已结束 Span。
+        if (context != null && NativeTraceContext.currentMode(context)
+                != NativeTraceContext.Mode.EVENT) {
+            context = NativeTraceContext.withMode(context, NativeTraceContext.Mode.RUN_TERMINAL);
+        }
+        safelyExecute("finish AgentScope trace", context,
                 () -> currentTraceRun.finish(status, output.get(), failure.get()));
     }
 
@@ -187,11 +208,11 @@ public final class AgentScopeTraceLifecycle implements AgentRunStateEventPublish
      * 在捕获的OpenTelemetry上下文中执行Trace动作并隔离异常。
      *
      * @param action 动作说明
+     * @param context 当前动作对应的上下文；生命周期动作使用根上下文，明细使用节点上下文
      * @param runnable Trace动作
      */
-    private void safelyExecute(String action, Runnable runnable) {
+    private void safelyExecute(String action, Context context, Runnable runnable) {
         try {
-            Context context = telemetryContext.get();
             if (context == null) {
                 runnable.run();
                 return;

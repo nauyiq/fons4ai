@@ -35,6 +35,40 @@
             <groupId>io.agentscope</groupId>
             <artifactId>agentscope-extensions-jdbc</artifactId>
         </dependency>
+
+        <!-- 仅供手工审批验证连接 OpenAI-compatible 模型，不传递给 starter 使用方。 -->
+        <dependency>
+            <groupId>io.agentscope</groupId>
+            <artifactId>agentscope-extensions-model-openai</artifactId>
+            <scope>test</scope>
+        </dependency>
     </dependencies>
+
+    <profiles>
+        <!-- 显式启用后只编译手工验证入口，不编译或运行已有单元测试。 -->
+        <profile>
+            <id>manual-subagent-approval</id>
+            <build>
+                <plugins>
+                    <plugin>
+                        <groupId>org.apache.maven.plugins</groupId>
+                        <artifactId>maven-compiler-plugin</artifactId>
+                        <configuration>
+                            <testIncludes>
+                                <testInclude>**/manual/*.java</testInclude>
+                            </testIncludes>
+                        </configuration>
+                    </plugin>
+                    <plugin>
+                        <groupId>org.apache.maven.plugins</groupId>
+                        <artifactId>maven-surefire-plugin</artifactId>
+                        <configuration>
+                            <skipTests>true</skipTests>
+                        </configuration>
+                    </plugin>
+                </plugins>
+            </build>
+        </profile>
+    </profiles>
 
 </project>
