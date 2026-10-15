@@ -50,6 +50,14 @@
             <version>${agentscope.version}</version>
             <optional>true</optional>
         </dependency>
+
+        <!-- SDK 2.0.3工具参数片段兼容补丁；使用方自行选择模型，不自动引入DashScope。 -->
+        <dependency>
+            <groupId>io.agentscope</groupId>
+            <artifactId>agentscope-extensions-model-dashscope</artifactId>
+            <version>${agentscope.version}</version>
+            <optional>true</optional>
+        </dependency>
     </dependencies>
 
 

@@ -404,6 +404,12 @@ public abstract class BaseAgent<C extends AgentRunContext> implements Agent {
             throw BusinessRuntimeException.of(AgentResultCode.TRANSITION_APPROVAL_STATE_ERROR);
         }
 
+        // 内部HITL发布前先释放本Agent的订阅和任务租约，使整批决定可以启动新的恢复Run。
+        // 外层Pipeline租约交接和正式业务审批消息发布仍由业务调用方完成。
+        // 状态已是WAITING_APPROVAL，释放订阅触发的取消信号不会误收口为CANCELLED。
+        actions.releaseAll();
+        safelyCompleteTask(context);
+
         // 一项人工交互对应一条稳定HITL消息。
         for (HumanInTheLoopInfo hitlInfo : hitlSnapshot) {
             AgentResponseEmitter.emitHumanInTheLoop(actions, hitlInfo);
@@ -411,10 +417,6 @@ public abstract class BaseAgent<C extends AgentRunContext> implements Agent {
 
         // 结束当前流分段
         actions.completeEvents();
-        // 释放底层订阅 → CANCEL → cancelled() → WAITING_APPROVAL 守卫拦截，不误收口
-        actions.releaseAll();
-        // 释放任务租约与本地任务（审批等待期不占租约，恢复时重新注册）
-        safelyCompleteTask(context);
         // 发射 WAITING_APPROVAL 分段结果
         List<AgentMediaInfo> mediaSnapshot = context.getMedia();
         actions.completeResultEvent(AgentRunResult.builder()

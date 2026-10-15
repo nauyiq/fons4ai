@@ -9,6 +9,8 @@ import lombok.experimental.SuperBuilder;
 import lombok.extern.slf4j.Slf4j;
 
 import java.io.Serial;
+import java.util.Map;
+import java.util.concurrent.ConcurrentHashMap;
 
 /**
  * AgentScope单次Run的行为权柄。
@@ -37,11 +39,35 @@ public class AgentScopeRuntimeActions extends RuntimeActions {
     @NonNull
     protected final RuntimeContext runtimeContext;
 
+    /** 提供根节点状态存储给审批处理器，生命周期权柄仍由本Run持有。 */
+    public HarnessAgent getDelegateForApproval() {
+        return delegate;
+    }
+
+    /** 当前正在恢复的本地子节点；取消时也必须通知它们保存原生中断状态。 */
+    private final Map<RuntimeContext, HarnessAgent> recoveringChildren = new ConcurrentHashMap<>();
+
+    /** 将子节点的原生执行纳入本Run取消范围。 */
+    public void registerRecoveringChild(HarnessAgent child, RuntimeContext context) {
+        // 工厂可能返回共享Agent，按本次会话上下文登记，避免前一个子流清理后一个子流的关联。
+        recoveringChildren.put(context, child);
+        // 覆盖注册与取消同时发生的竞争，不能让晚注册的子节点继续执行。
+        if (isCancellationRequested()) {
+            child.interrupt(context);
+        }
+    }
+
+    /** 子节点流自然结束后释放取消关联，不关闭可能由下游共享的Agent实例。 */
+    public void releaseRecoveringChild(RuntimeContext context) {
+        recoveringChildren.remove(context);
+    }
+
     /**
      * 中断当前顶层HarnessAgent执行。
      */
     public void interruptNativeExecution() {
         delegate.interrupt(runtimeContext);
+        recoveringChildren.forEach((context, child) -> child.interrupt(context));
     }
 
     /**

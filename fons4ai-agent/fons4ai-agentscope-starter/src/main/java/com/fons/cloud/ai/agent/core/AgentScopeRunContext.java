@@ -8,11 +8,13 @@ import com.fons.cloud.ai.agent.model.runtime.AgentScopeCompletedToolResult;
 import com.fons.cloud.ai.agent.model.runtime.AgentScopeInputRequired;
 import com.fons.cloud.ai.agent.model.runtime.AgentScopeToolResultBuffer;
 import com.fons.cloud.ai.agent.model.runtime.AgentScopeToolResultKey;
+import com.fons.cloud.ai.agent.model.runtime.AgentScopeApprovalState;
 import io.agentscope.core.agent.RuntimeContext;
 import io.agentscope.core.event.AgentEventType;
 import io.agentscope.core.event.AllToolsDeniedEvent;
 import io.agentscope.core.event.ExceedMaxItersEvent;
 import io.agentscope.core.event.RequireUserConfirmEvent;
+import io.agentscope.core.event.RequireExternalExecutionEvent;
 import io.agentscope.core.event.RequestStopEvent;
 import io.agentscope.core.event.ToolResultDataDeltaEvent;
 import io.agentscope.core.event.ToolResultEndEvent;
@@ -29,9 +31,12 @@ import lombok.extern.slf4j.Slf4j;
 import org.apache.commons.lang3.StringUtils;
 
 import java.util.LinkedHashMap;
+import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
 import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.locks.Lock;
+import java.util.concurrent.locks.ReentrantLock;
 
 /**
  * AgentScope单次Run的状态容器。
@@ -62,6 +67,53 @@ public class AgentScopeRunContext extends AgentRunContext {
      * AgentScope本次顶层执行的最终结果消息。
      */
     private volatile Msg result;
+
+    /**
+     * 当前恢复Run取得执行权的批量审批清单；只保存可持久化数据。
+     */
+    private volatile AgentScopeApprovalState approvalBatch;
+
+    /**
+     * 清单最近一次成功保存的版本，后续状态更新必须使用此版本执行CAS。
+     */
+    private volatile long approvalBatchVersion;
+
+    /** 审批和挂起事件集合共用本Run自己的锁，仅保护写入和快照读取。 */
+    @Getter(AccessLevel.NONE)
+    private final Lock interactionLock = new ReentrantLock();
+
+    /** SDK挂起工具产生的外部执行事件；收口时必须全部对应本框架管理的原委派。 */
+    @Getter(AccessLevel.NONE)
+    @Builder.Default
+    private final List<RequireExternalExecutionEvent> externalExecutions = new ArrayList<>();
+
+    /** 缓存本轮原生挂起请求，待父子状态保存后校验恢复路由。 */
+    public void recordExternalExecution(RequireExternalExecutionEvent event) {
+        interactionLock.lock();
+        try {
+            externalExecutions.add(event);
+        } finally {
+            interactionLock.unlock();
+        }
+    }
+
+    /** 返回用于收口校验的挂起请求快照。 */
+    public List<RequireExternalExecutionEvent> getExternalExecutions() {
+        interactionLock.lock();
+        try {
+            return List.copyOf(externalExecutions);
+        } finally {
+            interactionLock.unlock();
+        }
+    }
+
+    /**
+     * 记录本Run持有的批量恢复清单与版本。
+     */
+    public void recordApprovalBatch(AgentScopeApprovalState batch, long version) {
+        this.approvalBatch = batch;
+        this.approvalBatchVersion = version;
+    }
 
     /**
      * 本轮原生工具结果携带的输入请求；只在顶层结果到达后用于common收口。
@@ -144,8 +196,13 @@ public class AgentScopeRunContext extends AgentRunContext {
      *
      * @param event AgentScope工具审批事件
      */
-    public synchronized void recordPendingApproval(RequireUserConfirmEvent event) {
-        this.pendingApprovals.putIfAbsent(event.getReplyId(), event);
+    public void recordPendingApproval(RequireUserConfirmEvent event) {
+        interactionLock.lock();
+        try {
+            this.pendingApprovals.putIfAbsent(event.getReplyId(), event);
+        } finally {
+            interactionLock.unlock();
+        }
     }
 
     /**
@@ -153,8 +210,13 @@ public class AgentScopeRunContext extends AgentRunContext {
      *
      * @return true表示存在待处理的顶层Agent审批
      */
-    public synchronized boolean hasPendingApproval() {
-        return !this.pendingApprovals.isEmpty();
+    public boolean hasPendingApproval() {
+        interactionLock.lock();
+        try {
+            return !this.pendingApprovals.isEmpty();
+        } finally {
+            interactionLock.unlock();
+        }
     }
 
     /**
@@ -162,8 +224,13 @@ public class AgentScopeRunContext extends AgentRunContext {
      *
      * @return 按照首次观察顺序排列的不可变审批快照
      */
-    public synchronized List<RequireUserConfirmEvent> getPendingApprovals() {
-        return List.copyOf(this.pendingApprovals.values());
+    public List<RequireUserConfirmEvent> getPendingApprovals() {
+        interactionLock.lock();
+        try {
+            return List.copyOf(this.pendingApprovals.values());
+        } finally {
+            interactionLock.unlock();
+        }
     }
 
     /**

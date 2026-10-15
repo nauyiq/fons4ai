@@ -20,12 +20,12 @@ public class HumanInTheLoopInfo implements Serializable {
     private static final long serialVersionUID = 1L;
 
     /**
-     * 本次人工交互的id，
+     * 本次人工交互的标识，用于关联用户决策。
      */
     private String id;
 
     /**
-     * 原始的runId
+     * 产生本次人工交互的原 Run 标识。
      */
     private String originRunId;
 
@@ -36,6 +36,26 @@ public class HumanInTheLoopInfo implements Serializable {
      * 交互来源，不承担原生执行引擎的恢复寻址。</p>
      */
     private String sourceAgent;
+
+    /**
+     * 本次中断的审批批次标识，同一批次中的多条审批共用该值。
+     */
+    private String pauseId;
+
+    /**
+     * 审批批次的状态版本，客户端整批提交时原样返回。
+     */
+    private Long pauseVersion;
+
+    /**
+     * 服务端保存的恢复路由引用；客户端无需解析原生 Agent 或 session 信息。
+     */
+    private String resumeRef;
+
+    /**
+     * 原生引擎的中断点标识，由执行适配层生成并通过审批票证保存。
+     */
+    private String checkpointId;
 
     /**
      * 人工交互的类型

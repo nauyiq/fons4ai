@@ -7,6 +7,7 @@ import com.fons.cloud.ai.agent.api.InputRequiredDecoder;
 import com.fons.cloud.ai.agent.infrastructure.handler.AgentScopeApprovalHandler;
 import com.fons.cloud.ai.agent.infrastructure.middleware.AgentScopeInputRequiredMiddleware;
 import com.fons.cloud.ai.agent.infrastructure.middleware.AgentScopeApprovalRejectMiddleware;
+import com.fons.cloud.ai.agent.infrastructure.middleware.AgentScopeSubagentHitlMiddleware;
 import com.fons.cloud.ai.agent.infrastructure.observability.AgentScopeTraceLifecycle;
 import com.fons.cloud.ai.agent.infrastructure.utils.AgentScopeMediaConverter;
 import com.fons.cloud.ai.agent.infrastructure.utils.AgentScopeMessageConverter;
@@ -48,7 +49,7 @@ import java.util.concurrent.atomic.AtomicReference;
  *
  * <p>下游只负责提供原生HarnessAgent Builder，本类统一注入框架必需的Middleware并完成构建。
  * AgentScope负责Harness能力和ReAct循环，本类只负责顶层输入转换、流式消息、工具结果观察、
- * 顶层工具审批以及common生命周期收口。子Agent、远程任务和外部工具编排继续使用AgentScope
+ * 顶层工具审批、本地子审批批量恢复以及common生命周期收口。子Agent、远程任务和外部工具编排继续使用AgentScope
  * 原生能力，或由下游自定义Agent负责。</p>
  *
  * <p>当前适配器提供以下能力：</p>
@@ -56,6 +57,7 @@ import java.util.concurrent.atomic.AtomicReference;
  *     <li>将common多模态输入转换为AgentScope {@link UserMessage}。</li>
  *     <li>桥接顶层文本、思考过程、最终媒体和纯文本工具结果。</li>
  *     <li>将顶层工具审批转换为common HITL消息，并支持APPROVE、EDIT和REJECT恢复。</li>
+ *     <li>启用subagentApprovalEnabled后，将本地同步子审批整批收口并按原会话恢复。</li>
  *     <li>可选地识别子Agent委派工具的INPUT_REQUIRED结果，受控停止父Agent并正常结束本轮。</li>
  *     <li>将common取消请求转换为顶层HarnessAgent原生中断，等待原生执行自然收口。</li>
  *     <li>通过{@link #onNativeEvent}开放原生事件的只读观察能力。</li>
@@ -63,7 +65,6 @@ import java.util.concurrent.atomic.AtomicReference;
  *
  * <p>以下能力不由当前适配器提供闭环：</p>
  * <ul>
- *     <li>子Agent审批恢复、父子Agent结果聚合和依赖屏障。</li>
  *     <li>远程子Agent任务提交、轮询、取消和结果确认。</li>
  *     <li>{@link RequireExternalExecutionEvent}对应的外部工具执行与结果回填。</li>
  *     <li>任意Middleware暂停恢复、委派工具之外的INPUT_REQUIRED和业务工作流编排。</li>
@@ -79,7 +80,9 @@ import java.util.concurrent.atomic.AtomicReference;
  *     {@link HarnessAgent.Builder}配置，不在common适配层重复抽象。</li>
  *     <li>最终消息包含Base64或本地媒体时，通过mediaUriResolver配置资源保存和客户端URI生成；
  *     HTTP(S)媒体地址可直接输出。</li>
- *     <li>需要子Agent恢复、远程任务、外部工具回填或者业务工作流闭环时，直接继承
+ *     <li>本地子审批通过subagentApprovalEnabled开启；子工厂需提供共享状态存储的原生HarnessAgent，
+ *     并安装审批拒绝中间件。存在嵌套委派的子Agent还需安装子审批中间件并关闭自动工具重放。</li>
+ *     <li>需要远程任务、外部工具回填或者其他业务工作流闭环时，直接继承
  *     {@link BaseAgent}并创建业务RunContext和RuntimeActions，使用AgentScope原生API完成编排，
  *     再调用BaseAgent提供的完成、失败、取消、审批暂停和工具结果入口。</li>
  * </ul>
@@ -148,6 +151,14 @@ public class AgentScopeHarnessAgent extends BaseAgent<AgentScopeRunContext> impl
     protected boolean inputRequiredEnabled = false;
 
     /**
+     * 是否接管本地同步子Agent审批；本批工具全部收口后暂停，恢复时整批提交。
+     * 要求父子使用可重建的原生HarnessAgent及共享、支持CAS的StateStore。
+     * 默认关闭，保留现有单Agent审批及原生委派行为。
+     */
+    @Builder.Default
+    protected boolean subagentApprovalEnabled = false;
+
+    /**
      * 子Agent最终回复的输入请求解析契约，不负责业务字段或子Agent编排。
      */
     @Builder.Default
@@ -172,6 +183,7 @@ public class AgentScopeHarnessAgent extends BaseAgent<AgentScopeRunContext> impl
                 ? builder.humanInTheLoopDataConverter$value
                 : DefaultHumanInTheLoopDataConverter.getInstance();
         this.inputRequiredEnabled = builder.inputRequiredEnabled$set && builder.inputRequiredEnabled$value;
+        this.subagentApprovalEnabled = builder.subagentApprovalEnabled$set && builder.subagentApprovalEnabled$value;
         this.inputRequiredDecoder = builder.inputRequiredDecoder$set
                 ? builder.inputRequiredDecoder$value : DefaultInputRequiredDecoder.getInstance();
         this.mediaUriResolver = builder.mediaUriResolver;
@@ -207,11 +219,20 @@ public class AgentScopeHarnessAgent extends BaseAgent<AgentScopeRunContext> impl
         HarnessAgent harnessAgent = null;
         try {
             delegateBuilder.middleware(AgentScopeApprovalRejectMiddleware.getInstance());
+            if (subagentApprovalEnabled) {
+                // 恢复必须回填原始委派调用，禁止SDK将挂起的spawn/send自动重执行。
+                delegateBuilder.enablePendingToolRecovery(false)
+                        .middleware(new AgentScopeSubagentHitlMiddleware(this::getDelegate));
+            }
             if (inputRequiredEnabled) {
                 delegateBuilder.middleware(new AgentScopeInputRequiredMiddleware(inputRequiredDecoder,
                         () -> getDelegate().getDelegate()));
             }
             harnessAgent = delegateBuilder.build();
+            if (subagentApprovalEnabled && (harnessAgent.getStateStore() == null
+                    || !harnessAgent.getStateStore().supportsVersioning())) {
+                throw SystemIntervalException.of("本地子审批需要支持CAS的共享AgentStateStore");
+            }
             validateFrameworkMiddlewares(harnessAgent);
             log.info("Initialized AgentScope HarnessAgent, agentName:{}", agentName);
             return harnessAgent;
@@ -288,8 +309,20 @@ public class AgentScopeHarnessAgent extends BaseAgent<AgentScopeRunContext> impl
      */
     @Override
     protected Disposable streamExecute(AgentScopeRunContext context, RuntimeActions actions) {
-        return Flux.defer(() -> executeAgentScopeSegment(
-                        context, actions, createAgentScopeMessage(context)))
+        return Flux.defer(() -> {
+                    if (subagentApprovalEnabled) {
+                        // 子恢复先于父事件流，兼容检查必须在任何获批工具执行前完成。
+                        AgentScopeSubagentHitlMiddleware.validateRegistryPatch();
+                        if (context.getRequest().getHitlRequestInfo() != null) {
+                            // 先恢复全部子节点，再把齐备结果一次性回填给父节点。
+                            return APPROVAL_HANDLER.prepareBatchResume(context, getDelegate(),
+                                            humanInTheLoopDataConverter, (AgentScopeRuntimeActions) actions)
+                                    .flatMapMany(messages -> executeAgentScopeSegment(context, actions, messages));
+                        }
+                        APPROVAL_HANDLER.validateOrdinaryRequest(context, getDelegate());
+                    }
+                    return executeAgentScopeSegment(context, actions, List.of(createAgentScopeMessage(context)));
+                })
                 .subscribeOn(Schedulers.boundedElastic())
                 .doOnComplete(() -> finishSegment(context, actions))
                 .onErrorMap(this::normalizeError)
@@ -300,6 +333,17 @@ public class AgentScopeHarnessAgent extends BaseAgent<AgentScopeRunContext> impl
                             cancelled(context, actions);
                         }
                     } finally {
+                        if (subagentApprovalEnabled && signal != SignalType.ON_COMPLETE
+                                && (context.getState() == AgentRunState.RUNNING
+                                || context.getState() == AgentRunState.CANCELLED
+                                || context.getState() == AgentRunState.FAILED)) {
+                            // 异常或取消不能把已接受的批次重新开放，避免工具副作用被静默重放。
+                            try {
+                                APPROVAL_HANDLER.finishBatchResume(context, getDelegate(), true);
+                            } catch (RuntimeException exception) {
+                                log.error("Failed persist approval recovery failure, runId:{}", context.getRunId(), exception);
+                            }
+                        }
                         // 原生流结束后清理尚未收到End事件的工具结果缓冲。
                         context.clearToolResultBuffers();
                     }
@@ -315,18 +359,18 @@ public class AgentScopeHarnessAgent extends BaseAgent<AgentScopeRunContext> impl
      *
      * @param context 当前Run上下文
      * @param actions 当前Run行为权柄
-     * @param message 当前原生分段的输入消息
+     * @param messages 当前原生分段的完整输入消息，一次调用内消费
      * @return AgentScope顶层事件流
      */
     private Flux<AgentEvent> executeAgentScopeSegment(AgentScopeRunContext context,
                                                       RuntimeActions actions,
-                                                      Msg message) {
+                                                      List<Msg> messages) {
         if (actions.isCancellationRequested()
                 || context.getState() != AgentRunState.RUNNING) {
             return Flux.empty();
         }
 
-        return getDelegate().streamEvents(message, context.getRuntimeContext())
+        return getDelegate().streamEvents(messages, context.getRuntimeContext())
                 // 串行处理原生回调，避免并发修改Context和乱序输出客户端消息。
                 .publishOn(Schedulers.boundedElastic(), 1)
                 .doOnNext(event -> handleEvent(context, actions, event));
@@ -347,6 +391,18 @@ public class AgentScopeHarnessAgent extends BaseAgent<AgentScopeRunContext> impl
                 .request(request)
                 .runtimeContext(createRuntimeContext(request, runId))
                 .build();
+    }
+
+    /**
+     * 整批审批恢复前的只读校验，供业务层在占用票证前检查全部决定及编辑参数。
+     * 不创建Run、不注册租约、不取得CAS执行权；运行时会再次校验以覆盖并发变化。
+     */
+    public void validateApprovalResume(AgentRequest request) {
+        if (!subagentApprovalEnabled || request == null || request.getHitlRequestInfo() == null) {
+            throw SystemIntervalException.of("本地整批审批恢复未启用或请求为空");
+        }
+        AgentScopeSubagentHitlMiddleware.validateRegistryPatch();
+        APPROVAL_HANDLER.validateBatchResume(createRunContext(request), getDelegate(), humanInTheLoopDataConverter);
     }
 
     /**
@@ -413,9 +469,14 @@ public class AgentScopeHarnessAgent extends BaseAgent<AgentScopeRunContext> impl
             case RequireUserConfirmEvent approvalEvent ->
                     context.recordPendingApproval(approvalEvent);
 
-            // common适配器不接管外部工具执行，由下游自定义Agent完成原生闭环。
-            case RequireExternalExecutionEvent executionEvent ->
+            case RequireExternalExecutionEvent executionEvent -> {
+                if (subagentApprovalEnabled) {
+                    // SDK也以此事件表示本地委派挂起；收口时必须核对每个原调用的可信子路由。
+                    context.recordExternalExecution(executionEvent);
+                } else {
                     context.recordUnsupportedInteraction(executionEvent.getType());
+                }
+            }
 
             // 聚合模型正文增量，并向客户端发送统一文本消息。
             case TextBlockDeltaEvent textEvent -> {
@@ -576,6 +637,9 @@ public class AgentScopeHarnessAgent extends BaseAgent<AgentScopeRunContext> impl
             return;
         }
 
+        if (subagentApprovalEnabled) {
+            APPROVAL_HANDLER.finishBatchResume(context, getDelegate(), false);
+        }
         publishFinalMedia(context, actions);
         complete(context, actions);
     }
@@ -625,6 +689,10 @@ public class AgentScopeHarnessAgent extends BaseAgent<AgentScopeRunContext> impl
                 .build();
         context.getFinalAnswer().setLength(0);
         context.getFinalAnswer().append(request.getQuestion());
+        if (subagentApprovalEnabled) {
+            // 批次终态必须先落库，再向业务发布输入请求和成功结果；保存失败不能先报告完成。
+            APPROVAL_HANDLER.finishBatchResume(context, getDelegate(), false);
+        }
         publishHumanInTheLoop(context, actions, hitlInfo);
         completeWithInputRequired(context, actions, hitlInfo);
         return true;
@@ -639,6 +707,16 @@ public class AgentScopeHarnessAgent extends BaseAgent<AgentScopeRunContext> impl
      */
     private boolean finishApprovals(AgentScopeRunContext context,
                                     RuntimeActions actions) {
+        if (subagentApprovalEnabled) {
+            List<HumanInTheLoopInfo> batch = APPROVAL_HANDLER.prepareBatchApprovals(
+                    context, getDelegate(), agentName, humanInTheLoopDataConverter);
+            if (batch.isEmpty()) {
+                return false;
+            }
+            // 到这里原生父子流均已结束，恢复清单也已落库；common只暂停本Run一次。
+            pauseForApprovals(context, actions, batch);
+            return true;
+        }
         List<RequireUserConfirmEvent> pendingApprovals = context.getPendingApprovals();
         if (pendingApprovals.isEmpty()) {
             return false;
@@ -679,8 +757,9 @@ public class AgentScopeHarnessAgent extends BaseAgent<AgentScopeRunContext> impl
     /**
      * 在AgentScope已保存拒绝结果后收口common审批拒绝Run。
      *
-     * <p>拒绝恢复必须同时观察到全部工具拒绝事件、对应停止事件以及最终生成原因，
-     * 避免原生循环继续推理后被误判为审批拒绝已经安全结束。</p>
+     * <p>只有受信的顶层全拒绝恢复请求才会进入此方法，并且必须取得原生全拒绝终态。
+     * SDK确认消息的全拒绝短路路径可能只输出最终结果，不输出工具拒绝或停止事件；
+     * 因此过程事件仅用于检查冲突，不能作为完成拒绝恢复的必需条件。</p>
      *
      * @param context 当前Run上下文
      * @param actions 当前Run行为权柄
@@ -689,9 +768,8 @@ public class AgentScopeHarnessAgent extends BaseAgent<AgentScopeRunContext> impl
         RequestStopEvent stopRequest = context.getStopRequest();
         boolean rejected = !context.hasUnsupportedInteraction()
                 && !context.hasPendingApproval()
-                && context.getAllToolsDenied() != null
-                && stopRequest != null
-                && stopRequest.getGenerateReason() == GenerateReason.ALL_TOOLS_DENIED
+                && (stopRequest == null
+                || stopRequest.getGenerateReason() == GenerateReason.ALL_TOOLS_DENIED)
                 && context.getResult() != null
                 && context.getResult().getGenerateReason() == GenerateReason.ALL_TOOLS_DENIED;
         if (!rejected) {
@@ -700,8 +778,11 @@ public class AgentScopeHarnessAgent extends BaseAgent<AgentScopeRunContext> impl
             return;
         }
 
-        log.info("AgentScope approval was rejected, runId:{}, toolCount:{}",
-                context.getRunId(), context.getAllToolsDenied().getDeniedToolCalls().size());
+        log.info("AgentScope approval was rejected, runId:{}, reason:{}",
+                context.getRunId(), context.getResult().getGenerateReason());
+        if (subagentApprovalEnabled) {
+            APPROVAL_HANDLER.finishBatchResume(context, getDelegate(), false);
+        }
         finishApprovalRejected(context, actions, null);
     }
 
@@ -803,6 +884,13 @@ public class AgentScopeHarnessAgent extends BaseAgent<AgentScopeRunContext> impl
                                    Throwable cause,
                                    String errorCode,
                                    String errorMessage) {
+        if (subagentApprovalEnabled) {
+            try {
+                APPROVAL_HANDLER.finishBatchResume(context, getDelegate(), true);
+            } catch (RuntimeException exception) {
+                log.error("Failed persist approval batch failure, runId:{}", context.getRunId(), exception);
+            }
+        }
         AgentScopeTraceLifecycle traceLifecycle = context.getRuntimeContext()
                 .get(AgentScopeTraceLifecycle.class);
         if (traceLifecycle != null) {

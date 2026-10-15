@@ -79,7 +79,8 @@ public class DefaultHumanInTheLoopDataConverter implements HumanInTheLoopDataCon
                     .id(toolCall.getId())
                     .name(toolCall.getName())
                     .input(params)
-                    .content(toolCall.getContent())
+                    // SDK按content校验Schema、按input调用工具，两份参数必须保持一致。
+                    .content(JSON.toJSONString(params))
                     .metadata(toolCall.getMetadata())
                     .state(toolCall.getState())
                     .build();
