@@ -8,6 +8,7 @@ import com.fons.cloud.ai.agent.infrastructure.handler.AgentScopeApprovalHandler;
 import com.fons.cloud.ai.agent.infrastructure.middleware.AgentScopeInputRequiredMiddleware;
 import com.fons.cloud.ai.agent.infrastructure.middleware.AgentScopeApprovalRejectMiddleware;
 import com.fons.cloud.ai.agent.infrastructure.middleware.AgentScopeSubagentHitlMiddleware;
+import com.fons.cloud.ai.agent.infrastructure.middleware.FonsAgentTraceMiddleware;
 import com.fons.cloud.ai.agent.infrastructure.observability.AgentScopeTraceLifecycle;
 import com.fons.cloud.ai.agent.infrastructure.utils.AgentScopeMediaConverter;
 import com.fons.cloud.ai.agent.infrastructure.utils.AgentScopeMessageConverter;
@@ -27,6 +28,7 @@ import io.agentscope.core.message.GenerateReason;
 import io.agentscope.core.message.Msg;
 import io.agentscope.core.message.UserMessage;
 import io.agentscope.harness.agent.HarnessAgent;
+import io.opentelemetry.instrumentation.reactor.v3_1.ContextPropagationOperator;
 import lombok.AccessLevel;
 import lombok.Builder;
 import lombok.Getter;
@@ -309,20 +311,12 @@ public class AgentScopeHarnessAgent extends BaseAgent<AgentScopeRunContext> impl
      */
     @Override
     protected Disposable streamExecute(AgentScopeRunContext context, RuntimeActions actions) {
-        return Flux.defer(() -> {
-                    if (subagentApprovalEnabled) {
-                        // 子恢复先于父事件流，兼容检查必须在任何获批工具执行前完成。
-                        AgentScopeSubagentHitlMiddleware.validateRegistryPatch();
-                        if (context.getRequest().getHitlRequestInfo() != null) {
-                            // 先恢复全部子节点，再把齐备结果一次性回填给父节点。
-                            return APPROVAL_HANDLER.prepareBatchResume(context, getDelegate(),
-                                            humanInTheLoopDataConverter, (AgentScopeRuntimeActions) actions)
-                                    .flatMapMany(messages -> executeAgentScopeSegment(context, actions, messages));
-                        }
-                        APPROVAL_HANDLER.validateOrdinaryRequest(context, getDelegate());
-                    }
-                    return executeAgentScopeSegment(context, actions, List.of(createAgentScopeMessage(context)));
-                })
+        return Flux.defer(() -> getDelegate().getDelegate().getMiddlewares().stream()
+                        .filter(FonsAgentTraceMiddleware.class::isInstance)
+                        .map(FonsAgentTraceMiddleware.class::cast).findFirst()
+                        .map(middleware -> middleware.traceRun(getDelegate().getDelegate(), context.getRuntimeContext(),
+                                context.getRequest(), () -> executeRunSegment(context, actions)))
+                        .orElseGet(() -> executeRunSegment(context, actions)))
                 .subscribeOn(Schedulers.boundedElastic())
                 .doOnComplete(() -> finishSegment(context, actions))
                 .onErrorMap(this::normalizeError)
@@ -354,6 +348,20 @@ public class AgentScopeHarnessAgent extends BaseAgent<AgentScopeRunContext> impl
                         AgentResultCode.FAILED_EXECUTE_AGENT.getMessage()));
     }
 
+    /** Run观测范围包住子恢复及父汇总；恢复顺序和业务状态机仍由原入口控制。 */
+    private Flux<AgentEvent> executeRunSegment(AgentScopeRunContext context, RuntimeActions actions) {
+        if (subagentApprovalEnabled) {
+            AgentScopeSubagentHitlMiddleware.validateRegistryPatch();
+            if (context.getRequest().getHitlRequestInfo() != null) {
+                return APPROVAL_HANDLER.prepareBatchResume(context, getDelegate(),
+                                humanInTheLoopDataConverter, (AgentScopeRuntimeActions) actions)
+                        .flatMapMany(messages -> executeAgentScopeSegment(context, actions, messages));
+            }
+            APPROVAL_HANDLER.validateOrdinaryRequest(context, getDelegate());
+        }
+        return executeAgentScopeSegment(context, actions, List.of(createAgentScopeMessage(context)));
+    }
+
     /**
      * 执行一个AgentScope原生顶层分段。
      *
@@ -370,7 +378,10 @@ public class AgentScopeHarnessAgent extends BaseAgent<AgentScopeRunContext> impl
             return Flux.empty();
         }
 
-        return getDelegate().streamEvents(messages, context.getRuntimeContext())
+        AgentScopeTraceLifecycle lifecycle = context.getRuntimeContext().get(AgentScopeTraceLifecycle.class);
+        return ContextPropagationOperator.runWithContext(
+                        Flux.defer(() -> getDelegate().streamEvents(messages, context.getRuntimeContext())),
+                        lifecycle.runContext())
                 // 串行处理原生回调，避免并发修改Context和乱序输出客户端消息。
                 .publishOn(Schedulers.boundedElastic(), 1)
                 .doOnNext(event -> handleEvent(context, actions, event));
@@ -413,7 +424,9 @@ public class AgentScopeHarnessAgent extends BaseAgent<AgentScopeRunContext> impl
      */
     @Override
     protected AgentScopeRuntimeActions createActions(AgentScopeRunContext context) {
-        AgentScopeTraceLifecycle traceLifecycle = new AgentScopeTraceLifecycle();
+        // run()创建阶段仍在调用方的短Scope内，先捕获父Context，再由内部异步流启动Span。
+        AgentScopeTraceLifecycle traceLifecycle = new AgentScopeTraceLifecycle(
+                io.opentelemetry.context.Context.current());
         context.getRuntimeContext().put(AgentScopeTraceLifecycle.class, traceLifecycle);
         AgentRunStateEventPublisher eventPublisher = event -> {
             // Trace生命周期先消费权威状态；业务状态发布异常仍由状态机统一隔离。

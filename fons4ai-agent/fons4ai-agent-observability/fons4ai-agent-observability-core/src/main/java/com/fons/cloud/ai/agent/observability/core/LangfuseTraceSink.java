@@ -65,8 +65,8 @@ public final class LangfuseTraceSink implements TraceSink {
     /** Langfuse 中保存原始 Run 标识的 Trace 元数据属性。 */
     private static final String ORIGIN_RUN_ID = "langfuse.trace.metadata.originRunId";
 
-    /** Langfuse 中保存 Trace 上下文扩展属性的 Trace 元数据属性。 */
-    private static final String CONTEXT_ATTRIBUTES = "langfuse.trace.metadata.fonsAttributes";
+    /** Run扩展字段使用独立键，避免Langfuse合并Trace元数据时覆盖节点fonsAttributes。 */
+    private static final String CONTEXT_ATTRIBUTES = "langfuse.trace.metadata.runAttributes";
 
     /** Langfuse 中保存事件发生时间的 Observation 元数据属性。 */
     private static final String EVENT_TIMESTAMP = "langfuse.observation.metadata.eventTimestamp";
@@ -112,6 +112,7 @@ public final class LangfuseTraceSink implements TraceSink {
         }
 
         switch (mode) {
+            case ENRICH_RUN -> enrichNativeSpan(currentSpan, record, "span");
             case ENRICH_AGENT -> enrichNativeSpan(currentSpan, record, "agent");
             case ENRICH_MODEL -> enrichNativeSpan(currentSpan, record, "generation");
             case ENRICH_TOOL_BATCH -> enrichNativeSpan(currentSpan, record, "tool");

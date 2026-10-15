@@ -6,22 +6,36 @@ import com.fons.cloud.ai.agent.model.runtime.AgentRunStateEventPublisher;
 import com.fons.cloud.ai.agent.observability.api.AgentTraceRun;
 import com.fons.cloud.ai.agent.observability.core.NativeTraceContext;
 import com.fons.cloud.ai.agent.observability.model.TraceEvent;
+import com.fons.cloud.ai.agent.observability.model.TraceEventType;
 import com.fons.cloud.ai.agent.observability.model.TraceStatus;
+import io.agentscope.core.event.AgentEvent;
+import io.opentelemetry.api.GlobalOpenTelemetry;
+import io.opentelemetry.api.trace.Span;
+import io.opentelemetry.api.trace.StatusCode;
 import io.opentelemetry.context.Context;
 import io.opentelemetry.context.Scope;
+import io.opentelemetry.instrumentation.reactor.v3_1.ContextPropagationOperator;
 import lombok.extern.slf4j.Slf4j;
+import reactor.core.publisher.Flux;
+import reactor.core.publisher.Mono;
 
+import java.time.Instant;
+import java.util.Map;
+import java.util.UUID;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicReference;
+import java.util.concurrent.locks.ReentrantLock;
+import java.util.function.Function;
+import java.util.function.Supplier;
 
 /**
  * 管理一次AgentScope适配Run的Fons Trace生命周期。
  *
- * <p>AgentScope Middleware负责绑定原生轨迹权柄并记录模型、工具和HITL明细；
+ * <p>框架在执行任何父子节点前建立 Run Span，Middleware记录模型、工具和HITL明细；
  * common状态机发布的状态事件负责决定整个Run的开始与结束状态。原生事件流自然结束
  * 不会提前结束Trace，避免其状态与common最终状态不一致。</p>
  *
- * <p>该对象按Run创建，并保存Middleware绑定时的OpenTelemetry上下文，使取消等发生在
+ * <p>该对象按Run创建，并保存稳定的Run级OpenTelemetry上下文，使取消等发生在
  * 其他线程上的状态事件仍可关联原生AgentScope Trace。全部观测异常均按fail-open处理。</p>
  *
  * @author hongqy
@@ -32,8 +46,29 @@ public final class AgentScopeTraceLifecycle implements AgentRunStateEventPublish
     /** Middleware绑定的单次Trace权柄。 */
     private final AtomicReference<AgentTraceRun> traceRun = new AtomicReference<>();
 
-    /** Middleware进入原生调用链时捕获的OpenTelemetry上下文。 */
+    /** Run的公共父上下文，不随某个子Agent进入或完成而改写。 */
     private final AtomicReference<Context> telemetryContext = new AtomicReference<>();
+
+    /** 框架持有的Run Span，不能由原生子Agent结束。 */
+    private final AtomicReference<Span> runSpan = new AtomicReference<>();
+
+    /** 在独立AgentRun创建时捕获上游Context，避免内部subscribeOn丢失Pipeline父节点。 */
+    private final Context parentContext;
+
+    /** 可选的外层Pipeline作用域；独立调用Harness时仍由本类管理Recorder生命周期。 */
+    private AgentScopeTraceSupport.RunScope pipelineScope;
+
+    /** 原生Run Span结束后释放外层根的关闭门禁。 */
+    private Runnable releasePipeline;
+
+    /** 受管Run在公共Recorder中的分段节点标识。 */
+    private final String runNodeId = "run:" + UUID.randomUUID();
+
+    /** 原生执行流是否自然结束；取消状态可能早于子节点保存完成。 */
+    private final AtomicBoolean executionFinished = new AtomicBoolean();
+
+    /** 只保护一次性绑定，不在锁内调用Recorder或执行Agent。 */
+    private final ReentrantLock bindingLock = new ReentrantLock();
 
     /** Run开始事件携带的输入快照。 */
     private final AtomicReference<Object> input = new AtomicReference<>();
@@ -56,8 +91,111 @@ public final class AgentScopeTraceLifecycle implements AgentRunStateEventPublish
     /** 是否已经调用Trace结束入口。 */
     private final AtomicBoolean finished = new AtomicBoolean();
 
+    public AgentScopeTraceLifecycle() {
+        this(Context.current());
+    }
+
+    public AgentScopeTraceLifecycle(Context parentContext) {
+        this.parentContext = parentContext;
+    }
+
     /**
-     * 绑定Middleware在原生调用链中创建的Trace权柄。
+     * 在子恢复之前建立公共Run Span，并通过SDK相同的Reactor桥接传播上下文。
+     * execution包含固定身份的绑定及完整执行链；构造和订阅均处于Run上下文中。
+     */
+    public Flux<AgentEvent> traceRun(String agentName, Supplier<Flux<AgentEvent>> execution) {
+        return Flux.deferContextual(subscriberContext -> {
+            Context parent = ContextPropagationOperator.getOpenTelemetryContextFromContextView(
+                    subscriberContext, parentContext);
+            pipelineScope = AgentScopeTraceSupport.scope(parent);
+            if (pipelineScope != null) {
+                releasePipeline = pipelineScope.retain();
+            }
+            Context runContext = parent;
+            try {
+                Span span = GlobalOpenTelemetry.getTracer("com.fons.cloud.ai.agent.trace")
+                        .spanBuilder("agent.run " + agentName).setParent(parent).startSpan();
+                runSpan.set(span);
+                runContext = NativeTraceContext.withMode(span.storeInContext(parent),
+                        NativeTraceContext.Mode.ENRICH_RUN);
+            } catch (Throwable error) {
+                log.warn("Failed to create AgentScope Run span, trace failure ignored", error);
+                // Span创建失败时只保留审计，不能把上游HTTP Span误当成Run补充。
+                runContext = NativeTraceContext.withMode(parent, NativeTraceContext.Mode.AUDIT_ONLY);
+            }
+            telemetryContext.set(runContext);
+            Flux<AgentEvent> events;
+            try (Scope ignored = runContext.makeCurrent()) {
+                events = execution.get();
+            } catch (Throwable error) {
+                events = Flux.error(error);
+            }
+            return ContextPropagationOperator.runWithContext(events, runContext)
+                    .doFinally(signal -> {
+                        executionFinished.set(true);
+                        finishIfNecessary();
+                    });
+        });
+    }
+
+    /** 根层恢复分支及Master汇总必须显式使用此上下文，不能继承上一兄弟的回调上下文。 */
+    public Context runContext() {
+        Context context = telemetryContext.get();
+        return context == null ? Context.current() : context;
+    }
+
+    /** Pipeline已绑定固定身份时，Middleware复用它，不再准备第二个Recorder权柄。 */
+    public AgentTraceRun inheritedTraceRun() {
+        return pipelineScope == null ? null : pipelineScope.run;
+    }
+
+    /**
+     * 嵌套父节点在恢复孩子之前还没有原生invoke_agent Span，用恢复分段表达真实父子关系。
+     * 只有存在挂起孩子的中间节点使用此方法；叶节点直接保留SDK原生Span。
+     */
+    public <T> Mono<T> traceRecovery(String agentName, String sessionId, Context parent,
+                                    Function<Context, Mono<T>> execution) {
+        return Mono.defer(() -> {
+            if (runSpan.get() == null || traceRun.get() == null) {
+                return execution.apply(parent);
+            }
+            Span span;
+            try {
+                span = GlobalOpenTelemetry.getTracer("com.fons.cloud.ai.agent.trace")
+                        .spanBuilder("agent.restore " + agentName).setParent(parent).startSpan();
+            } catch (Throwable error) {
+                log.warn("Failed to create AgentScope recovery span, trace failure ignored", error);
+                return execution.apply(parent);
+            }
+            Context branchContext = NativeTraceContext.withMode(span.storeInContext(parent),
+                    NativeTraceContext.Mode.ENRICH_RUN);
+            String nodeId = "restore:" + UUID.randomUUID();
+            recordRecovery(branchContext, nodeId, agentName, sessionId, TraceEventType.STEP_STARTED,
+                    TraceStatus.RUNNING);
+            return ContextPropagationOperator.runWithContext(Mono.defer(() -> execution.apply(branchContext)),
+                            branchContext)
+                    .doOnSuccess(value -> recordRecovery(branchContext, nodeId, agentName, sessionId,
+                            TraceEventType.STEP_FINISHED, value == null ? TraceStatus.SUSPENDED : TraceStatus.SUCCEEDED))
+                    .doOnError(error -> {
+                        recordRecovery(branchContext, nodeId, agentName, sessionId,
+                                TraceEventType.STEP_FINISHED, TraceStatus.FAILED);
+                        safelyExecute("mark AgentScope recovery failure", branchContext,
+                                () -> span.setStatus(StatusCode.ERROR));
+                    })
+                    .doFinally(signal -> safelyExecute("end AgentScope recovery span", branchContext, span::end));
+        });
+    }
+
+    /** 恢复分段只记录执行者和状态，模型及工具正文仍由原生节点负责。 */
+    private void recordRecovery(Context context, String nodeId, String agentName, String sessionId,
+                                TraceEventType type, TraceStatus status) {
+        safelyExecute("record AgentScope recovery span", context, () -> record(new TraceEvent(
+                type, nodeId, null, Instant.now(), Map.of("status", status.name()),
+                Map.of("agentName", agentName, "agentSessionId", sessionId))));
+    }
+
+    /**
+     * 绑定Middleware在框架根入口创建的Trace权柄。
      *
      * <p>common状态可能先于原生Middleware推进到RUNNING，因此绑定完成后会补充执行
      * 尚未处理的开始或结束动作。重复绑定不会覆盖首个有效权柄。</p>
@@ -69,14 +207,17 @@ public final class AgentScopeTraceLifecycle implements AgentRunStateEventPublish
         if (currentTraceRun == null) {
             return;
         }
-        synchronized (this) {
+        bindingLock.lock();
+        try {
             if (traceRun.get() != null) {
                 return;
             }
             input.set(inputSnapshot);
-            telemetryContext.set(Context.current());
+            telemetryContext.compareAndSet(null, Context.current());
             // 最后发布Trace权柄，避免状态线程读取到尚未初始化完成的输入和OTel上下文。
             traceRun.set(currentTraceRun);
+        } finally {
+            bindingLock.unlock();
         }
         startIfNecessary();
         finishIfNecessary();
@@ -102,7 +243,7 @@ public final class AgentScopeTraceLifecycle implements AgentRunStateEventPublish
      *
      * <p>子 Agent 共享该权柄，但不能用自己的输出或状态结束根 Run。</p>
      *
-     * @return 已绑定权柄；原生链路尚未进入时为空
+     * @return 已绑定权柄；框架尚未进入Run观测范围时为空
      */
     public AgentTraceRun currentTraceRun() {
         return traceRun.get();
@@ -161,8 +302,15 @@ public final class AgentScopeTraceLifecycle implements AgentRunStateEventPublish
                 || !started.compareAndSet(false, true)) {
             return;
         }
-        safelyExecute("start AgentScope trace", telemetryContext.get(),
-                () -> currentTraceRun.start(input.get()));
+        safelyExecute("start AgentScope trace", telemetryContext.get(), () -> {
+            if (pipelineScope == null) {
+                currentTraceRun.start(input.get());
+            } else {
+                // 外层拥有唯一RUN_STARTED；Master只记录自己的执行分段。
+                currentTraceRun.record(new TraceEvent(TraceEventType.STEP_STARTED, runNodeId, null,
+                        Instant.now(), input.get(), Map.of("status", TraceStatus.RUNNING.name())));
+            }
+        });
     }
 
     /**
@@ -171,19 +319,53 @@ public final class AgentScopeTraceLifecycle implements AgentRunStateEventPublish
     private void finishIfNecessary() {
         AgentTraceRun currentTraceRun = traceRun.get();
         TraceStatus status = terminalStatus.get();
-        if (currentTraceRun == null
-                || status == null
+        if (status == null
+                || (currentTraceRun == null && runSpan.get() == null && releasePipeline == null)
+                || ((runSpan.get() != null || releasePipeline != null) && !executionFinished.get())
                 || !finished.compareAndSet(false, true)) {
             return;
         }
         Context context = telemetryContext.get();
-        // common 终态可能晚于原生 Span.end()。只输出独立终态事件，不再修改已结束 Span。
-        if (context != null && NativeTraceContext.currentMode(context)
+        // 受管Run Span持续到执行流收口；旧入口仍保留独立终态事件的兼容行为。
+        Span span = runSpan.get();
+        if (span == null && context != null && NativeTraceContext.currentMode(context)
                 != NativeTraceContext.Mode.EVENT) {
             context = NativeTraceContext.withMode(context, NativeTraceContext.Mode.RUN_TERMINAL);
         }
-        safelyExecute("finish AgentScope trace", context,
-                () -> currentTraceRun.finish(status, output.get(), failure.get()));
+        try {
+            if (currentTraceRun != null) {
+                safelyExecute("finish AgentScope trace", context, () -> {
+                    if (pipelineScope == null) {
+                        currentTraceRun.finish(status, output.get(), failure.get());
+                    } else {
+                        Map<String, Object> result = new java.util.LinkedHashMap<>();
+                        result.put("status", status.name());
+                        if (output.get() != null) result.put("output", output.get());
+                        if (failure.get() != null) result.put("error",
+                                AgentScopeTraceSupport.errorData(failure.get()));
+                        currentTraceRun.record(new TraceEvent(TraceEventType.STEP_FINISHED, runNodeId, null,
+                                Instant.now(), result, Map.of("status", status.name())));
+                    }
+                });
+            }
+        } finally {
+            try {
+                if (span != null) {
+                    safelyExecute("end AgentScope Run span", context, () -> {
+                        try {
+                            span.setAttribute("fons.run.status", status.name());
+                            if (status == TraceStatus.FAILED || status == TraceStatus.TIMED_OUT) {
+                                span.setStatus(StatusCode.ERROR);
+                            }
+                        } finally {
+                            span.end();
+                        }
+                    });
+                }
+            } finally {
+                if (releasePipeline != null) releasePipeline.run();
+            }
+        }
     }
 
     /**
@@ -192,7 +374,8 @@ public final class AgentScopeTraceLifecycle implements AgentRunStateEventPublish
      * @param state common运行状态
      * @return 对应Trace状态；非结束状态返回null
      */
-    private static TraceStatus toTraceStatus(AgentRunState state) {
+    static TraceStatus toTraceStatus(AgentRunState state) {
+        if (state == null) return null;
         return switch (state) {
             case WAITING_APPROVAL -> TraceStatus.SUSPENDED;
             case COMPLETED -> TraceStatus.SUCCEEDED;

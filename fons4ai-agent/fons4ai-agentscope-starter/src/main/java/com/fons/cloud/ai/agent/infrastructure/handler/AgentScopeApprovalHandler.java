@@ -2,6 +2,7 @@ package com.fons.cloud.ai.agent.infrastructure.handler;
 
 import com.fons.cloud.ai.agent.api.HumanInTheLoopDataConverter;
 import com.fons.cloud.ai.agent.infrastructure.middleware.AgentScopeApprovalRejectMiddleware;
+import com.fons.cloud.ai.agent.infrastructure.observability.AgentScopeTraceLifecycle;
 import com.fons.cloud.ai.agent.core.AgentScopeRunContext;
 import com.fons.cloud.ai.agent.core.AgentScopeRuntimeActions;
 import com.fons.cloud.ai.agent.model.runtime.AgentScopeApprovalState;
@@ -33,6 +34,8 @@ import io.agentscope.core.state.AgentStateStore;
 import io.agentscope.core.state.VersionedState;
 import io.agentscope.harness.agent.HarnessAgent;
 import io.agentscope.harness.agent.tool.AgentSpawnTool;
+import io.opentelemetry.context.Context;
+import io.opentelemetry.instrumentation.reactor.v3_1.ContextPropagationOperator;
 import lombok.extern.slf4j.Slf4j;
 import org.apache.commons.lang3.StringUtils;
 
@@ -267,8 +270,10 @@ public class AgentScopeApprovalHandler {
                 throw SystemIntervalException.of("本批审批已由其他请求取得恢复权");
             }
             context.recordApprovalBatch(batch, version);
+            AgentScopeTraceLifecycle lifecycle = context.getRuntimeContext().get(AgentScopeTraceLifecycle.class);
+            Context parent = lifecycle == null ? Context.current() : lifecycle.runContext();
             return prepareNode(delegate, context.getRuntimeContext(), true, context,
-                    decisions, converter, actions).map(this::resumeMessages);
+                    decisions, converter, actions, parent).map(this::resumeMessages);
         });
     }
 
@@ -452,13 +457,29 @@ public class AgentScopeApprovalHandler {
     /** 从叶到根恢复；所有子结果齐备后才在一次父调用中提交完整结果集。 */
     private Mono<Msg> prepareNode(HarnessAgent agent, RuntimeContext runtime, boolean root,
             AgentScopeRunContext context, Map<String, HitlRequestInfo> decisions,
-            HumanInTheLoopDataConverter converter, AgentScopeRuntimeActions actions) {
+            HumanInTheLoopDataConverter converter, AgentScopeRuntimeActions actions, Context parent) {
         AgentScopeApprovalState batch = context.getApprovalBatch();
         Msg completed = batch.getCompletedNodes().get(runtime.getSessionId());
         if (completed != null) {
             return Mono.just(completed);
         }
         List<Delegation> children = children(batch, runtime.getSessionId());
+        AgentScopeTraceLifecycle lifecycle = context.getRuntimeContext().get(AgentScopeTraceLifecycle.class);
+        if (!root && !children.isEmpty() && lifecycle != null) {
+            // 中间父节点的原生调用在孩子恢复后才启动，先用恢复分段保存这层父子关系。
+            return lifecycle.traceRecovery(agent.getName(), runtime.getSessionId(), parent,
+                    branchContext -> resumeNode(agent, runtime, false, context, decisions,
+                            converter, actions, children, branchContext));
+        }
+        return resumeNode(agent, runtime, root, context, decisions, converter, actions, children, parent);
+    }
+
+    /** 当前节点的直接孩子始终从同一父上下文派生，不继承前一个兄弟结束时的Span。 */
+    private Mono<Msg> resumeNode(HarnessAgent agent, RuntimeContext runtime, boolean root,
+            AgentScopeRunContext context, Map<String, HitlRequestInfo> decisions,
+            HumanInTheLoopDataConverter converter, AgentScopeRuntimeActions actions,
+            List<Delegation> children, Context parent) {
+        AgentScopeApprovalState batch = context.getApprovalBatch();
         Mono<Msg> input;
         if (!children.isEmpty()) {
             input = Flux.fromIterable(children).concatMap(child -> {
@@ -467,7 +488,7 @@ public class AgentScopeApprovalHandler {
                 }
                 HarnessAgent childAgent = childAgent(agent, runtime, child);
                 return prepareNode(childAgent, childContext(runtime, child.sessionId()), false,
-                        context, decisions, converter, actions).map(result -> childResult(child, result));
+                        context, decisions, converter, actions, parent).map(result -> childResult(child, result));
             }).collectList().flatMap(results -> results.size() == children.size()
                     ? Mono.just(new ToolResultMessage(results)) : Mono.empty());
         } else {
@@ -497,7 +518,8 @@ public class AgentScopeApprovalHandler {
             AtomicReference<Msg> result = new AtomicReference<>();
             actions.registerRecoveringChild(agent, runtime);
             agent.clearStateCache(runtime);
-            return agent.streamEvents(resumeMessages(message), runtime).doOnNext(event -> {
+            return ContextPropagationOperator.runWithContext(
+                    Flux.defer(() -> agent.streamEvents(resumeMessages(message), runtime)), parent).doOnNext(event -> {
                 if (event instanceof AgentResultEvent end && StringUtils.isBlank(event.getSource())) {
                     result.set(end.getResult());
                 }

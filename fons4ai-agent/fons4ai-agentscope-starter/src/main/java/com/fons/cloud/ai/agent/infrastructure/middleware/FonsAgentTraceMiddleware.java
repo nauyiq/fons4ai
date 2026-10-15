@@ -1,7 +1,7 @@
 package com.fons.cloud.ai.agent.infrastructure.middleware;
 
-import com.alibaba.fastjson2.JSON;
 import com.fons.cloud.ai.agent.infrastructure.observability.AgentScopeTraceLifecycle;
+import com.fons.cloud.ai.agent.infrastructure.observability.AgentScopeTraceSupport;
 import com.fons.cloud.ai.agent.observability.api.AgentTraceRecorder;
 import com.fons.cloud.ai.agent.observability.api.AgentTraceRun;
 import com.fons.cloud.ai.agent.observability.core.NativeTraceContext;
@@ -42,16 +42,15 @@ import reactor.core.publisher.Mono;
 
 import java.time.Instant;
 import java.util.ArrayList;
-import java.util.Collection;
 import java.util.LinkedHashMap;
 import java.util.List;
-import java.util.Locale;
 import java.util.Map;
 import java.util.Objects;
 import java.util.UUID;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicReference;
 import java.util.function.Function;
+import java.util.function.Supplier;
 
 /**
  * 将 AgentScope 执行过程转换为 Fons Agent Trace 的中间件。
@@ -83,9 +82,6 @@ public final class FonsAgentTraceMiddleware implements MiddlewareBase {
     /** AgentScope 框架标识。 */
     private static final String AGENT_TYPE = "agentscope";
 
-    /** 常见敏感字段的脱敏结果。 */
-    private static final String REDACTED_VALUE = "[REDACTED]";
-
     /** 接收标准 Fons TraceEvent 的轨迹记录器。 */
     private final AgentTraceRecorder recorder;
 
@@ -105,6 +101,25 @@ public final class FonsAgentTraceMiddleware implements MiddlewareBase {
         return 0;
     }
 
+    /**
+     * 框架入口在任何父子节点启动前调用，Run身份只从根Agent及业务RuntimeContext创建。
+     * Recorder仍由本中间件持有；观测初始化失败不能重复订阅或改变业务执行。
+     */
+    public Flux<AgentEvent> traceRun(Agent rootAgent, RuntimeContext rootContext, Object request,
+                                      Supplier<Flux<AgentEvent>> execution) {
+        AgentScopeTraceLifecycle lifecycle = rootContext.get(AgentScopeTraceLifecycle.class);
+        if (!enabled || lifecycle == null) {
+            return Flux.defer(execution);
+        }
+        return lifecycle.traceRun(rootAgent.getName(), () -> {
+            safely("prepare AgentScope Run trace", () -> lifecycle.bind(
+                    lifecycle.inheritedTraceRun() == null
+                            ? recorder.prepare(createTraceContext(rootAgent, rootContext))
+                            : lifecycle.inheritedTraceRun(), snapshot(request)));
+            return execution.get();
+        });
+    }
+
     @Override
     public Flux<AgentEvent> onAgent(Agent agent,
                                     RuntimeContext context,
@@ -122,7 +137,7 @@ public final class FonsAgentTraceMiddleware implements MiddlewareBase {
             // 同一 RuntimeContext 的下一执行段可能先于上一段 doFinally 订阅，不能恢复旧段会话。
             TraceSession parentSession = inheritedSession != null
                     && inheritedSession.ownerContext != context ? inheritedSession : null;
-            TraceSession session = prepareSession(agent, context, traceLifecycle, parentSession);
+            TraceSession session = prepareSession(agent, context, traceLifecycle);
             context.put(TraceSession.class, session);
             safely("bind AgentScope trace", () -> session.bind(input));
             try {
@@ -240,66 +255,62 @@ public final class FonsAgentTraceMiddleware implements MiddlewareBase {
 
     private TraceSession prepareSession(Agent agent,
                                         RuntimeContext context,
-                                        AgentScopeTraceLifecycle traceLifecycle,
-                                        TraceSession inheritedSession) {
+                                        AgentScopeTraceLifecycle traceLifecycle) {
         try {
-            boolean rootAgent = inheritedSession == null;
-            AgentTraceRun existingRun = rootAgent
-                    ? traceLifecycle.currentTraceRun() : inheritedSession.traceRun;
+            AgentTraceRun existingRun = traceLifecycle.currentTraceRun();
+            if (existingRun == null) {
+                return TraceSession.disabled();
+            }
+            // 子恢复先于Master执行，不能再用调用先后或是否继承TraceSession判断根身份。
+            boolean rootAgent = existingRun.context().conversationId().equals(context.getSessionId());
             // 只有已明确注册原生执行 Span 的 Agent 才进入协作投影，HTTP Span 不构成判断依据。
             boolean nativeTracing = agent instanceof ReActAgent reactAgent
                     && reactAgent.getMiddlewares().stream()
                             .anyMatch(OtelTracingMiddleware.class::isInstance);
-            if (existingRun != null) {
-                return new TraceSession(existingRun, traceLifecycle, context,
-                        agent, rootAgent, nativeTracing);
-            }
-            if (!rootAgent) {
-                return TraceSession.disabled();
-            }
-            String runId = stringAttribute(context, RUN_ID_ATTRIBUTE);
-            if (isBlank(runId)) {
-                runId = "agentscope-" + UUID.randomUUID();
-            }
-            String conversationId = isBlank(context.getSessionId())
-                    ? runId
-                    : context.getSessionId();
-
-            Map<String, Object> attributes = new LinkedHashMap<>();
-            put(attributes, "agentscope.agentId", agent.getAgentId());
-            Map<String, Object> extras = new LinkedHashMap<>(context.getExtra());
-            extras.keySet().removeAll(List.of(
-                    RUN_ID_ATTRIBUTE,
-                    MESSAGE_ID_ATTRIBUTE,
-                    ORIGIN_RUN_ID_ATTRIBUTE,
-                    AgentScopeApprovalRejectMiddleware.APPROVAL_REJECT_ATTRIBUTE));
-            if (!extras.isEmpty()) {
-                attributes.put("agentscope.runtimeAttributes", snapshot(extras));
-            }
-            Span span = Span.current();
-            if (span.getSpanContext().isValid()) {
-                attributes.put("otel.traceId", span.getSpanContext().getTraceId());
-                attributes.put("otel.spanId", span.getSpanContext().getSpanId());
-            }
-
-            TraceRunContext traceContext = new TraceRunContext(
-                    runId,
-                    conversationId,
-                    stringAttribute(context, MESSAGE_ID_ATTRIBUTE),
-                    context.getUserId(),
-                    isBlank(agent.getName()) ? agent.getClass().getSimpleName() : agent.getName(),
-                    AGENT_TYPE,
-                    stringAttribute(context, ORIGIN_RUN_ID_ATTRIBUTE),
-                    attributes);
-            AgentTraceRun traceRun = recorder.prepare(traceContext);
-            return traceRun == null
-                    ? TraceSession.disabled()
-                    : new TraceSession(traceRun, traceLifecycle, context,
-                            agent, true, nativeTracing);
+            return new TraceSession(existingRun, traceLifecycle, context,
+                    agent, rootAgent, nativeTracing);
         } catch (Throwable error) {
             logFailure("prepare AgentScope trace", error);
             return TraceSession.disabled();
         }
+    }
+
+    /** 从受信根入口构造一次性Run身份，实际子节点信息仅写入Observation。 */
+    private TraceRunContext createTraceContext(Agent agent, RuntimeContext context) {
+        String runId = stringAttribute(context, RUN_ID_ATTRIBUTE);
+        if (isBlank(runId)) {
+            runId = "agentscope-" + UUID.randomUUID();
+        }
+        String conversationId = isBlank(context.getSessionId())
+                ? runId
+                : context.getSessionId();
+
+        Map<String, Object> attributes = new LinkedHashMap<>();
+        put(attributes, "agentscope.agentId", agent.getAgentId());
+        Map<String, Object> extras = new LinkedHashMap<>(context.getExtra());
+        extras.keySet().removeAll(List.of(
+                RUN_ID_ATTRIBUTE,
+                MESSAGE_ID_ATTRIBUTE,
+                ORIGIN_RUN_ID_ATTRIBUTE,
+                AgentScopeApprovalRejectMiddleware.APPROVAL_REJECT_ATTRIBUTE));
+        if (!extras.isEmpty()) {
+            attributes.put("agentscope.runtimeAttributes", snapshot(extras));
+        }
+        Span span = Span.current();
+        if (span.getSpanContext().isValid()) {
+            attributes.put("otel.traceId", span.getSpanContext().getTraceId());
+            attributes.put("otel.spanId", span.getSpanContext().getSpanId());
+        }
+
+        return new TraceRunContext(
+                runId,
+                conversationId,
+                stringAttribute(context, MESSAGE_ID_ATTRIBUTE),
+                context.getUserId(),
+                isBlank(agent.getName()) ? agent.getClass().getSimpleName() : agent.getName(),
+                AGENT_TYPE,
+                stringAttribute(context, ORIGIN_RUN_ID_ATTRIBUTE),
+                attributes);
     }
 
     private static void restoreSession(RuntimeContext context,
@@ -316,46 +327,7 @@ public final class FonsAgentTraceMiddleware implements MiddlewareBase {
     }
 
     private static Object snapshot(Object value) {
-        if (value == null) {
-            return null;
-        }
-        try {
-            return redact(JSON.parse(JSON.toJSONString(value)));
-        } catch (Throwable error) {
-            logFailure("serialize AgentScope trace data", error);
-            return Map.of(
-                    "valueType", value.getClass().getName(),
-                    "serializationError", error.getClass().getName());
-        }
-    }
-
-    private static Object redact(Object value) {
-        if (value instanceof Map<?, ?> map) {
-            Map<String, Object> result = new LinkedHashMap<>();
-            map.forEach((key, item) -> {
-                String name = String.valueOf(key);
-                result.put(name, sensitive(name) ? REDACTED_VALUE : redact(item));
-            });
-            return result;
-        }
-        if (value instanceof Collection<?> collection) {
-            List<Object> result = new ArrayList<>(collection.size());
-            collection.forEach(item -> result.add(redact(item)));
-            return result;
-        }
-        return value;
-    }
-
-    private static boolean sensitive(String key) {
-        String name = key.toLowerCase(Locale.ROOT).replace("_", "").replace("-", "");
-        return name.contains("apikey")
-                || name.contains("secret")
-                || name.contains("password")
-                || name.contains("authorization")
-                || name.contains("credential")
-                || name.contains("accesstoken")
-                || name.contains("refreshtoken")
-                || name.equals("cookie");
+        return AgentScopeTraceSupport.snapshot(value);
     }
 
     private static Object safeOptions(GenerateOptions options) {
@@ -524,12 +496,6 @@ public final class FonsAgentTraceMiddleware implements MiddlewareBase {
             }
             Map<String, Object> inputSnapshot = new LinkedHashMap<>();
             put(inputSnapshot, "messages", snapshot(input == null ? null : input.msgs()));
-            if (rootAgent) {
-                try (Scope ignored = projectionContext(agentContext,
-                        NativeTraceContext.Mode.ENRICH_AGENT).makeCurrent()) {
-                    traceLifecycle.bind(traceRun, inputSnapshot);
-                }
-            }
             if (nativeTracing || !rootAgent) {
                 // RUN_STARTED 只触发一次；每个执行段仍需给自己的 invoke_agent Span 补充 input。
                 record(event(TraceEventType.STEP_STARTED, agentNodeId, null,
@@ -635,6 +601,7 @@ public final class FonsAgentTraceMiddleware implements MiddlewareBase {
                 Map<String, Object> detailAttributes = new LinkedHashMap<>(traceEvent.attributes());
                 put(detailAttributes, "agentId", agentId);
                 put(detailAttributes, "agentName", agentName);
+                put(detailAttributes, "agentSessionId", ownerContext.getSessionId());
                 TraceEvent detail = new TraceEvent(traceEvent.type(), traceEvent.nodeId(),
                         traceEvent.parentNodeId(), traceEvent.timestamp(), traceEvent.data(), detailAttributes);
                 try (Scope ignored = projectionContext(context, mode).makeCurrent()) {

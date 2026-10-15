@@ -31,6 +31,8 @@ public final class NativeTraceContext {
      * @author hongqy
      */
     public enum Mode {
+        /** 向框架持有的 Run/恢复分段 Span 补充数据，Span 由对应生命周期结束。 */
+        ENRICH_RUN,
         /** 向仍在记录的原生 Agent Span 补充输入、输出和关联信息，不创建新 Span。 */
         ENRICH_AGENT,
         /** 向仍在记录的原生模型 Span 补充上下文、响应和用量信息，不创建新 Span。 */
