@@ -21,9 +21,22 @@
             <version>${revision}</version>
         </dependency>
 
+        <!-- 注解统一采集的运行时扩展契约；common-reactor 不反向依赖观测。 -->
+        <dependency>
+            <groupId>com.fons.cloud.ai</groupId>
+            <artifactId>fons4ai-common-reactor</artifactId>
+            <version>${revision}</version>
+        </dependency>
+
         <dependency>
             <groupId>org.springframework.boot</groupId>
             <artifactId>spring-boot-autoconfigure</artifactId>
+        </dependency>
+
+        <!-- 统一方法拦截与自动代理装配。 -->
+        <dependency>
+            <groupId>org.springframework</groupId>
+            <artifactId>spring-aop</artifactId>
         </dependency>
 
         <dependency>
@@ -36,6 +49,13 @@
             <groupId>io.opentelemetry</groupId>
             <artifactId>opentelemetry-exporter-otlp</artifactId>
             <version>${opentelemetry.version}</version>
+        </dependency>
+
+        <!-- Reactor 与 OTel Context 桥接；版本与 AgentScope SDK 实际依赖保持一致。 -->
+        <dependency>
+            <groupId>io.opentelemetry.instrumentation</groupId>
+            <artifactId>opentelemetry-reactor-3.1</artifactId>
+            <version>2.27.0-alpha</version>
         </dependency>
     </dependencies>
 

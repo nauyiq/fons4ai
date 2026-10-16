@@ -1,9 +1,9 @@
 package com.fons.cloud.ai.agent.infrastructure.middleware;
 
 import com.fons.cloud.ai.agent.infrastructure.observability.AgentScopeTraceLifecycle;
-import com.fons.cloud.ai.agent.infrastructure.observability.AgentScopeTraceSupport;
 import com.fons.cloud.ai.agent.observability.api.AgentTraceRecorder;
 import com.fons.cloud.ai.agent.observability.api.AgentTraceRun;
+import com.fons.cloud.ai.agent.observability.autoconfigure.instrumentation.ReactiveObservationSupport;
 import com.fons.cloud.ai.agent.observability.core.NativeTraceContext;
 import com.fons.cloud.ai.agent.observability.model.TraceEvent;
 import com.fons.cloud.ai.agent.observability.model.TraceEventType;
@@ -327,7 +327,7 @@ public final class FonsAgentTraceMiddleware implements MiddlewareBase {
     }
 
     private static Object snapshot(Object value) {
-        return AgentScopeTraceSupport.snapshot(value);
+        return ReactiveObservationSupport.snapshot(value);
     }
 
     private static Object safeOptions(GenerateOptions options) {

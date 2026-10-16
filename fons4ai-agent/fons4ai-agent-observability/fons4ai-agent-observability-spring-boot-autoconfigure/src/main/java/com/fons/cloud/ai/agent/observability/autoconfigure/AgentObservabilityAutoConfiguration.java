@@ -1,7 +1,11 @@
 package com.fons.cloud.ai.agent.observability.autoconfigure;
 
 import com.fons.cloud.ai.agent.observability.api.AgentTraceRecorder;
+import com.fons.cloud.ai.agent.observability.api.ObservationConvention;
 import com.fons.cloud.ai.agent.observability.api.TraceSink;
+import com.fons.cloud.ai.agent.observability.autoconfigure.instrumentation.AgentObservationAutoProxyCreator;
+import com.fons.cloud.ai.agent.observability.autoconfigure.instrumentation.AgentObservationInterceptor;
+import com.fons.cloud.ai.agent.observability.autoconfigure.instrumentation.ReactiveObservationSupport;
 import com.fons.cloud.ai.agent.observability.core.DefaultAgentTraceRecorder;
 import com.fons.cloud.ai.agent.observability.core.JsonlTraceSink;
 import com.fons.cloud.ai.agent.observability.core.LangfuseTraceSink;
@@ -53,6 +57,49 @@ public class AgentObservabilityAutoConfiguration {
             return sinks.isEmpty()
                     ? AgentTraceRecorder.noop()
                     : new DefaultAgentTraceRecorder(sinks);
+        }
+
+        /**
+         * 通用响应式观测生命周期支持。
+         *
+         * <p>同时作为 common-reactor 的运行扩展注册：RUN 方法执行期由创建期绑定栈
+         * 交付采集描述，工厂创建 Run 时捕获。没有真实 Recorder 时各入口低成本透传。</p>
+         *
+         * @param recorderProvider Recorder 提供器
+         * @return 通用观测支持
+         */
+        @Bean
+        @ConditionalOnMissingBean
+        ReactiveObservationSupport reactiveObservationSupport(ObjectProvider<AgentTraceRecorder> recorderProvider) {
+            return new ReactiveObservationSupport(recorderProvider.getIfAvailable(AgentTraceRecorder::noop));
+        }
+
+        /**
+         * AgentObserved 声明的统一方法拦截入口。
+         *
+         * @param support 通用观测生命周期支持
+         * @param conventionProvider 业务侧 Convention 延迟提供器
+         * @return 统一拦截入口
+         */
+        @Bean
+        @ConditionalOnMissingBean
+        AgentObservationInterceptor agentObservationInterceptor(
+                ReactiveObservationSupport support,
+                ObjectProvider<ObservationConvention> conventionProvider) {
+            return new AgentObservationInterceptor(support, conventionProvider);
+        }
+
+        /**
+         * 注解目标 Bean 的自动代理装配；拦截器延迟获取，不在注册期实例化业务 Bean。
+         *
+         * @param interceptorProvider 拦截器延迟提供器
+         * @return 自动代理装配器
+         */
+        @Bean
+        @ConditionalOnMissingBean
+        static AgentObservationAutoProxyCreator agentObservationAutoProxyCreator(
+                ObjectProvider<AgentObservationInterceptor> interceptorProvider) {
+            return new AgentObservationAutoProxyCreator(interceptorProvider);
         }
 
         /**

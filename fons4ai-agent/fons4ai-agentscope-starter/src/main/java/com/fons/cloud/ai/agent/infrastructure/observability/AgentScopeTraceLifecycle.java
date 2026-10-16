@@ -4,6 +4,7 @@ import com.fons.cloud.ai.agent.model.runtime.AgentRunState;
 import com.fons.cloud.ai.agent.model.runtime.AgentRunStateChangedEvent;
 import com.fons.cloud.ai.agent.model.runtime.AgentRunStateEventPublisher;
 import com.fons.cloud.ai.agent.observability.api.AgentTraceRun;
+import com.fons.cloud.ai.agent.observability.autoconfigure.instrumentation.ReactiveObservationSupport;
 import com.fons.cloud.ai.agent.observability.core.NativeTraceContext;
 import com.fons.cloud.ai.agent.observability.model.TraceEvent;
 import com.fons.cloud.ai.agent.observability.model.TraceEventType;
@@ -56,7 +57,7 @@ public final class AgentScopeTraceLifecycle implements AgentRunStateEventPublish
     private final Context parentContext;
 
     /** 可选的外层Pipeline作用域；独立调用Harness时仍由本类管理Recorder生命周期。 */
-    private AgentScopeTraceSupport.RunScope pipelineScope;
+    private ReactiveObservationSupport.RunScope pipelineScope;
 
     /** 原生Run Span结束后释放外层根的关闭门禁。 */
     private Runnable releasePipeline;
@@ -107,7 +108,7 @@ public final class AgentScopeTraceLifecycle implements AgentRunStateEventPublish
         return Flux.deferContextual(subscriberContext -> {
             Context parent = ContextPropagationOperator.getOpenTelemetryContextFromContextView(
                     subscriberContext, parentContext);
-            pipelineScope = AgentScopeTraceSupport.scope(parent);
+            pipelineScope = ReactiveObservationSupport.scope(parent);
             if (pipelineScope != null) {
                 releasePipeline = pipelineScope.retain();
             }
@@ -116,12 +117,14 @@ public final class AgentScopeTraceLifecycle implements AgentRunStateEventPublish
                 Span span = GlobalOpenTelemetry.getTracer("com.fons.cloud.ai.agent.trace")
                         .spanBuilder("agent.run " + agentName).setParent(parent).startSpan();
                 runSpan.set(span);
-                runContext = NativeTraceContext.withMode(span.storeInContext(parent),
-                        NativeTraceContext.Mode.ENRICH_RUN);
+                // Harness受管分支携带采集所有权标记：SDK Tracer在这些分支只透传，由Middleware采集。
+                runContext = AgentScopeTracer.markHarnessOwnership(
+                        NativeTraceContext.withMode(span.storeInContext(parent), NativeTraceContext.Mode.ENRICH_RUN));
             } catch (Throwable error) {
                 log.warn("Failed to create AgentScope Run span, trace failure ignored", error);
                 // Span创建失败时只保留审计，不能把上游HTTP Span误当成Run补充。
-                runContext = NativeTraceContext.withMode(parent, NativeTraceContext.Mode.AUDIT_ONLY);
+                runContext = AgentScopeTracer.markHarnessOwnership(
+                        NativeTraceContext.withMode(parent, NativeTraceContext.Mode.AUDIT_ONLY));
             }
             telemetryContext.set(runContext);
             Flux<AgentEvent> events;
@@ -146,7 +149,7 @@ public final class AgentScopeTraceLifecycle implements AgentRunStateEventPublish
 
     /** Pipeline已绑定固定身份时，Middleware复用它，不再准备第二个Recorder权柄。 */
     public AgentTraceRun inheritedTraceRun() {
-        return pipelineScope == null ? null : pipelineScope.run;
+        return pipelineScope == null ? null : pipelineScope.run();
     }
 
     /**
@@ -342,7 +345,7 @@ public final class AgentScopeTraceLifecycle implements AgentRunStateEventPublish
                         result.put("status", status.name());
                         if (output.get() != null) result.put("output", output.get());
                         if (failure.get() != null) result.put("error",
-                                AgentScopeTraceSupport.errorData(failure.get()));
+                                ReactiveObservationSupport.errorData(failure.get()));
                         currentTraceRun.record(new TraceEvent(TraceEventType.STEP_FINISHED, runNodeId, null,
                                 Instant.now(), result, Map.of("status", status.name())));
                     }

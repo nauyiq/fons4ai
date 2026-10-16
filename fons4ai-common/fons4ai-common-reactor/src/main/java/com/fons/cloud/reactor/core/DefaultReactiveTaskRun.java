@@ -3,12 +3,14 @@ package com.fons.cloud.reactor.core;
 import com.fons.cloud.common.base.exception.SystemIntervalException;
 import com.fons.cloud.reactor.api.*;
 import com.fons.cloud.reactor.model.ReactiveTaskState;
+import lombok.extern.slf4j.Slf4j;
 import reactor.core.Disposable;
 import reactor.core.publisher.Flux;
 import reactor.core.publisher.Mono;
 import reactor.core.publisher.Sinks;
 
 import java.util.ArrayList;
+import java.util.List;
 import java.util.Set;
 import java.util.concurrent.ArrayBlockingQueue;
 import java.util.concurrent.CancellationException;
@@ -31,10 +33,14 @@ import static com.fons.cloud.reactor.core.ReactiveTaskChecks.requireNonNull;
  * 任务通过 Scope 直接发射事件或 relay 子 Run；任务产生结果后执行可选结果处理器；
  * 最后关闭事件通道并发布结构化完成结果。取消和异常分别走独立收口路径。</p>
  *
+ * <p>构造期可携带工厂捕获的运行扩展；扩展在唯一根订阅前增强任务加结果处理器的
+ * 执行链，不改变单次启动、收口和取消语义。</p>
+ *
  * @param <E> 过程事件类型
  * @param <R> 当前执行分段的结构化收口结果类型
  * @author hongqy
  */
+@Slf4j
 final class DefaultReactiveTaskRun<E, R> implements ReactiveTaskRun<E, R> {
 
     /**
@@ -101,6 +107,11 @@ final class DefaultReactiveTaskRun<E, R> implements ReactiveTaskRun<E, R> {
     private final ReactiveResultHandler<R> reactiveResultHandler;
 
     /**
+     * 工厂为本次 Run 捕获的运行扩展快照；唯一根订阅前逐个应用，默认为空列表。
+     */
+    private final List<ReactiveTaskInterceptor> capturedInterceptors;
+
+    /**
      * 并发事件发射的串行化边界。
      */
     private final Lock eventEmissionLock = new ReentrantLock();
@@ -112,10 +123,27 @@ final class DefaultReactiveTaskRun<E, R> implements ReactiveTaskRun<E, R> {
 
     DefaultReactiveTaskRun(String runId, ReactiveTask<E, R> task) {
         // 未指定结果处理器时仍复用同一套启动、转发和收口逻辑。
-        this(runId, task, null);
+        this(runId, task, null, List.of());
     }
 
     DefaultReactiveTaskRun(String runId, ReactiveTask<E, R> task, ReactiveResultHandler<R> handler) {
+        // 未注册运行扩展时保持原构造方式。
+        this(runId, task, handler, List.of());
+    }
+
+    /**
+     * 完整构造：携带工厂为本次 Run 捕获的运行扩展。
+     *
+     * <p>构造阶段只保存任务定义、运行身份和扩展快照，不执行 task.execute，
+     * 也不调用任何扩展方法。</p>
+     *
+     * @param runId 本次任务运行的唯一标识
+     * @param task 本次运行对应的响应式任务执行定义
+     * @param handler 可选的响应式结果处理器；为空时任务结果直接进入成功收口
+     * @param capturedInterceptors 工厂捕获的本次 Run 专属运行扩展，可为空列表
+     */
+    DefaultReactiveTaskRun(String runId, ReactiveTask<E, R> task, ReactiveResultHandler<R> handler,
+                           List<ReactiveTaskInterceptor> capturedInterceptors) {
         // 构造阶段只保存任务定义和运行身份，不执行 task.execute。
         this.runId = requireNonNull(
                 runId, "Reactive task runId cannot be null");
@@ -126,6 +154,9 @@ final class DefaultReactiveTaskRun<E, R> implements ReactiveTaskRun<E, R> {
         this.scope = new DefaultReactiveTaskScope<>(runId, emitter, this);
         // 结果处理器留到任务产生结构化结果之后、Run 正式收口之前调用。
         this.reactiveResultHandler = handler;
+        // 扩展快照由工厂按 Run 捕获；这里只做不可变保存，真实增强发生在唯一根订阅前。
+        this.capturedInterceptors = List.copyOf(requireNonNull(
+                capturedInterceptors, "Reactive task interceptors cannot be null"));
     }
 
     @Override
@@ -262,12 +293,44 @@ final class DefaultReactiveTaskRun<E, R> implements ReactiveTaskRun<E, R> {
             }
         });
 
+        // 唯一根订阅前应用本次 Run 捕获的运行扩展；扩展失败保留增强前执行链。
+        execution = applyInterceptors(execution);
+
         // 根订阅统一承接任务和处理器；成功、错误各走一次终态收口。
         Disposable disposable = execution.subscribe(
                 this::completeSuccessfully,
                 this::completeWithError);
         // 保存取消权柄；若同步执行已收口或并发取消，则在 bindPrimary 中立即释放。
         bindPrimary(disposable);
+    }
+
+    /**
+     * 逐个应用工厂捕获的运行扩展。
+     *
+     * <p>扩展在任务与结果处理器的原始执行链外包装；单个扩展抛错或返回空值时只跳过
+     * 该扩展，保留此前已增强的链和原始执行语义。无扩展时直接返回原执行链。</p>
+     *
+     * @param execution 原始执行链
+     * @return 增强后的执行链
+     */
+    private Mono<R> applyInterceptors(Mono<R> execution) {
+        if (capturedInterceptors.isEmpty()) {
+            return execution;
+        }
+        Mono<R> enhanced = execution;
+        for (ReactiveTaskInterceptor interceptor : capturedInterceptors) {
+            try {
+                Mono<R> next = interceptor.intercept(scope, enhanced);
+                if (next != null) {
+                    enhanced = next;
+                }
+            } catch (Throwable error) {
+                // 扩展失败不改变业务执行：保留可用链，业务异常仍沿原错误链传播。
+                log.warn("Reactive task interceptor failed, runId:{}, interceptor:{}",
+                        runId, interceptor.getClass().getName(), error);
+            }
+        }
+        return enhanced;
     }
 
     private void bindPrimary(Disposable disposable) {

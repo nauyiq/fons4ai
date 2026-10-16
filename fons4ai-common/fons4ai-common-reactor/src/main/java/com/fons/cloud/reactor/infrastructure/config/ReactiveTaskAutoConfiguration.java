@@ -1,9 +1,11 @@
 package com.fons.cloud.reactor.infrastructure.config;
 
+import com.fons.cloud.reactor.api.ReactiveTaskInterceptor;
 import com.fons.cloud.reactor.api.ReactiveTaskRunFactory;
 import com.fons.cloud.reactor.core.DefaultReactiveTaskRunFactory;
 import com.fons.cloud.reactor.core.ReactiveRunManager;
 import org.redisson.api.RedissonClient;
+import org.springframework.beans.factory.ObjectProvider;
 import org.springframework.boot.autoconfigure.AutoConfigureAfter;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnBean;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnMissingBean;
@@ -17,10 +19,17 @@ import org.springframework.context.annotation.Configuration;
 @AutoConfigureAfter(name = "org.redisson.spring.starter.RedissonAutoConfigurationV2")
 public class ReactiveTaskAutoConfiguration {
 
+    /**
+     * 默认运行工厂：注入容器中全部运行扩展，未注册任何扩展时与无扩展工厂行为一致。
+     *
+     * @param interceptorProvider 运行扩展提供器
+     * @return 响应式任务运行句柄工厂
+     */
     @Bean
     @ConditionalOnMissingBean
-    public ReactiveTaskRunFactory reactiveTaskRunFactory() {
-        return new DefaultReactiveTaskRunFactory();
+    public ReactiveTaskRunFactory reactiveTaskRunFactory(
+            ObjectProvider<ReactiveTaskInterceptor> interceptorProvider) {
+        return new DefaultReactiveTaskRunFactory(interceptorProvider.orderedStream().toList());
     }
 
     /**
