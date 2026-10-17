@@ -4,11 +4,13 @@ import com.fons.cloud.reactor.api.ReactiveTaskInterceptor;
 import com.fons.cloud.reactor.api.ReactiveTaskRunFactory;
 import com.fons.cloud.reactor.core.DefaultReactiveTaskRunFactory;
 import com.fons.cloud.reactor.core.ReactiveRunManager;
+import com.fons.cloud.reactor.infrastructure.config.properties.ReactiveRunProperties;
 import org.redisson.api.RedissonClient;
 import org.springframework.beans.factory.ObjectProvider;
 import org.springframework.boot.autoconfigure.AutoConfigureAfter;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnBean;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnMissingBean;
+import org.springframework.boot.context.properties.EnableConfigurationProperties;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 
@@ -16,6 +18,7 @@ import org.springframework.context.annotation.Configuration;
  * @author hongqy
  */
 @Configuration
+@EnableConfigurationProperties(ReactiveRunProperties.class)
 @AutoConfigureAfter(name = "org.redisson.spring.starter.RedissonAutoConfigurationV2")
 public class ReactiveTaskAutoConfiguration {
 
@@ -39,8 +42,8 @@ public class ReactiveTaskAutoConfiguration {
     @Bean
     @ConditionalOnBean(RedissonClient.class)
     @ConditionalOnMissingBean
-    public ReactiveRunManager reactiveRunManager(RedissonClient redissonClient) {
-        return new ReactiveRunManager(redissonClient);
+    public ReactiveRunManager reactiveRunManager(RedissonClient redissonClient, ReactiveRunProperties properties) {
+        return new ReactiveRunManager(redissonClient, properties);
     }
 
 }

@@ -10,6 +10,8 @@ import reactor.core.publisher.Flux;
 import reactor.core.publisher.Mono;
 
 import java.util.concurrent.atomic.AtomicBoolean;
+import java.util.concurrent.locks.Lock;
+import java.util.concurrent.locks.ReentrantLock;
 import java.util.function.BooleanSupplier;
 
 /**
@@ -51,6 +53,9 @@ public class BaseAgentRun implements AgentRun {
      */
     private final AtomicBoolean started = new AtomicBoolean();
 
+    /** 原子决定尚未启动的句柄是启动还是直接取消，不覆盖实际执行。 */
+    private final Lock startLock = new ReentrantLock();
+
     @Override
     public String runId() {
         return context.getRunId();
@@ -73,13 +78,36 @@ public class BaseAgentRun implements AgentRun {
 
     @Override
     public boolean cancel() {
+        startLock.lock();
+        try {
+            if (started.compareAndSet(false, true)) {
+                // relay 登记后、首次订阅前也允许取消，后续订阅只能读取取消结果。
+                actions.getStateMachine().tryFinalize(AgentRunState.CANCELLED);
+                actions.releaseAll();
+                actions.completeEvents();
+                actions.cancelResultEvent();
+                return true;
+            }
+        } finally {
+            startLock.unlock();
+        }
         return canceller.getAsBoolean();
     }
 
+    @Override
+    public Mono<Void> termination() {
+        return actions.termination();
+    }
+
     private void startOnce() {
-        if (started.compareAndSet(false, true)) {
-            starter.run();
+        boolean launch;
+        startLock.lock();
+        try {
+            launch = started.compareAndSet(false, true);
+        } finally {
+            startLock.unlock();
         }
+        if (launch) starter.run();
     }
 
 }

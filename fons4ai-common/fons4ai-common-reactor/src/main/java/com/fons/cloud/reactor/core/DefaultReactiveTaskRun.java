@@ -69,7 +69,7 @@ final class DefaultReactiveTaskRun<E, R> implements ReactiveTaskRun<E, R> {
     private final AtomicBoolean started = new AtomicBoolean();
 
     /**
-     * 事件、结果和运行时资源是否已经进入最终收口阶段。
+     * 事件与结果是否已经收口；底层执行退出由 terminationSink 独立确认。
      */
     private final AtomicBoolean terminated = new AtomicBoolean();
 
@@ -100,6 +100,15 @@ final class DefaultReactiveTaskRun<E, R> implements ReactiveTaskRun<E, R> {
      * 当前任务运行的单值完成结果通道。
      */
     private final Sinks.One<R> completionSink = Sinks.one();
+
+    /** 根执行退出、全部受管子运行退出后才完成；订阅不启动任务。 */
+    private final Sinks.Empty<Void> terminationSink = Sinks.empty();
+
+    /** 区分结果通道收口与底层根订阅退出。 */
+    private final AtomicBoolean executionExited = new AtomicBoolean();
+
+    /** 保护启动、子运行接入和退出确认，不覆盖任务执行。 */
+    private final Lock executionLock = new ReentrantLock();
 
     /**
      * 响应式结果处理器
@@ -190,6 +199,11 @@ final class DefaultReactiveTaskRun<E, R> implements ReactiveTaskRun<E, R> {
     }
 
     @Override
+    public Mono<Void> termination() {
+        return terminationSink.asMono();
+    }
+
+    @Override
     public boolean cancel() {
         // CAS 抢占终态：重复取消返回 true，已正常完成或失败的 Run 不再接受取消。
         while (true) {
@@ -213,6 +227,13 @@ final class DefaultReactiveTaskRun<E, R> implements ReactiveTaskRun<E, R> {
         completeEvents();
         completionSink.tryEmitError(new CancellationException(
                 "Reactive task run cancelled: " + runId));
+        executionLock.lock();
+        try {
+            if (!started.get()) executionExited.set(true);
+        } finally {
+            executionLock.unlock();
+        }
+        confirmTermination();
         return true;
     }
 
@@ -239,10 +260,22 @@ final class DefaultReactiveTaskRun<E, R> implements ReactiveTaskRun<E, R> {
             }
 
             // 登记活动子 Run，确保根 Run 取消时能够找到它。
-            activeChildren.add(childRun);
+            executionLock.lock();
+            try {
+                if (terminated.get()) {
+                    return Mono.error(new CancellationException("Reactive task is stopping: " + runId));
+                }
+                activeChildren.add(childRun);
+            } finally {
+                executionLock.unlock();
+            }
+            // 终止观察不启动子运行，且必须独立于 relay 订阅存活。
+            childRun.termination().subscribe(ignored -> { }, terminationSink::tryEmitError, () -> {
+                activeChildren.remove(childRun);
+                confirmTermination();
+            });
             // 再检查一次，覆盖“登记子 Run”和“根 Run 收口”并发发生的窗口。
             if (terminated.get()) {
-                activeChildren.remove(childRun);
                 cancelChildQuietly(childRun);
                 return Mono.error(new CancellationException(
                         "Reactive task run is no longer active: " + runId));
@@ -257,25 +290,32 @@ final class DefaultReactiveTaskRun<E, R> implements ReactiveTaskRun<E, R> {
                     .then(childRun.completion())
                     // 映射、转发或结果链失败及订阅取消时，请求取消尚在运行的子 Run。
                     .doOnError(error -> cancelChildQuietly(childRun))
-                    .doOnCancel(() -> cancelChildQuietly(childRun))
-                    // 无论成功、失败或取消，都从活动集合中移除该子 Run。
-                    .doFinally(signalType -> activeChildren.remove(childRun));
+                    .doOnCancel(() -> cancelChildQuietly(childRun));
         });
     }
 
     private void startOnce() {
         // events() 和 completion() 都会进入这里；原子门禁只允许首次订阅启动底层任务。
-        if (!started.compareAndSet(false, true)) {
-            return;
+        boolean launch;
+        executionLock.lock();
+        try {
+            if (!started.compareAndSet(false, true)) return;
+            // 仅 CREATED 可以进入 RUNNING；取消先于启动时没有底层执行需要等待。
+            launch = state.compareAndSet(ReactiveTaskState.CREATED, ReactiveTaskState.RUNNING);
+            if (!launch) {
+                executionExited.set(true);
+            }
+        } finally {
+            executionLock.unlock();
         }
-        // 仅 CREATED 可以进入 RUNNING；若先被取消，任务不会再启动。
-        if (!state.compareAndSet(
-                ReactiveTaskState.CREATED, ReactiveTaskState.RUNNING)) {
+        if (!launch) {
+            confirmTermination();
             return;
         }
 
         // 延迟调用任务定义，让同步异常也沿同一条响应式失败链收口。
         Mono<R> execution = Mono.defer(() -> {
+            if (terminated.get()) return Mono.error(new CancellationException("Reactive task is stopping: " + runId));
             Mono<R> result = task.execute(scope);
             // 正常收口必须有一个非空 Mono，并且该 Mono 最终必须产生结果。
             if (result == null) {
@@ -297,7 +337,10 @@ final class DefaultReactiveTaskRun<E, R> implements ReactiveTaskRun<E, R> {
         execution = applyInterceptors(execution);
 
         // 根订阅统一承接任务和处理器；成功、错误各走一次终态收口。
-        Disposable disposable = execution.subscribe(
+        Disposable disposable = execution.doFinally(signal -> {
+                    executionExited.set(true);
+                    confirmTermination();
+                }).subscribe(
                 this::completeSuccessfully,
                 this::completeWithError);
         // 保存取消权柄；若同步执行已收口或并发取消，则在 bindPrimary 中立即释放。
@@ -449,13 +492,21 @@ final class DefaultReactiveTaskRun<E, R> implements ReactiveTaskRun<E, R> {
         // 遍历快照，避免取消回调同时修改活动集合影响本轮传播。
         for (ReactiveRun<?, ?, ?> child :
                 new ArrayList<>(activeChildren)) {
-            try {
-                cancelChildQuietly(child);
-            } finally {
-                // 单个子 Run 取消完成或失败后都移出根 Run 的活动集合。
-                activeChildren.remove(child);
-            }
+            cancelChildQuietly(child);
         }
+    }
+
+    /** 子结果发出或 relay 取消不能提前确认退出。 */
+    private void confirmTermination() {
+        boolean drained;
+        executionLock.lock();
+        try {
+            drained = executionExited.get() && activeChildren.isEmpty();
+        } finally {
+            executionLock.unlock();
+        }
+        // 订阅者可能释放分布式租约或持久化状态，不在生命周期锁内执行回调。
+        if (drained) terminationSink.tryEmitEmpty();
     }
 
     private void cancelChildQuietly(ReactiveRun<?, ?, ?> child) {

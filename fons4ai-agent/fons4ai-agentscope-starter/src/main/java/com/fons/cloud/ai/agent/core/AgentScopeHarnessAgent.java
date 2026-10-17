@@ -8,6 +8,7 @@ import com.fons.cloud.ai.agent.infrastructure.handler.AgentScopeApprovalHandler;
 import com.fons.cloud.ai.agent.infrastructure.middleware.AgentScopeInputRequiredMiddleware;
 import com.fons.cloud.ai.agent.infrastructure.middleware.AgentScopeApprovalRejectMiddleware;
 import com.fons.cloud.ai.agent.infrastructure.middleware.AgentScopeSubagentHitlMiddleware;
+import com.fons.cloud.ai.agent.infrastructure.middleware.AgentScopeExecutionLifecycleMiddleware;
 import com.fons.cloud.ai.agent.infrastructure.middleware.FonsAgentTraceMiddleware;
 import com.fons.cloud.ai.agent.infrastructure.observability.AgentScopeTraceLifecycle;
 import com.fons.cloud.ai.agent.infrastructure.utils.AgentScopeMediaConverter;
@@ -98,6 +99,11 @@ import java.util.concurrent.atomic.AtomicReference;
 @Getter
 @SuperBuilder
 public class AgentScopeHarnessAgent extends BaseAgent<AgentScopeRunContext> implements Closeable {
+
+    /**
+     * 请求所属的根业务会话ID，父子Agent及审批恢复共同继承；原生sessionId仍用于SDK状态路由。
+     */
+    public static final String CONVERSATION_ID_ATTRIBUTE = "fons.conversationId";
 
     /**
      * Fons运行ID在AgentScope RuntimeContext中的属性名称。
@@ -220,6 +226,8 @@ public class AgentScopeHarnessAgent extends BaseAgent<AgentScopeRunContext> impl
 
         HarnessAgent harnessAgent = null;
         try {
+            AgentScopeExecutionLifecycleMiddleware.validateToolExecutorPatch();
+            delegateBuilder.middleware(AgentScopeExecutionLifecycleMiddleware.getInstance());
             delegateBuilder.middleware(AgentScopeApprovalRejectMiddleware.getInstance());
             if (subagentApprovalEnabled) {
                 // 恢复必须回填原始委派调用，禁止SDK将挂起的spawn/send自动重执行。
@@ -311,6 +319,8 @@ public class AgentScopeHarnessAgent extends BaseAgent<AgentScopeRunContext> impl
      */
     @Override
     protected Disposable streamExecute(AgentScopeRunContext context, RuntimeActions actions) {
+        AgentScopeRuntimeActions nativeActions = (AgentScopeRuntimeActions) actions;
+        nativeActions.nativeExecutionStarted();
         return Flux.defer(() -> getDelegate().getDelegate().getMiddlewares().stream()
                         .filter(FonsAgentTraceMiddleware.class::isInstance)
                         .map(FonsAgentTraceMiddleware.class::cast).findFirst()
@@ -339,7 +349,11 @@ public class AgentScopeHarnessAgent extends BaseAgent<AgentScopeRunContext> impl
                             }
                         }
                         // 原生流结束后清理尚未收到End事件的工具结果缓冲。
-                        context.clearToolResultBuffers();
+                        try {
+                            context.clearToolResultBuffers();
+                        } finally {
+                            nativeActions.nativeExecutionExited();
+                        }
                     }
                 })
                 .subscribe(ignored -> {
@@ -433,12 +447,14 @@ public class AgentScopeHarnessAgent extends BaseAgent<AgentScopeRunContext> impl
             traceLifecycle.publish(event);
             stateEventPublisher.publish(event);
         };
-        return AgentScopeRuntimeActions.builder()
+        AgentScopeRuntimeActions actions = AgentScopeRuntimeActions.builder()
                 .agentRunContext(context)
                 .stateMachine(new AgentRunStateMachine(context, eventPublisher))
                 .delegate(getDelegate())
                 .runtimeContext(context.getRuntimeContext())
                 .build();
+        context.getRuntimeContext().put(AgentScopeRuntimeActions.class, actions);
+        return actions;
     }
 
     /**
@@ -897,6 +913,10 @@ public class AgentScopeHarnessAgent extends BaseAgent<AgentScopeRunContext> impl
                                    Throwable cause,
                                    String errorCode,
                                    String errorMessage) {
+        if (actions.isCancellationRequested()) {
+            cancelled(context, actions);
+            return;
+        }
         if (subagentApprovalEnabled) {
             try {
                 APPROVAL_HANDLER.finishBatchResume(context, getDelegate(), true);
@@ -953,6 +973,8 @@ public class AgentScopeHarnessAgent extends BaseAgent<AgentScopeRunContext> impl
     protected RuntimeContext createRuntimeContext(AgentRequest request, String runId) {
         var builder = RuntimeContext.builder()
                 .sessionId(request.getConversationId())
+                // 子审批可能先于Master执行恢复，在创建上下文时固化业务身份，不能依赖Master中间件补写。
+                .put(CONVERSATION_ID_ATTRIBUTE, request.getConversationId())
                 .put(RUN_ID_ATTRIBUTE, runId);
         if (StringUtils.isNotBlank(request.getUserId())) {
             builder.userId(request.getUserId());

@@ -56,7 +56,7 @@ public class AgentTaskManager {
      */
     public R<Boolean> bindingTaskDisposable(AgentTaskBingRequest request) {
         ReactiveRunManager.BindResult result = reactiveRunManager.bind(
-                taskId(request.getConversationId()), request.getRunId(), request.getDisposable());
+                taskId(request.getConversationId()), request.getRunId(), request.getDisposable(), request.getTermination());
         return switch (result) {
             case BOUND, CANCELLED -> R.success();
             case NOT_FOUND -> R.failed(AgentResultCode.AGENT_TASK_NOT_EXIST);

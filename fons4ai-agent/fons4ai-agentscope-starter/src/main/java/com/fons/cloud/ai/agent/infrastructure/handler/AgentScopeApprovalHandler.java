@@ -517,30 +517,34 @@ public class AgentScopeApprovalHandler {
         return input.flatMap(message -> {
             AtomicReference<Msg> result = new AtomicReference<>();
             actions.registerRecoveringChild(agent, runtime);
-            agent.clearStateCache(runtime);
-            return ContextPropagationOperator.runWithContext(
-                    Flux.defer(() -> agent.streamEvents(resumeMessages(message), runtime)), parent).doOnNext(event -> {
-                if (event instanceof AgentResultEvent end && StringUtils.isBlank(event.getSource())) {
-                    result.set(end.getResult());
-                }
-            }).then(Mono.defer(() -> {
-                Msg finalMessage = result.get();
-                if (finalMessage == null) {
-                    return Mono.error(SystemIntervalException.of("子审批恢复没有原生结果"));
-                }
-                if (finalMessage.getGenerateReason() == GenerateReason.TOOL_SUSPENDED
-                        && branch(agent, runtime).isEmpty()) {
-                    return Mono.error(SystemIntervalException.of("子Agent挂起了未接管的外部工具"));
-                }
-                if (finalMessage.getGenerateReason() == GenerateReason.PERMISSION_ASKING
-                        || finalMessage.getGenerateReason() == GenerateReason.TOOL_SUSPENDED) {
-                    // 本节点的新审批留待下一批处理，仍继续收口本批其他兄弟。
-                    return Mono.empty();
-                }
-                batch.getCompletedNodes().put(runtime.getSessionId(), finalMessage);
-                saveBatch(context, actions.getDelegateForApproval());
-                return Mono.just(finalMessage);
-            })).doFinally(signal -> actions.releaseRecoveringChild(runtime));
+            // 清缓存也属于恢复执行；同步失败必须经过同一个退出清理入口。
+            return Mono.defer(() -> {
+                agent.clearStateCache(runtime);
+                return ContextPropagationOperator.runWithContext(
+                        Flux.defer(() -> agent.streamEvents(resumeMessages(message), runtime)), parent)
+                        .doOnNext(event -> {
+                            if (event instanceof AgentResultEvent end && StringUtils.isBlank(event.getSource())) {
+                                result.set(end.getResult());
+                            }
+                        }).then(Mono.defer(() -> {
+                    Msg finalMessage = result.get();
+                    if (finalMessage == null) {
+                        return Mono.error(SystemIntervalException.of("子审批恢复没有原生结果"));
+                    }
+                    if (finalMessage.getGenerateReason() == GenerateReason.TOOL_SUSPENDED
+                            && branch(agent, runtime).isEmpty()) {
+                        return Mono.error(SystemIntervalException.of("子Agent挂起了未接管的外部工具"));
+                    }
+                    if (finalMessage.getGenerateReason() == GenerateReason.PERMISSION_ASKING
+                            || finalMessage.getGenerateReason() == GenerateReason.TOOL_SUSPENDED) {
+                        // 本节点的新审批留待下一批处理，仍继续收口本批其他兄弟。
+                        return Mono.empty();
+                    }
+                    batch.getCompletedNodes().put(runtime.getSessionId(), finalMessage);
+                    saveBatch(context, actions.getDelegateForApproval());
+                    return Mono.just(finalMessage);
+                }));
+            }).doFinally(signal -> actions.releaseRecoveringChild(runtime));
         });
     }
 

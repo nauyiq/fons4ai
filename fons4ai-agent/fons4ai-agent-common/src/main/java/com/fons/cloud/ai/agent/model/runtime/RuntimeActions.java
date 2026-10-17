@@ -55,6 +55,9 @@ public class RuntimeActions implements Serializable {
      */
     private final Sinks.One<AgentRunResult> completionSink = Sinks.one();
 
+    /** 资源退出确认；执行引擎适配器可以组合更严格的原生收口信号。 */
+    private final Sinks.Empty<Void> terminationSink = Sinks.empty();
+
     /**
      * 客户端事件流，单播 + 背压缓冲。
      */
@@ -75,6 +78,9 @@ public class RuntimeActions implements Serializable {
      * 单个 Run 的事件发送串行化边界，避免并行工具回调触发 FAIL_NON_SERIALIZED。
      */
     private final Lock eventEmissionLock = new ReentrantLock();
+
+    /** 保护伴生订阅登记与释放，不锁调用方传入的集合或句柄。 */
+    private final Lock companionLock = new ReentrantLock();
 
     /**
      * 是否已经接收到取消执行请求。
@@ -123,6 +129,11 @@ public class RuntimeActions implements Serializable {
         return completionSink.asMono();
     }
 
+    /** 仅观察资源退出，不启动执行。 */
+    public Mono<Void> termination() {
+        return terminationSink.asMono();
+    }
+
     /**
      * 绑定主底层订阅；若已有旧订阅则先释放旧订阅。
      * @param disposable 底层订阅；可为 null
@@ -133,7 +144,7 @@ public class RuntimeActions implements Serializable {
         }
 
         AgentRunState state = agentRunContext.getState();
-        if (released.get() || cancellationRequested.get() || state.isSegmentEnd()) {
+        if (released.get() || (cancellationRequested.get() && shouldReleaseManagedDisposablesAfterCancel()) || state.isSegmentEnd()) {
             disposable.dispose();
             return;
         }
@@ -143,7 +154,7 @@ public class RuntimeActions implements Serializable {
             previous.dispose();
         }
         // bind 与取消/暂停可并发发生。若取消或审批暂停发生在首次状态检查之后，释放刚写入的订阅。
-        if (released.get() || cancellationRequested.get() || agentRunContext.getState().isSegmentEnd()) {
+        if (released.get() || (cancellationRequested.get() && shouldReleaseManagedDisposablesAfterCancel()) || agentRunContext.getState().isSegmentEnd()) {
             disposePrimaryExecution();
         }
     }
@@ -223,13 +234,15 @@ public class RuntimeActions implements Serializable {
         if (disposable == null) {
             return;
         }
-        synchronized (companions) {
-            if (released.get() || cancellationRequested.get() || agentRunContext.getState().isSegmentEnd()) {
-                disposable.dispose();
-                return;
-            }
-            companions.add(disposable);
+        boolean reject;
+        companionLock.lock();
+        try {
+            reject = released.get() || cancellationRequested.get() || agentRunContext.getState().isSegmentEnd();
+            if (!reject) companions.add(disposable);
+        } finally {
+            companionLock.unlock();
         }
+        if (reject) disposable.dispose();
     }
 
 
@@ -241,33 +254,55 @@ public class RuntimeActions implements Serializable {
             return;
         }
 
+        RuntimeException cleanupFailure = null;
         try {
             releaseManagedDisposables();
         } catch (RuntimeException exception) {
+            cleanupFailure = exception;
             log.warn("Failed to release managed runtime resources, runId:{}",
                     agentRunContext.getRunId(), exception);
         }
         try {
             releaseExtensionResources();
         } catch (RuntimeException exception) {
+            if (cleanupFailure == null) cleanupFailure = exception;
+            else if (cleanupFailure != exception) cleanupFailure.addSuppressed(exception);
             log.warn("Failed to release extended runtime resources, runId:{}",
                     agentRunContext.getRunId(), exception);
         }
+        // 释放失败不能向管理器声明已经退出，否则会把尚未确认的执行权交给下一次运行。
+        if (cleanupFailure == null) terminationSink.tryEmitEmpty();
+        else terminationSink.tryEmitError(cleanupFailure);
     }
 
     /**
      * 释放 RuntimeActions 管理的 Reactor 订阅。
      */
     protected final void releaseManagedDisposables() {
-        disposePrimaryExecution();
-        synchronized (companions) {
-            for (Disposable companion : companions) {
-                if (!companion.isDisposed()) {
-                    companion.dispose();
-                }
-            }
-            companions.clear();
+        RuntimeException cleanupFailure = null;
+        try {
+            disposePrimaryExecution();
+        } catch (RuntimeException exception) {
+            cleanupFailure = exception;
         }
+        Set<Disposable> snapshot;
+        companionLock.lock();
+        try {
+            snapshot = Set.copyOf(companions);
+            companions.clear();
+        } finally {
+            companionLock.unlock();
+        }
+        // dispose 可能触发任意完成回调；移出锁后逐个尝试，避免一个失败漏掉其余任务。
+        for (Disposable companion : snapshot) {
+            try {
+                if (!companion.isDisposed()) companion.dispose();
+            } catch (RuntimeException exception) {
+                if (cleanupFailure == null) cleanupFailure = exception;
+                else if (cleanupFailure != exception) cleanupFailure.addSuppressed(exception);
+            }
+        }
+        if (cleanupFailure != null) throw cleanupFailure;
     }
 
     /**

@@ -4,7 +4,7 @@
 
 Fons4AI 是一个基于 Java 21、Spring Boot 的 AI 应用基础框架，围绕 **Agent 运行、执行观测、文档处理** 三条路径组织能力。它将流式输出、取消、工具审批、父子 Agent 恢复和事件追踪封装到公共协议与适配模块，业务应用负责场景编排、提示词、工具与页面。
 
-**[系统架构](#架构概览) · [核心设计](#核心设计) · [快速接入](#快速接入) · [应用项目](#应用项目)**
+**[系统架构](#架构概览) · [可观测性](docs/observability.md) · [任务注册](docs/agent-runtime.md#任务注册与执行的职责) · [快速接入](#快速接入) · [应用项目](#应用项目)**
 
 Java 21 · Spring Boot · AgentScope · Spring AI · LangChain4j · OpenTelemetry
 
@@ -42,6 +42,8 @@ flowchart TB
 
 > [!NOTE]
 > 当前 Trip 使用 AgentScope 适配路径。Spring AI、LangChain4j 适配的功能覆盖各有范围，不能将某条路径的审批、恢复或追踪能力视为所有适配器的共同保证。
+
+可观测性与任务注册的时序图、伪代码及关键设计分别见 [可观测性设计](docs/observability.md) 和 [任务注册与运行机制](docs/agent-runtime.md#任务注册与执行的职责)。
 
 ## 模块导航
 
@@ -92,8 +94,8 @@ mvn install -DskipTests
 | 主题 | 内容 |
 | --- | --- |
 | [系统架构](docs/architecture.md) | 分层、模块关系、适配边界与设计取舍 |
-| [Agent 运行时](docs/agent-runtime.md) | 调用时序、执行状态、取消与人工确认 |
-| [可观测性](docs/observability.md) | 采集链路、上下文传播、Langfuse 投影、排查方法 |
+| [Agent 运行时](docs/agent-runtime.md) | 任务注册、取消与退出确认、租约续期、人工确认与源码阅读路线 |
+| [可观测性](docs/observability.md) | 声明式采集入口、上下文传播、Langfuse 投影与源码阅读路线 |
 | [文档处理](docs/document-processing.md) | 格式识别、Parser 选择、来源与分块校验 |
 | [应用项目](docs/applications.md) | Trip / Rag2OKF 接入关系、业务流程与源码阅读路线 |
 
@@ -102,6 +104,6 @@ mvn install -DskipTests
 
 版本以 [根 POM](pom.xml) 为准：Spring Boot 3.5.8、AgentScope 2.0.3、Spring AI 1.1.2、Spring AI Alibaba 1.1.2.0、LangChain4j 1.11.0、OpenTelemetry 1.61.0；部分 LangChain4j 集成组件单独使用 beta 版本。
 
-文档依据 2026-10-16 的 `master` 源码整理，代码基线为 `3944de9`，描述已有实现和应用接入关系。具体运行结果、模型效果与性能应结合相应场景验证。
+概览最初依据 `master` 的 `3944de9` 整理；可观测性与任务运行专题已对照 2026-10-16 本地工作树更新，包含尚未提交的取消与租约改动。文档描述源码设计，不代表部署实例已加载这些改动；具体运行结果、模型效果与性能应结合相应场景验证。
 
 </details>

@@ -168,6 +168,10 @@ public abstract class BaseAgent<C extends AgentRunContext> implements Agent {
      * @param actions
      */
     protected final void startAction(C context, RuntimeActions actions) {
+        if (actions.isCancellationRequested()) {
+            cancelled(context, actions);
+            return;
+        }
         // 设置启动状态, 默认为运行中
         if (!actions.getStateMachine().tryStart()) {
             log.warn("Agent task already started, runId:{}.", context.getRunId());
@@ -185,13 +189,32 @@ public abstract class BaseAgent<C extends AgentRunContext> implements Agent {
                 finishRun(context, AgentRunState.REJECTED, actions, null, registered.getCode(), registered.getMessage());
                 return;
             }
-            // registerTask 与用户取消可能并发。取消已由 Controller 成功受理时，租约和
-            // 本地任务已在取消路径释放，当前启动线程不能再创建原生订阅。
+            // 注册与取消可能并发。先检查本地取消事实，不能继续创建原生订阅。
+            if (actions.isCancellationRequested()) {
+                cancelled(context, actions);
+                return;
+            }
             if (context.getState().isTerminal()) {
                 return;
             }
 
-            // 执行子类方法, 由子类实现具体的执行逻辑
+            // 在原生执行启动前绑定取消与退出观察，覆盖“已登记但订阅尚未创建”的窗口。
+            AgentTaskBingRequest bingRequest = AgentTaskBingRequest.builder()
+                    .conversationId(context.getConversationId())
+                    .runId(context.getRunId())
+                    .disposable(actions.cancellationHandle())
+                    .termination(actions.termination())
+                    .build();
+            R<Boolean> bindResult = agentTaskManager.bindingTaskDisposable(bingRequest);
+            if (!bindResult.isSuccess()) {
+                finishRun(context, AgentRunState.FAILED, actions, null, bindResult.getCode(), bindResult.getMessage());
+                return;
+            }
+            if (actions.isCancellationRequested()) {
+                cancelled(context, actions);
+                return;
+            }
+
             Disposable disposable = streamExecute(context, actions);
             if (disposable == null) {
                 finishRun(context, AgentRunState.FAILED, actions, null,
@@ -199,24 +222,12 @@ public abstract class BaseAgent<C extends AgentRunContext> implements Agent {
                 return;
             }
             actions.bind(disposable);
-
-            // 子类的订阅可能同步完成、失败、取消或审批暂停，对应收口已完成，不能再绑定本地任务。
-            if (context.getState() != AgentRunState.RUNNING) {
+        } catch (Exception cause) {
+            // 取消可能落在最后一次准入检查与原生启动之间，不能误报成执行失败。
+            if (actions.isCancellationRequested()) {
+                cancelled(context, actions);
                 return;
             }
-
-            // 将 RuntimeActions 的取消权柄绑定到任务管理器
-            AgentTaskBingRequest bingRequest = AgentTaskBingRequest.builder()
-                    .conversationId(context.getConversationId())
-                    .runId(context.getRunId())
-                    .disposable(actions.cancellationHandle())
-                    .build();
-            R<Boolean> bindResult = agentTaskManager.bindingTaskDisposable(bingRequest);
-            if (!bindResult.isSuccess()) {
-                // 任务句柄绑定失败
-                finishRun(context, AgentRunState.FAILED, actions, null, bindResult.getCode(), bindResult.getMessage());
-            }
-        } catch (Exception cause) {
             String errorCode = AgentResultCode.FAILED_EXECUTE_AGENT.getCode();
             String errorMessage  = cause.getMessage();
             if (cause instanceof BizException bizException) {
@@ -234,12 +245,9 @@ public abstract class BaseAgent<C extends AgentRunContext> implements Agent {
      * @return
      */
     protected final boolean runCancelled(C context, RuntimeActions actions) {
-        // 取消请求只接受已启动且已进入注册流程的 Run；不能把尚未注册的 CREATED Run
-        // 伪装成已取消，否则后续首次订阅将永远无法启动。
+        // 启动门禁已取得、但还未完成注册的窗口，先记录本地取消；启动线程负责收口。
         if (context.getState() == AgentRunState.CREATED) {
-            log.warn("Reject cancel for unstarted agent run, conversationId:{}, runId:{}",
-                    context.getConversationId(), context.getRunId());
-            return false;
+            return actions.cancelExecution();
         }
         // 审批等待期：租约、订阅与本地任务已在暂停时释放，没有资源可停，取消只剩本地状态收口。
         // 阻断恢复由审批服务票证状态承担，框架不落 Redis 取消标记（恢复使用新 runId，标记无意义）。
@@ -252,14 +260,14 @@ public abstract class BaseAgent<C extends AgentRunContext> implements Agent {
             return false;
         }
 
-        // 先由 Controller 受理取消。未注册任务会在此返回失败，Context 保持 RUNNING，
-        // 让启动线程继续完成注册；这与“仅已注册任务可取消”的业务语义保持一致。
+        // 本句柄已经定位到实际执行，先设置本地取消标记，覆盖注册及绑定竞态。
+        actions.cancelExecution();
         AgentTaskCancelRequest cancelRequest = AgentTaskCancelRequest.builder()
                 .runId(context.getRunId())
                 .conversationId(context.getConversationId())
                 .build();
         R<Boolean> stopped = agentTaskManager.stopTask(cancelRequest);
-        return stopped.isSuccess();
+        return stopped.isSuccess() || actions.isCancellationRequested();
     }
 
     /**
@@ -408,7 +416,7 @@ public abstract class BaseAgent<C extends AgentRunContext> implements Agent {
         // 外层Pipeline租约交接和正式业务审批消息发布仍由业务调用方完成。
         // 状态已是WAITING_APPROVAL，释放订阅触发的取消信号不会误收口为CANCELLED。
         actions.releaseAll();
-        safelyCompleteTask(context);
+        safelyCompleteTask(context, actions);
 
         // 一项人工交互对应一条稳定HITL消息。
         for (HumanInTheLoopInfo hitlInfo : hitlSnapshot) {
@@ -508,8 +516,8 @@ public abstract class BaseAgent<C extends AgentRunContext> implements Agent {
         if (terminalState.isTerminal()) {
             // 先释放RuntimeActions管理的当前Run资源。
             actions.releaseAll();
-            // 再释放本地任务句柄和分布式租约。
-            safelyCompleteTask(context);
+            // 登记退出观察；原生节点、工具全部退出后才释放本地任务和分布式租约。
+            safelyCompleteTask(context, actions);
             // 最后释放由具体Agent直接持有的原生资源。
             try {
                 releaseNativeResource(context, actions, terminalState);
@@ -539,7 +547,14 @@ public abstract class BaseAgent<C extends AgentRunContext> implements Agent {
     /**
      * 尽最大努力释放任务句柄和分布式租约。
      */
-    private void safelyCompleteTask(C context) {
+    private void safelyCompleteTask(C context, RuntimeActions actions) {
+        // 原生适配器可能仍在保存状态；实际退出之前不能释放 Agent 层租约。
+        actions.termination().subscribe(ignored -> { },
+                error -> log.error("Agent执行退出确认失败，保留租约，runId:{}", context.getRunId(), error),
+                () -> releaseTaskAfterTermination(context));
+    }
+
+    private void releaseTaskAfterTermination(C context) {
         try {
             AgentTaskReleaseRequest request = AgentTaskReleaseRequest.builder()
                     .conversationId(context.getConversationId())
